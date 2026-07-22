@@ -51,3 +51,11 @@ export function exportProject(query) {
     params: query
   })
 }
+
+// 办结项目
+export function completeProject(id) {
+  return request({
+    url: '/project/project/complete/' + id,
+    method: 'put'
+  })
+}

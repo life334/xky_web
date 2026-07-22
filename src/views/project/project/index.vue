@@ -12,6 +12,7 @@
                <el-option label="进行中" value="进行中" />
                <el-option label="已完成" value="已完成" />
                <el-option label="已暂停" value="已暂停" />
+               <el-option label="已办结" value="已办结" />
                <el-option label="已取消" value="已取消" />
             </el-select>
          </el-form-item>
@@ -95,6 +96,7 @@
                <el-tag v-if="scope.row.status === '进行中'" type="primary">{{ scope.row.status }}</el-tag>
                <el-tag v-else-if="scope.row.status === '已完成'" type="success">{{ scope.row.status }}</el-tag>
                <el-tag v-else-if="scope.row.status === '已暂停'" type="warning">{{ scope.row.status }}</el-tag>
+               <el-tag v-else-if="scope.row.status === '已办结'" type="success">{{ scope.row.status }}</el-tag>
                <el-tag v-else-if="scope.row.status === '已取消'" type="danger">{{ scope.row.status }}</el-tag>
                <el-tag v-else type="info">{{ scope.row.status || '—' }}</el-tag>
             </template>
@@ -103,6 +105,7 @@
             <template #default="scope">
                <el-button link type="primary" @click="handleView(scope.row)">详情</el-button>
                <el-button link type="success" @click="handleTaskList(scope.row)">作业清单</el-button>
+               <el-button v-if="scope.row.status !== '已办结'" link type="warning" @click="handleComplete(scope.row)" v-hasPermi="['project:project:complete']">办结</el-button>
                <el-button link type="primary" @click="handleUpdate(scope.row)" v-hasPermi="['project:project:edit']">修改</el-button>
                <el-button link type="primary" @click="handleDelete(scope.row)" v-hasPermi="['project:project:remove']">删除</el-button>
             </template>
@@ -300,7 +303,7 @@
 </template>
 
 <script setup name="Project">
-import { listProject, getProject, addProject, updateProject, delProject } from "@/api/project/project"
+import { listProject, getProject, addProject, updateProject, delProject, completeProject } from "@/api/project/project"
 import { categoryTreeselect } from "@/api/project/category"
 import { listUser } from "@/api/system/user"
 import { listTask } from "@/api/project/task"
@@ -491,6 +494,16 @@ function handleTaskList(row) {
     taskListData.value = response.rows || []
     taskLoading.value = false
   })
+}
+
+/** 办结按钮操作 */
+function handleComplete(row) {
+  proxy.$modal.confirm('确认将项目"' + row.projectName + '"设为已办结吗？办结后不可撤销，该项目将出现在费用结算页面。').then(function() {
+    return completeProject(row.id)
+  }).then(() => {
+    getList()
+    proxy.$modal.msgSuccess("办结成功")
+  }).catch(() => {})
 }
 
 /** 提交按钮 */
