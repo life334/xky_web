@@ -9,11 +9,7 @@
          </el-form-item>
          <el-form-item label="状态" prop="status">
             <el-select v-model="queryParams.status" placeholder="项目状态" clearable style="width: 140px">
-               <el-option label="进行中" value="进行中" />
-               <el-option label="已完成" value="已完成" />
-               <el-option label="已暂停" value="已暂停" />
-               <el-option label="已办结" value="已办结" />
-               <el-option label="已取消" value="已取消" />
+               <el-option v-for="dict in (proj_project_status || [])" :key="dict.value" :label="dict.label" :value="dict.value" />
             </el-select>
          </el-form-item>
          <el-form-item label="创建时间">
@@ -28,6 +24,12 @@
       <el-row :gutter="10" class="mb8">
          <el-col :span="1.5">
             <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['project:project:add']">新增</el-button>
+         </el-col>
+         <el-col :span="1.5">
+            <el-button type="info" plain icon="Upload" @click="handleImport" v-hasPermi="['project:project:import']">导入</el-button>
+         </el-col>
+         <el-col :span="1.5">
+            <el-button type="info" plain icon="DocumentCopy" @click="handlePaste" v-hasPermi="['project:project:add']">粘贴</el-button>
          </el-col>
          <el-col :span="1.5">
             <el-button type="success" plain icon="Edit" :disabled="single" @click="handleUpdate" v-hasPermi="['project:project:edit']">修改</el-button>
@@ -75,12 +77,7 @@
          </el-table-column>
          <el-table-column label="状态" align="center" prop="status" min-width="90">
             <template #default="scope">
-               <el-tag v-if="scope.row.status === '进行中'" type="primary">{{ scope.row.status }}</el-tag>
-               <el-tag v-else-if="scope.row.status === '已完成'" type="success">{{ scope.row.status }}</el-tag>
-               <el-tag v-else-if="scope.row.status === '已暂停'" type="warning">{{ scope.row.status }}</el-tag>
-               <el-tag v-else-if="scope.row.status === '已办结'" type="success">{{ scope.row.status }}</el-tag>
-               <el-tag v-else-if="scope.row.status === '已取消'" type="danger">{{ scope.row.status }}</el-tag>
-               <el-tag v-else type="info">{{ scope.row.status || '-' }}</el-tag>
+               <el-tag :type="getStatusTagType(scope.row.status)">{{ scope.row.status || '-' }}</el-tag>
             </template>
          </el-table-column>
          <el-table-column label="操作" align="center" min-width="140" class-name="small-padding fixed-width">
@@ -92,6 +89,7 @@
                   <template #dropdown>
                      <el-dropdown-menu>
                         <el-dropdown-item command="taskList">作业清单</el-dropdown-item>
+                        <el-dropdown-item command="changeStatus" v-hasPermi="['project:project:edit']">状态变更</el-dropdown-item>
                         <el-dropdown-item v-if="scope.row.status !== '已办结'" command="complete" v-hasPermi="['project:project:complete']">办结</el-dropdown-item>
                         <el-dropdown-item command="delete" v-hasPermi="['project:project:remove']">
                            <span style="color: var(--el-color-danger)">删除</span>
@@ -178,17 +176,29 @@
             <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="合同" prop="contractId">
-                     <el-input-number v-model="form.contractId" placeholder="合同ID（选填）" controls-position="right" :min="1" style="width: 100%" />
+                     <el-select
+                        v-model="form.contractId"
+                        filterable
+                        remote
+                        reserve-keyword
+                        placeholder="输入合同名称/编号搜索"
+                        :remote-method="searchContracts"
+                        :loading="contractLoading"
+                        clearable
+                        style="width: 100%"
+                     >
+                        <el-option
+                           v-for="item in contractOptions"
+                           :key="item.id"
+                           :label="item.contractNo + ' — ' + item.contractName"
+                           :value="item.id"
+                        />
+                     </el-select>
                   </el-form-item>
                </el-col>
                <el-col :span="8">
-                  <el-form-item label="状态" prop="status">
-                     <el-select v-model="form.status" placeholder="项目状态" style="width: 100%">
-                        <el-option label="进行中" value="进行中" />
-                        <el-option label="已完成" value="已完成" />
-                        <el-option label="已暂停" value="已暂停" />
-                        <el-option label="已取消" value="已取消" />
-                     </el-select>
+                  <el-form-item label="状态" v-if="form.id">
+                     <el-tag :type="getStatusTagType(form.status)">{{ form.status }}</el-tag>
                   </el-form-item>
                </el-col>
             </el-row>
@@ -221,11 +231,7 @@
             <el-descriptions-item label="联系电话">{{ detail.contactPhone || '-' }}</el-descriptions-item>
             <el-descriptions-item label="合同">{{ detail.contractName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="状态">
-               <el-tag v-if="detail.status === '进行中'" type="primary">{{ detail.status }}</el-tag>
-               <el-tag v-else-if="detail.status === '已完成'" type="success">{{ detail.status }}</el-tag>
-               <el-tag v-else-if="detail.status === '已暂停'" type="warning">{{ detail.status }}</el-tag>
-               <el-tag v-else-if="detail.status === '已取消'" type="danger">{{ detail.status }}</el-tag>
-               <el-tag v-else type="info">{{ detail.status || '-' }}</el-tag>
+               <el-tag :type="getStatusTagType(detail.status)">{{ detail.status || '-' }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="负责人" :span="2">{{ detail.leaderNames || '-' }}</el-descriptions-item>
             <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
@@ -285,16 +291,81 @@
             </div>
          </template>
       </el-dialog>
+
+      <!-- 状态变更对话框 -->
+      <el-dialog title="变更项目状态" v-model="statusOpen" width="420px" append-to-body>
+         <el-form label-width="80px">
+            <el-form-item label="项目名称">
+               <span>{{ currentRow.projectName }}</span>
+            </el-form-item>
+            <el-form-item label="当前状态">
+               <el-tag :type="getStatusTagType(currentRow.status)">{{ currentRow.status }}</el-tag>
+            </el-form-item>
+            <el-form-item label="变更为">
+               <el-select v-model="targetStatus" placeholder="请选择目标状态" style="width: 100%">
+                  <el-option v-for="s in allowedStatuses" :key="s" :label="s" :value="s" />
+               </el-select>
+            </el-form-item>
+         </el-form>
+         <template #footer>
+            <div class="dialog-footer">
+               <el-button type="primary" @click="submitStatusChange">确 定</el-button>
+               <el-button @click="statusOpen = false">取 消</el-button>
+            </div>
+         </template>
+      </el-dialog>
+
+      <!-- 区域粘贴对话框 -->
+      <el-dialog title="区域粘贴录入" v-model="pasteOpen" width="950px" append-to-body>
+         <el-alert type="info" :closable="false" style="margin-bottom: 12px">
+            从 Excel 中选中一块区域（Ctrl+C），然后在此处粘贴（Ctrl+V）。点击「解析数据」后可调整列映射。
+         </el-alert>
+         <el-input
+            v-model="pasteText"
+            type="textarea"
+            :rows="6"
+            placeholder="工程编号(Tab)项目名称(Tab)工程项目(Tab)项目类别(Tab)委托单位(Tab)联系人(Tab)联系电话(Tab)工程地点(Tab)负责人(Tab)备注&#10;从 Excel 复制后粘贴到此处..."
+         />
+         <div style="margin-top: 10px; text-align: right;">
+            <el-button type="primary" @click="parsePasteData">解析数据</el-button>
+            <el-button @click="pasteText = ''; pasteRows = []; pasteHeaders = []">清空</el-button>
+         </div>
+         <el-table v-if="pasteRows.length > 0" :data="pasteRows" border stripe max-height="300" style="margin-top: 12px">
+            <el-table-column v-for="(header, index) in pasteHeaders" :key="index" :min-width="120" align="center">
+               <template #header>
+                  <el-select v-model="header.field" size="small" style="width: 130px" placeholder="选择字段">
+                     <el-option v-for="opt in fieldOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+                  </el-select>
+               </template>
+               <template #default="scope">
+                  {{ scope.row[index] }}
+               </template>
+            </el-table-column>
+         </el-table>
+         <template #footer>
+            <div class="dialog-footer">
+               <span v-if="pasteRows.length > 0" style="float: left; color: #909399; line-height: 32px;">共解析到 {{ pasteRows.length }} 行数据</span>
+               <el-button type="primary" :disabled="pasteRows.length === 0" @click="submitPasteData">确认导入</el-button>
+               <el-button @click="pasteOpen = false">取 消</el-button>
+            </div>
+         </template>
+      </el-dialog>
+
+      <!-- Excel导入对话框 -->
+      <excel-import-dialog ref="importRef" title="项目导入" action="/project/project/importData" template-action="/project/project/importTemplate" template-file-name="project_template" update-support-label="是否更新已存在的项目数据" @success="getList" />
    </div>
 </template>
 
 <script setup name="Project">
-import { listProject, getProject, addProject, updateProject, delProject, completeProject } from "@/api/project/project"
+import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject } from "@/api/project/project"
 import { categoryTreeselect } from "@/api/project/category"
 import { listUser } from "@/api/system/user"
 import { listTask } from "@/api/project/task"
+import { listContract } from "@/api/project/contract"
+import ExcelImportDialog from "@/components/ExcelImportDialog"
 
 const { proxy } = getCurrentInstance()
+const { proj_project_status } = useDict("proj_project_status")
 
 const projectList = ref([])
 const open = ref(false)
@@ -308,12 +379,49 @@ const multiple = ref(true)
 const tableRef = ref(null)
 const categoryOptions = ref([])
 const userOptions = ref([])
+const contractOptions = ref([])
+const contractLoading = ref(false)
 const detail = ref({})
 const ids = ref([])
 const dateRange = ref([])
 const taskListOpen = ref(false)
 const taskLoading = ref(false)
 const taskListData = ref([])
+const currentProjectName = ref("")
+
+// 状态变更
+const statusOpen = ref(false)
+const currentRow = ref({})
+const targetStatus = ref("")
+const STATUS_FLOW = {
+   "待开始": ["进行中"],
+   "进行中": ["已暂停", "已完成", "已取消"],
+   "已暂停": ["进行中"],
+   "已完成": ["已办结"],
+   "已办结": [],
+   "已取消": [],
+}
+const allowedStatuses = computed(() => {
+   return STATUS_FLOW[currentRow.value.status] || []
+})
+
+// 区域粘贴
+const pasteOpen = ref(false)
+const pasteText = ref("")
+const pasteRows = ref([])
+const pasteHeaders = ref([])
+const fieldOptions = [
+   { label: "工程编号", value: "projectCode" },
+   { label: "项目名称", value: "projectName" },
+   { label: "工程项目", value: "engineeringProject" },
+   { label: "项目类别", value: "categoryName" },
+   { label: "委托单位", value: "clientUnit" },
+   { label: "联系人", value: "contactName" },
+   { label: "联系电话", value: "contactPhone" },
+   { label: "工程地点", value: "projectLocation" },
+   { label: "负责人", value: "leaderNames" },
+   { label: "备注", value: "remark" },
+]
 
 // 基于 ids 计算当前页选中状态
 const checkedMap = computed(() => {
@@ -328,7 +436,6 @@ const isIndeterminate = computed(() => {
   const len = projectList.value.filter(row => ids.value.includes(row.id)).length
   return len > 0 && len < projectList.value.length
 })
-const currentProjectName = ref("")
 
 const data = reactive({
   form: {},
@@ -347,6 +454,32 @@ const data = reactive({
 })
 
 const { queryParams, form, rules } = toRefs(data)
+
+/** 状态标签类型 */
+function getStatusTagType(status) {
+   const map = {
+      "待开始": "info",
+      "进行中": "primary",
+      "已完成": "success",
+      "已暂停": "warning",
+      "已办结": "success",
+      "已取消": "danger",
+   }
+   return map[status] || "info"
+}
+
+/** 模糊搜索合同 */
+function searchContracts(query) {
+  if (query) {
+    contractLoading.value = true
+    listContract({ contractNo: query, contractName: query, pageNum: 1, pageSize: 50 }).then(response => {
+      contractOptions.value = response.rows || []
+      contractLoading.value = false
+    }).catch(() => { contractLoading.value = false })
+  } else {
+    contractOptions.value = []
+  }
+}
 
 /** 查询项目列表 */
 function getList() {
@@ -454,7 +587,6 @@ function handleUpdate(row) {
   const id = row.id || ids.value[0]
   getProject(id).then(response => {
     form.value = response.data
-    // 确保 leaderIds 是数组
     if (!form.value.leaderIds) {
       form.value.leaderIds = []
     }
@@ -486,6 +618,8 @@ function handleTaskList(row) {
 function handleCommand(command, row) {
   if (command === "taskList") {
     handleTaskList(row)
+  } else if (command === "changeStatus") {
+    handleStatusChange(row)
   } else if (command === "complete") {
     handleComplete(row)
   } else if (command === "delete") {
@@ -501,6 +635,87 @@ function handleComplete(row) {
     getList()
     proxy.$modal.msgSuccess("办结成功")
   }).catch(() => {})
+}
+
+/** 状态变更 */
+function handleStatusChange(row) {
+   currentRow.value = row
+   targetStatus.value = ""
+   statusOpen.value = true
+}
+
+/** 提交状态变更 */
+function submitStatusChange() {
+   if (!targetStatus.value) {
+      proxy.$modal.msgError("请选择目标状态")
+      return
+   }
+   changeProjectStatus(currentRow.value.id, targetStatus.value).then(() => {
+      proxy.$modal.msgSuccess("状态变更成功")
+      statusOpen.value = false
+      getList()
+   })
+}
+
+/** 导入按钮 */
+function handleImport() {
+   proxy.$refs["importRef"].open()
+}
+
+/** 区域粘贴按钮 */
+function handlePaste() {
+   pasteText.value = ""
+   pasteRows.value = []
+   pasteHeaders.value = []
+   pasteOpen.value = true
+}
+
+/** 解析粘贴数据 */
+function parsePasteData() {
+   if (!pasteText.value || !pasteText.value.trim()) {
+      proxy.$modal.msgError("请先粘贴数据")
+      return
+   }
+   const lines = pasteText.value.trim().split(/\n/).filter(l => l.trim())
+   if (lines.length === 0) {
+      proxy.$modal.msgError("没有有效数据")
+      return
+   }
+   const rows = lines.map(line => line.split(/\t/))
+   const headerKeywords = ["工程编号", "项目名称", "工程项目", "项目类别", "委托单位", "联系人", "联系电话", "工程地点", "负责人", "备注"]
+   const firstRowIsHeader = rows[0].some(cell => headerKeywords.some(kw => cell.includes(kw)))
+   const dataRows = firstRowIsHeader ? rows.slice(1) : rows
+   pasteRows.value = dataRows
+   const numCols = dataRows[0]?.length || 0
+   pasteHeaders.value = []
+   for (let i = 0; i < numCols; i++) {
+      pasteHeaders.value.push({ field: fieldOptions[i]?.value || "", label: "第" + (i + 1) + "列" })
+   }
+}
+
+/** 提交粘贴数据 */
+function submitPasteData() {
+   const projects = pasteRows.value.map(row => {
+      const project = {}
+      pasteHeaders.value.forEach((header, index) => {
+         if (header.field && row[index] !== undefined) {
+            project[header.field] = row[index].trim()
+         }
+      })
+      return project
+   }).filter(p => p.projectCode)
+   if (projects.length === 0) {
+      proxy.$modal.msgError("没有有效数据（工程编号不能为空）")
+      return
+   }
+   batchAddProject(projects).then(response => {
+      proxy.$modal.msgSuccess(response.msg)
+      pasteOpen.value = false
+      pasteText.value = ""
+      pasteRows.value = []
+      pasteHeaders.value = []
+      getList()
+   })
 }
 
 /** 提交按钮 */

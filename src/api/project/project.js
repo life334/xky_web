@@ -59,3 +59,20 @@ export function completeProject(id) {
     method: 'put'
   })
 }
+
+// 变更项目状态
+export function changeProjectStatus(id, status) {
+  return request({
+    url: '/project/project/changeStatus/' + id + '/' + status,
+    method: 'put'
+  })
+}
+
+// 批量新增项目（区域粘贴）
+export function batchAddProject(data) {
+  return request({
+    url: '/project/project/batchAdd',
+    method: 'post',
+    data: data
+  })
+}

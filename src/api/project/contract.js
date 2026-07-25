@@ -51,3 +51,19 @@ export function exportContract(query) {
     params: query
   })
 }
+
+// 变更合同状态
+export function changeContractStatus(id, status) {
+  return request({
+    url: '/project/contract/changeStatus/' + id + '/' + status,
+    method: 'put'
+  })
+}
+
+// 查��合同关联的项目列表
+export function getContractProjects(id) {
+  return request({
+    url: '/project/contract/' + id + '/projects',
+    method: 'get'
+  })
+}

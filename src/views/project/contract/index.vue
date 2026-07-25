@@ -19,6 +19,16 @@
                <el-option label="其他合同" value="其他合同" />
             </el-select>
          </el-form-item>
+         <el-form-item label="状态" prop="status">
+            <el-select v-model="queryParams.status" placeholder="合同状态" clearable style="width: 140px">
+               <el-option
+                  v-for="dict in d('proj_contract_status')"
+                  :key="dict.value"
+                  :label="dict.label"
+                  :value="dict.value"
+               />
+            </el-select>
+         </el-form-item>
          <el-form-item>
             <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
             <el-button icon="Refresh" @click="resetQuery">重置</el-button>
@@ -52,6 +62,12 @@
                <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
+         <el-table-column label="状态" align="center" prop="status" min-width="90">
+            <template #default="scope">
+               <dict-tag v-if="scope.row.status" :options="d('proj_contract_status')" :value="scope.row.status" />
+               <span v-else style="color: #c0c4cc">草稿</span>
+            </template>
+         </el-table-column>
          <el-table-column label="合同金额" align="center" prop="contractAmount" min-width="130">
             <template #default="scope">
                <span v-if="scope.row.contractAmount != null">{{ formatAmount(scope.row.contractAmount) }}</span>
@@ -70,10 +86,11 @@
                <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
-         <el-table-column label="合同期限" align="center" prop="contractPeriod" min-width="100">
+         <el-table-column label="关联项目" align="center" min-width="110">
             <template #default="scope">
-               <span v-if="scope.row.contractPeriod">{{ scope.row.contractPeriod }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
+               <el-button link type="primary" @click="handleShowProjects(scope.row)">
+                  {{ scope.row.projectCount || 0 }} 个项目 ▸
+               </el-button>
             </template>
          </el-table-column>
          <el-table-column label="创建时间" align="center" prop="createTime" width="170">
@@ -81,11 +98,19 @@
                <span>{{ parseTime(scope.row.createTime) }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width">
+         <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
             <template #default="scope">
-               <el-button link type="primary" icon="View" @click="handleView(scope.row)">详情</el-button>
-               <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['project:contract:edit']">修改</el-button>
-               <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['project:contract:remove']">删除</el-button>
+               <el-button link type="primary" @click="handleView(scope.row)">详情</el-button>
+               <el-button link type="primary" @click="handleUpdate(scope.row)" v-hasPermi="['project:contract:edit']">修改</el-button>
+               <el-dropdown @command="(cmd) => handleCommand(cmd, scope.row)" style="vertical-align: middle">
+                  <el-button link type="primary">更多▾</el-button>
+                  <template #dropdown>
+                     <el-dropdown-menu>
+                        <el-dropdown-item command="status" icon="Switch">状态变更</el-dropdown-item>
+                        <el-dropdown-item command="delete" icon="Delete" style="color: #f56c6c" v-hasPermi="['project:contract:remove']">删除</el-dropdown-item>
+                     </el-dropdown-menu>
+                  </template>
+               </el-dropdown>
             </template>
          </el-table-column>
       </el-table>
@@ -186,6 +211,13 @@
                   </el-form-item>
                </el-col>
             </el-row>
+            <el-row :gutter="20" v-if="form.status">
+               <el-col :span="8">
+                  <el-form-item label="当前状态">
+                     <dict-tag :options="d('proj_contract_status')" :value="form.status" />
+                  </el-form-item>
+               </el-col>
+            </el-row>
             <el-row :gutter="20">
                <el-col :span="24">
                   <el-form-item label="支付条件" prop="paymentTerms">
@@ -215,6 +247,10 @@
             <el-descriptions-item label="合同编号" :span="1">{{ detail.contractNo }}</el-descriptions-item>
             <el-descriptions-item label="合同名称" :span="1">{{ detail.contractName }}</el-descriptions-item>
             <el-descriptions-item label="合同类型">{{ detail.contractType || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="合同状态">
+               <dict-tag v-if="detail.status" :options="d('proj_contract_status')" :value="detail.status" />
+               <span v-else>草稿</span>
+            </el-descriptions-item>
             <el-descriptions-item label="合同金额">{{ detail.contractAmount != null ? formatAmount(detail.contractAmount) : '—' }}</el-descriptions-item>
             <el-descriptions-item label="委托单位">{{ detail.clientUnit || '—' }}</el-descriptions-item>
             <el-descriptions-item label="合同期限">{{ detail.contractPeriod || '—' }}</el-descriptions-item>
@@ -240,17 +276,81 @@
             </div>
          </template>
       </el-dialog>
+
+      <!-- 状态变更弹窗 -->
+      <el-dialog title="状态变更" v-model="statusOpen" width="500px" append-to-body>
+         <el-form :model="statusForm" label-width="100px">
+            <el-form-item label="当前状态">
+               <dict-tag :options="d('proj_contract_status')" :value="statusForm.currentStatus" />
+            </el-form-item>
+            <el-form-item label="变更为">
+               <el-select v-model="statusForm.targetStatus" placeholder="请选择目标状态" style="width: 100%">
+                  <el-option
+                     v-for="s in statusForm.allowedStatuses"
+                     :key="s"
+                     :label="getDictLabel(d('proj_contract_status'), s)"
+                     :value="s"
+                  />
+               </el-select>
+            </el-form-item>
+         </el-form>
+         <template #footer>
+            <div class="dialog-footer">
+               <el-button type="primary" @click="submitStatusChange" :loading="statusSubmitting">确 定</el-button>
+               <el-button @click="statusOpen = false">取 消</el-button>
+            </div>
+         </template>
+      </el-dialog>
+
+      <!-- 关联项目弹窗 -->
+      <el-dialog :title="'关联项目 — ' + currentContractName" v-model="projectsOpen" width="1000px" append-to-body>
+         <el-table :data="projectList" stripe border max-height="450">
+            <el-table-column label="工程编号" align="center" prop="project_code" min-width="140" :show-overflow-tooltip="true" />
+            <el-table-column label="项目名称" align="center" prop="project_name" min-width="180" :show-overflow-tooltip="true" />
+            <el-table-column label="项目类别" align="center" prop="category_name" min-width="120" />
+            <el-table-column label="工程地点" align="center" prop="project_location" min-width="140" :show-overflow-tooltip="true" />
+            <el-table-column label="委托单位" align="center" prop="client_unit" min-width="140" :show-overflow-tooltip="true" />
+            <el-table-column label="状态" align="center" prop="status" min-width="90">
+               <template #default="scope">
+                  <dict-tag v-if="scope.row.status" :options="d('proj_project_status')" :value="scope.row.status" />
+                  <span v-else style="color: #c0c4cc">—</span>
+               </template>
+            </el-table-column>
+            <el-table-column label="合同单价" align="center" prop="contract_price" min-width="110">
+               <template #default="scope">
+                  <span v-if="scope.row.contract_price != null">{{ formatAmount(scope.row.contract_price) }}</span>
+                  <span v-else style="color: #c0c4cc">—</span>
+               </template>
+            </el-table-column>
+         </el-table>
+         <template #footer>
+            <div class="dialog-footer">
+               <el-button @click="projectsOpen = false">关 闭</el-button>
+            </div>
+         </template>
+      </el-dialog>
    </div>
 </template>
 
 <script setup name="Contract">
-import { listContract, getContract, addContract, updateContract, delContract } from "@/api/project/contract"
+import { listContract, getContract, addContract, updateContract, delContract, changeContractStatus, getContractProjects } from "@/api/project/contract"
 
 const { proxy } = getCurrentInstance()
+
+// 字典
+const { dicts } = useDict("proj_contract_status", "proj_project_status")
+
+/** 安全获取字典选项 */
+function d(key) {
+  const src = unref(dicts) || {}
+  return src[key] || []
+}
 
 const contractList = ref([])
 const open = ref(false)
 const detailOpen = ref(false)
+const statusOpen = ref(false)
+const projectsOpen = ref(false)
 const loading = ref(true)
 const showSearch = ref(true)
 const title = ref("")
@@ -259,16 +359,34 @@ const single = ref(true)
 const multiple = ref(true)
 const detail = ref({})
 const ids = ref([])
+const statusSubmitting = ref(false)
+const currentContractName = ref("")
+const projectList = ref([])
+
+/** 合同状态流转规则 */
+const STATUS_TRANSITIONS = {
+  "草稿":   ["已签署", "已取消"],
+  "已签署": ["执行中", "已取消"],
+  "执行中": ["已完成", "已取消"],
+  "已完成": ["已归档", "已取消"]
+}
 
 const data = reactive({
   form: {},
+  statusForm: {
+    contractId: null,
+    currentStatus: "",
+    targetStatus: "",
+    allowedStatuses: []
+  },
   queryParams: {
     pageNum: 1,
     pageSize: 10,
     contractNo: undefined,
     contractName: undefined,
     clientUnit: undefined,
-    contractType: undefined
+    contractType: undefined,
+    status: undefined
   },
   rules: {
     contractNo: [{ required: true, message: "合同编号不能为空", trigger: "blur" }],
@@ -276,13 +394,20 @@ const data = reactive({
   }
 })
 
-const { queryParams, form, rules } = toRefs(data)
+const { queryParams, form, rules, statusForm } = toRefs(data)
 
-/** 查询合同列表 */
+/** 根据字典值获取标签文本 */
+function getDictLabel(dictList, value) {
+  if (!dictList || !value) return value
+  const item = dictList.find(d => d.value === value)
+  return item ? item.label : value
+}
+
+/** 查询合同列表（含关联项目数） */
 function getList() {
   loading.value = true
   listContract(queryParams.value).then(response => {
-    contractList.value = response.rows
+    contractList.value = response.rows || []
     total.value = response.total
     loading.value = false
   })
@@ -314,38 +439,39 @@ function reset() {
     archivePath: undefined,
     contractPeriod: undefined,
     paymentTerms: undefined,
+    status: undefined,
     remark: undefined
   }
   proxy.resetForm("contractRef")
 }
 
-/** 搜索按钮操作 */
+/** 搜索 */
 function handleQuery() {
   queryParams.value.pageNum = 1
   getList()
 }
 
-/** 重置按钮操作 */
+/** 重置搜索 */
 function resetQuery() {
   proxy.resetForm("queryRef")
   handleQuery()
 }
 
-/** 多选框选中数据 */
+/** 多选框 */
 function handleSelectionChange(selection) {
   ids.value = selection.map(item => item.id)
   single.value = selection.length !== 1
   multiple.value = !selection.length
 }
 
-/** 新增按钮操作 */
+/** 新增 */
 function handleAdd() {
   reset()
   open.value = true
   title.value = "新增合同"
 }
 
-/** 修改按钮操作 */
+/** 修改 */
 function handleUpdate(row) {
   reset()
   const id = row.id || ids.value[0]
@@ -364,7 +490,7 @@ function handleView(row) {
   })
 }
 
-/** 提交按钮 */
+/** 提交 */
 function submitForm() {
   proxy.$refs["contractRef"].validate(valid => {
     if (valid) {
@@ -385,7 +511,50 @@ function submitForm() {
   })
 }
 
-/** 删除按钮操作 */
+/** 更多下拉操作 */
+function handleCommand(cmd, row) {
+  if (cmd === 'status') {
+    handleStatusChange(row)
+  } else if (cmd === 'delete') {
+    handleDelete(row)
+  }
+}
+
+/** 状态变更弹窗 */
+function handleStatusChange(row) {
+  const current = row.status || "草稿"
+  const allowed = STATUS_TRANSITIONS[current] || []
+  if (allowed.length === 0) {
+    proxy.$modal.msgWarning("当前状态【" + getDictLabel(d('proj_contract_status'), current) + "】为终态，不允许变更")
+    return
+  }
+  statusForm.value = {
+    contractId: row.id,
+    currentStatus: current,
+    targetStatus: "",
+    allowedStatuses: allowed
+  }
+  statusOpen.value = true
+}
+
+/** 提交状态变更 */
+function submitStatusChange() {
+  if (!statusForm.value.targetStatus) {
+    proxy.$modal.msgWarning("请选择目标状态")
+    return
+  }
+  statusSubmitting.value = true
+  changeContractStatus(statusForm.value.contractId, statusForm.value.targetStatus).then(() => {
+    proxy.$modal.msgSuccess("状态变更成功")
+    statusOpen.value = false
+    statusSubmitting.value = false
+    getList()
+  }).catch(() => {
+    statusSubmitting.value = false
+  })
+}
+
+/** 删除 */
 function handleDelete(row) {
   const idsToDelete = row.id ? [row.id] : ids.value
   const name = row.id ? row.contractNo : "所选合同"
@@ -397,7 +566,16 @@ function handleDelete(row) {
   }).catch(() => {})
 }
 
-/** 导出按钮操作 */
+/** 查看关联项目 */
+function handleShowProjects(row) {
+  currentContractName.value = row.contractNo + " — " + row.contractName
+  getContractProjects(row.id).then(response => {
+    projectList.value = response.data || []
+    projectsOpen.value = true
+  })
+}
+
+/** 导出 */
 function handleExport() {
   proxy.download('/project/contract/export', {
     ...queryParams.value
@@ -413,7 +591,6 @@ function formatAmount(val) {
 /** 日期解析 */
 function parseDate(val) {
   if (!val) return '—'
-  // 已经格式化过（如 YYYY-MM-DD）
   return val
 }
 
