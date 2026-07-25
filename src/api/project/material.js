@@ -42,3 +42,29 @@ export function delMaterial(ids) {
     method: 'delete'
   })
 }
+
+// 领取资料
+export function borrowMaterial(id, data) {
+  return request({
+    url: '/project/material/borrow/' + id,
+    method: 'put',
+    data: data
+  })
+}
+
+// 归还资料
+export function returnMaterial(id, data) {
+  return request({
+    url: '/project/material/return/' + id,
+    method: 'put',
+    data: data
+  })
+}
+
+// 查询流转记录
+export function getFlowList(id) {
+  return request({
+    url: '/project/material/flow/' + id,
+    method: 'get'
+  })
+}

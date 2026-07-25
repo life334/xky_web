@@ -82,6 +82,23 @@
                <span v-if="scope.row.tailDate">{{ scope.row.tailDate }}</span>
             </template>
          </el-table-column>
+         <el-table-column label="开票状态" align="center" prop="invoiceStatus" width="90">
+            <template #default="scope">
+               <el-tag v-if="scope.row.invoiceStatus === '未开'" type="info">未开</el-tag>
+               <el-tag v-else-if="scope.row.invoiceStatus === '已开'" type="success">已开</el-tag>
+               <el-tag v-else-if="scope.row.invoiceStatus === '已作废'" type="danger">已作废</el-tag>
+            </template>
+         </el-table-column>
+         <el-table-column label="发票号码" align="center" prop="invoiceNo" min-width="120" :show-overflow-tooltip="true">
+            <template #default="scope">
+               <span v-if="scope.row.invoiceNo">{{ scope.row.invoiceNo }}</span>
+            </template>
+         </el-table-column>
+         <el-table-column label="开票金额" align="center" prop="invoiceAmount" width="110">
+            <template #default="scope">
+               <span v-if="scope.row.invoiceAmount != null">{{ formatMoney(scope.row.invoiceAmount) }}</span>
+            </template>
+         </el-table-column>
          <el-table-column label="备注" align="center" prop="payRemark" min-width="140" :show-overflow-tooltip="true" />
          <el-table-column label="操作" align="center" width="80" fixed="right">
             <template #default="scope">
@@ -161,6 +178,35 @@
                <el-col :span="12">
                   <el-form-item label="备注">
                      <el-input v-model="editForm.remark" placeholder="备注" maxlength="500" />
+                  </el-form-item>
+               </el-col>
+            </el-row>
+
+            <!-- 开票信息 -->
+            <el-divider content-position="left">开票信息</el-divider>
+            <el-row :gutter="20">
+               <el-col :span="6">
+                  <el-form-item label="开票状态">
+                     <el-select v-model="editForm.invoiceStatus" placeholder="开票状态" clearable style="width:100%">
+                        <el-option label="未开" value="未开" />
+                        <el-option label="已开" value="已开" />
+                        <el-option label="已作废" value="已作废" />
+                     </el-select>
+                  </el-form-item>
+               </el-col>
+               <el-col :span="6">
+                  <el-form-item label="发票号码">
+                     <el-input v-model="editForm.invoiceNo" placeholder="发票号码" maxlength="100" />
+                  </el-form-item>
+               </el-col>
+               <el-col :span="6">
+                  <el-form-item label="开票日期">
+                     <el-date-picker v-model="editForm.invoiceDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                  </el-form-item>
+               </el-col>
+               <el-col :span="6">
+                  <el-form-item label="开票金额">
+                     <el-input-number v-model="editForm.invoiceAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="开票金额" />
                   </el-form-item>
                </el-col>
             </el-row>
@@ -278,6 +324,10 @@ const data = reactive({
     tailAmount: null,
     tailDate: null,
     remark: null,
+    invoiceStatus: null,
+    invoiceNo: null,
+    invoiceDate: null,
+    invoiceAmount: null,
     workloads: []
   }
 })
@@ -381,6 +431,13 @@ function handleEdit(row) {
       editForm.value.tailDate = tail ? tail.payTime : null
       editForm.value.remark = prepay ? prepay.remark : (tail ? tail.remark : null)
 
+      // 填充开票信息（预付款优先）
+      const invSrc = prepay || tail
+      editForm.value.invoiceStatus = invSrc ? invSrc.invoiceStatus : null
+      editForm.value.invoiceNo = invSrc ? invSrc.invoiceNo : null
+      editForm.value.invoiceDate = invSrc ? invSrc.invoiceDate : null
+      editForm.value.invoiceAmount = invSrc ? invSrc.invoiceAmount : null
+
       // 填充工作量
       editForm.value.workloads = workloads.map(w => ({
         workloadId: w.id,
@@ -427,7 +484,11 @@ function submitSettlement() {
       amount: editForm.value.prepayAmount,
       payTime: editForm.value.prepayDate,
       payUnit: editForm.value.payUnit,
-      payMethod: editForm.value.payMethod
+      payMethod: editForm.value.payMethod,
+      invoiceStatus: editForm.value.invoiceStatus,
+      invoiceNo: editForm.value.invoiceNo,
+      invoiceDate: editForm.value.invoiceDate,
+      invoiceAmount: editForm.value.invoiceAmount
     },
     tail: {
       amount: editForm.value.tailAmount,

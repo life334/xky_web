@@ -41,19 +41,29 @@
          <el-col :span="1.5">
             <el-button type="warning" plain icon="Download" @click="handleExport" v-hasPermi="['project:task:export']">导出</el-button>
          </el-col>
-         <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar>
+         <!-- <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar> -->
+         <el-col :span="6" style="display: flex; align-items: center; justify-content: flex-end; ">
+            <el-radio-group v-model="viewMode" size="small" @change="handleViewModeChange">
+               <el-radio-button value="flat">平铺视图</el-radio-button>
+               <el-radio-button value="byProject">按项目查看</el-radio-button>
+               <el-radio-button value="byUser">按人查看</el-radio-button>
+            </el-radio-group>
+         </el-col>
       </el-row>
 
-      <el-table v-loading="loading" :data="taskList" stripe border @selection-change="handleSelectionChange">
-         <el-table-column type="selection" width="50" align="center" />
+      <el-table v-loading="loading" :data="displayTaskList" stripe border row-key="id"
+         :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
+         :default-expand-all="viewMode !== 'flat'"
+         @selection-change="handleSelectionChange">
+         <el-table-column type="selection" width="50" align="center" v-if="viewMode === 'flat'" />
          <el-table-column label="任务名称" align="center" prop="taskName" :show-overflow-tooltip="true" min-width="160" />
-         <el-table-column label="所属项目" align="center" prop="projectName" min-width="180">
+         <el-table-column v-if="viewMode !== 'byProject'" label="所属项目" align="center" prop="projectName" min-width="180">
             <template #default="scope">
                <span v-if="scope.row.projectName">{{ scope.row.projectName }}</span>
                <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
-         <el-table-column label="执行人" align="center" prop="userName" min-width="100">
+         <el-table-column v-if="viewMode !== 'byUser'" label="执行人" align="center" prop="userName" min-width="100">
             <template #default="scope">
                <span v-if="scope.row.userName">{{ scope.row.userName }}</span>
                <span v-else style="color: #c0c4cc">—</span>
@@ -240,6 +250,7 @@ const projectOptions = ref([])
 const userOptions = ref([])
 const detail = ref({})
 const ids = ref([])
+const viewMode = ref("flat")
 
 const data = reactive({
   form: {},
@@ -259,6 +270,43 @@ const data = reactive({
 })
 
 const { queryParams, form, rules } = toRefs(data)
+
+/** 树形展示数据 */
+const displayTaskList = computed(() => {
+  if (viewMode.value === "flat") return taskList.value
+  const list = taskList.value
+  const groups = {}
+  const groupKey = viewMode.value === "byProject" ? "projectName" : "userName"
+  const groupLabel = viewMode.value === "byProject"
+    ? (p) => p || "未关联项目"
+    : (u) => u || "未分配人员"
+
+  list.forEach((item, idx) => {
+    const key = item[groupKey] || "__empty__"
+    if (!groups[key]) {
+      groups[key] = {
+        id: "grp_" + key + "_" + idx,
+        label: groupLabel(item[groupKey]),
+        count: 0,
+        children: []
+      }
+    }
+    groups[key].count++
+    groups[key].children.push({ ...item })
+  })
+  return Object.values(groups).map(g => ({
+    id: g.id,
+    taskName: g.label + "（" + g.count + " 个任务）",
+    children: g.children,
+    hasChildren: true
+  }))
+})
+
+/** 切换视图模式 */
+function handleViewModeChange() {
+  // 切换模式时重置选中
+  ids.value = []
+}
 
 /** 查询任务列表 */
 function getList() {

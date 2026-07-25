@@ -19,6 +19,13 @@
                <el-option label="其他" value="其他" />
             </el-select>
          </el-form-item>
+         <el-form-item label="状态" prop="status">
+            <el-select v-model="queryParams.status" placeholder="资料状态" clearable style="width: 140px">
+               <el-option label="待领取" value="待领取" />
+               <el-option label="已领取" value="已领取" />
+               <el-option label="已归还" value="已归还" />
+            </el-select>
+         </el-form-item>
          <el-form-item>
             <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
             <el-button icon="Refresh" @click="resetQuery">重置</el-button>
@@ -73,16 +80,27 @@
                <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
+         <el-table-column label="状态" align="center" prop="status" width="90">
+            <template #default="scope">
+               <el-tag v-if="scope.row.status === '待领取'" type="info">待领取</el-tag>
+               <el-tag v-else-if="scope.row.status === '已领取'" type="warning">已领取</el-tag>
+               <el-tag v-else-if="scope.row.status === '已归还'" type="success">已归还</el-tag>
+               <span v-else style="color: #c0c4cc">—</span>
+            </template>
+         </el-table-column>
          <el-table-column label="备注" align="center" prop="remark" min-width="160" :show-overflow-tooltip="true">
             <template #default="scope">
                <span v-if="scope.row.remark">{{ scope.row.remark }}</span>
                <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
-         <el-table-column label="操作" align="center" width="150" class-name="small-padding fixed-width">
+         <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width">
             <template #default="scope">
+               <el-button v-if="scope.row.status === '待领取' || scope.row.status === '已归还'" link type="warning" @click="handleBorrow(scope.row)" v-hasPermi="['project:material:borrow']" v-text="scope.row.status === '已归还' ? '再次领取' : '领取'" />
+               <el-button v-if="scope.row.status === '已领取'" link type="success" @click="handleReturn(scope.row)" v-hasPermi="['project:material:return']">归还</el-button>
                <el-button link type="primary" @click="handleUpdate(scope.row)" v-hasPermi="['project:material:edit']">修改</el-button>
-               <el-button link type="primary" @click="handleDelete(scope.row)" v-hasPermi="['project:material:remove']">删除</el-button>
+               <el-button link type="primary" @click="handleFlow(scope.row)">流转</el-button>
+               <el-button link type="danger" @click="handleDelete(scope.row)" v-hasPermi="['project:material:remove']">删除</el-button>
             </template>
          </el-table-column>
       </el-table>
@@ -145,12 +163,54 @@
             </div>
          </template>
       </el-dialog>
+
+      <!-- 领取/归还对话框 -->
+      <el-dialog :title="borrowTitle" v-model="borrowOpen" width="500px" append-to-body>
+         <el-form ref="borrowRef" :model="borrowForm" label-width="80px">
+            <el-form-item v-if="borrowForm.flowType === '领取'" label="担保人" prop="guarantorId" :rules="[{ required: true, message: '请选择担保人', trigger: 'change' }]">
+               <el-select v-model="borrowForm.guarantorId" filterable placeholder="请选择担保人" style="width: 100%">
+                  <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
+               </el-select>
+            </el-form-item>
+            <el-form-item label="备注">
+               <el-input v-model="borrowForm.remark" type="textarea" placeholder="备注（选填）" maxlength="200" :rows="2" />
+            </el-form-item>
+         </el-form>
+         <template #footer>
+            <div class="dialog-footer">
+               <el-button type="primary" @click="submitBorrow">确 定</el-button>
+               <el-button @click="borrowOpen = false">取 消</el-button>
+            </div>
+         </template>
+      </el-dialog>
+
+      <!-- 流转记录对话框 -->
+      <el-dialog title="流转记录" v-model="flowOpen" width="600px" append-to-body>
+         <el-timeline v-if="flowList.length > 0">
+            <el-timeline-item v-for="item in flowList" :key="item.id"
+               :type="item.flowType === '领取' ? 'primary' : 'success'"
+               :timestamp="item.operateTime" placement="top">
+               <el-card shadow="never">
+                  <p><strong>{{ item.flowType }}</strong> — 操作人：{{ item.userName || '—' }}</p>
+                  <p v-if="item.guarantorName">担保人：{{ item.guarantorName }}</p>
+                  <p v-if="item.remark">备注：{{ item.remark }}</p>
+               </el-card>
+            </el-timeline-item>
+         </el-timeline>
+         <el-empty v-else description="暂无流转记录" />
+         <template #footer>
+            <div class="dialog-footer">
+               <el-button @click="flowOpen = false">关 闭</el-button>
+            </div>
+         </template>
+      </el-dialog>
    </div>
 </template>
 
 <script setup name="Material">
-import { listMaterial, getMaterial, addMaterial, updateMaterial, delMaterial } from "@/api/project/material"
+import { listMaterial, getMaterial, addMaterial, updateMaterial, delMaterial, borrowMaterial, returnMaterial, getFlowList } from "@/api/project/material"
 import { listProject } from "@/api/project/project"
+import { listUser } from "@/api/system/user"
 
 const { proxy } = getCurrentInstance()
 
@@ -164,6 +224,17 @@ const single = ref(true)
 const multiple = ref(true)
 const ids = ref([])
 const projectOptions = ref([])
+const userOptions = ref([])
+
+// 领取/归还
+const borrowOpen = ref(false)
+const borrowTitle = ref("")
+const borrowForm = ref({ flowType: "", guarantorId: undefined, remark: "" })
+const currentMaterial = ref({})
+
+// 流转记录
+const flowOpen = ref(false)
+const flowList = ref([])
 
 const data = reactive({
   form: {},
@@ -172,7 +243,8 @@ const data = reactive({
     pageSize: 10,
     projectId: undefined,
     contactName: undefined,
-    resultType: undefined
+    resultType: undefined,
+    status: undefined
   },
   rules: {
     projectId: [{ required: true, message: "请选择项目", trigger: "change" }]
@@ -181,12 +253,13 @@ const data = reactive({
 
 const { queryParams, form, rules } = toRefs(data)
 
-/** 加载项目下拉选项 */
+/** 加载下拉选项 */
 function loadOptions() {
   listProject({ pageNum: 1, pageSize: 999 }).then(r => { projectOptions.value = r.rows || [] })
+  listUser({ pageNum: 1, pageSize: 999 }).then(r => { userOptions.value = r.rows || [] })
 }
 
-/** 查询资料提交列表 */
+/** 查询 */
 function getList() {
   loading.value = true
   listMaterial(queryParams.value).then(response => {
@@ -196,59 +269,33 @@ function getList() {
   })
 }
 
-/** 取消按钮 */
-function cancel() {
-  open.value = false
-  reset()
-}
+function cancel() { open.value = false; reset() }
 
-/** 表单重置 */
 function reset() {
   form.value = {
-    id: undefined,
-    projectId: undefined,
-    submitTime: undefined,
-    contactName: undefined,
-    contactPhone: undefined,
-    resultType: undefined,
-    remark: undefined
+    id: undefined, projectId: undefined, submitTime: undefined,
+    contactName: undefined, contactPhone: undefined,
+    resultType: undefined, remark: undefined
   }
   proxy.resetForm("materialRef")
 }
 
-/** 搜索 */
-function handleQuery() {
-  queryParams.value.pageNum = 1
-  getList()
-}
+function handleQuery() { queryParams.value.pageNum = 1; getList() }
+function resetQuery() { proxy.resetForm("queryRef"); handleQuery() }
 
-/** 重置 */
-function resetQuery() {
-  proxy.resetForm("queryRef")
-  handleQuery()
-}
-
-/** 多选框 */
 function handleSelectionChange(selection) {
   ids.value = selection.map(item => item.id)
   single.value = selection.length !== 1
   multiple.value = !selection.length
 }
 
-/** 成果类型 Tag 颜色 */
 function resultTypeTag(type) {
   const map = { '报告': '', '图纸': 'success', '数据': 'primary', '影像': 'warning', '文档': 'info' }
   return map[type] || 'info'
 }
 
-/** 新增 */
-function handleAdd() {
-  reset()
-  open.value = true
-  title.value = "新增资料提交"
-}
+function handleAdd() { reset(); open.value = true; title.value = "新增资料提交" }
 
-/** 修改 */
 function handleUpdate(row) {
   reset()
   const id = row.id || ids.value[0]
@@ -259,28 +306,69 @@ function handleUpdate(row) {
   })
 }
 
-/** 提交 */
 function submitForm() {
   proxy.$refs["materialRef"].validate(valid => {
     if (valid) {
-      if (form.value.id != undefined) {
-        updateMaterial(form.value).then(response => {
-          proxy.$modal.msgSuccess("修改成功")
-          open.value = false
-          getList()
-        })
-      } else {
-        addMaterial(form.value).then(response => {
-          proxy.$modal.msgSuccess("新增成功")
-          open.value = false
-          getList()
-        })
-      }
+      const action = form.value.id != undefined ? updateMaterial : addMaterial
+      action(form.value).then(() => {
+        proxy.$modal.msgSuccess(form.value.id != undefined ? "修改成功" : "新增成功")
+        open.value = false
+        getList()
+      })
     }
   })
 }
 
-/** 删除 */
+/** 领取/再次领取 */
+function handleBorrow(row) {
+  currentMaterial.value = row
+  borrowForm.value = { flowType: "领取", guarantorId: undefined, remark: "" }
+  borrowTitle.value = row.status === "已归还" ? "再次领取" : "领取资料"
+  borrowOpen.value = true
+}
+
+/** 归还 */
+function handleReturn(row) {
+  currentMaterial.value = row
+  borrowForm.value = { flowType: "归还", guarantorId: undefined, remark: "" }
+  borrowTitle.value = "归还资料"
+  borrowOpen.value = true
+}
+
+/** 提交领取/归还 */
+function submitBorrow() {
+  const id = currentMaterial.value.id
+  const data = { remark: borrowForm.value.remark }
+  if (borrowForm.value.flowType === "领取") {
+    if (!borrowForm.value.guarantorId) {
+      proxy.$modal.msgWarning("请选择担保人")
+      return
+    }
+    data.guarantorId = borrowForm.value.guarantorId
+    borrowMaterial(id, data).then(() => {
+      proxy.$modal.msgSuccess("领取成功")
+      borrowOpen.value = false
+      getList()
+    })
+  } else {
+    proxy.$modal.confirm("确认归还该资料？").then(() => {
+      returnMaterial(id, data).then(() => {
+        proxy.$modal.msgSuccess("归还成功")
+        borrowOpen.value = false
+        getList()
+      })
+    }).catch(() => {})
+  }
+}
+
+/** 查看流转记录 */
+function handleFlow(row) {
+  getFlowList(row.id).then(response => {
+    flowList.value = response.data || []
+    flowOpen.value = true
+  })
+}
+
 function handleDelete(row) {
   const idsToDelete = row.id ? [row.id] : ids.value
   proxy.$modal.confirm('是否确认删除所选资料提交记录?').then(function() {
@@ -291,11 +379,8 @@ function handleDelete(row) {
   }).catch(() => {})
 }
 
-/** 导出 */
 function handleExport() {
-  proxy.download('/project/material/export', {
-    ...queryParams.value
-  }, `material_${new Date().getTime()}.xlsx`)
+  proxy.download('/project/material/export', { ...queryParams.value }, `material_${new Date().getTime()}.xlsx`)
 }
 
 loadOptions()
