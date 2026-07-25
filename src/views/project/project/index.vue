@@ -42,7 +42,7 @@
       </el-row>
 
       <el-table ref="tableRef" v-loading="loading" :data="projectList" stripe border @selection-change="handleSelectionChange">
-         <el-table-column width="70" align="center" label="序号">
+         <el-table-column min-width="70" align="center" label="序号">
             <template #header>
                <el-checkbox :model-value="isAllChecked" :indeterminate="isIndeterminate" @change="handleCheckAll" /> 序号
             </template>
@@ -51,44 +51,26 @@
                <span>{{ (queryParams.pageNum - 1) * queryParams.pageSize + scope.$index + 1 }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="工程编号" align="center" prop="projectCode" :show-overflow-tooltip="true" min-width="130" />
+         <el-table-column label="工程编号" align="center" prop="projectCode" :show-overflow-tooltip="true" min-width="100" />
          <el-table-column label="项目名称" align="center" prop="projectName" :show-overflow-tooltip="true" min-width="150" />
          <el-table-column label="工程项目" align="center" prop="engineeringProject" :show-overflow-tooltip="true" min-width="140" />
          <el-table-column label="委托单位" align="center" prop="clientUnit" :show-overflow-tooltip="true" min-width="130" />
-         <el-table-column label="合同" align="center" prop="contractName" min-width="120">
-            <template #default="scope">
-               <span v-if="scope.row.contractName">{{ scope.row.contractName }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="负责人" align="center" prop="leaderNames" min-width="110">
-            <template #default="scope">
-               <span v-if="scope.row.leaderNames">{{ scope.row.leaderNames }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="联系人" align="center" prop="contactName" min-width="90">
-            <template #default="scope">
-               <span v-if="scope.row.contactName">{{ scope.row.contactName }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
-            </template>
-         </el-table-column>
+         <el-table-column label="合同" align="center" prop="contractName" min-width="100" />
+         <el-table-column label="负责人" align="center" prop="leaderNames" min-width="110" />
+         <el-table-column label="联系人" align="center" prop="contactName" min-width="90" />
          <el-table-column label="安排日期" align="center" prop="assignDate" width="110">
             <template #default="scope">
                <span v-if="scope.row.assignDate">{{ parseTime(scope.row.assignDate, '{y}-{m}-{d}') }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
          <el-table-column label="工期要求" align="center" prop="durationRequire" width="100">
             <template #default="scope">
                <span v-if="scope.row.durationRequire != null">{{ scope.row.durationRequire }}天</span>
-               <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
          <el-table-column label="总时长" align="center" prop="totalDuration" width="90">
             <template #default="scope">
                <span v-if="scope.row.totalDuration != null">{{ scope.row.totalDuration }}天</span>
-               <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
          <el-table-column label="状态" align="center" prop="status" min-width="90">
@@ -98,16 +80,25 @@
                <el-tag v-else-if="scope.row.status === '已暂停'" type="warning">{{ scope.row.status }}</el-tag>
                <el-tag v-else-if="scope.row.status === '已办结'" type="success">{{ scope.row.status }}</el-tag>
                <el-tag v-else-if="scope.row.status === '已取消'" type="danger">{{ scope.row.status }}</el-tag>
-               <el-tag v-else type="info">{{ scope.row.status || '—' }}</el-tag>
+               <el-tag v-else type="info">{{ scope.row.status || '-' }}</el-tag>
             </template>
          </el-table-column>
-         <el-table-column label="操作" align="center" min-width="150" class-name="small-padding fixed-width">
+         <el-table-column label="操作" align="center" min-width="140" class-name="small-padding fixed-width">
             <template #default="scope">
-               <el-button link type="primary" @click="handleView(scope.row)">详情</el-button>
-               <el-button link type="success" @click="handleTaskList(scope.row)">作业清单</el-button>
-               <el-button v-if="scope.row.status !== '已办结'" link type="warning" @click="handleComplete(scope.row)" v-hasPermi="['project:project:complete']">办结</el-button>
-               <el-button link type="primary" @click="handleUpdate(scope.row)" v-hasPermi="['project:project:edit']">修改</el-button>
-               <el-button link type="primary" @click="handleDelete(scope.row)" v-hasPermi="['project:project:remove']">删除</el-button>
+               <el-button link type="primary" size="small" @click="handleView(scope.row)">详情</el-button>
+               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:project:edit']">修改</el-button>
+               <el-dropdown style="vertical-align: middle;margin-left: 6px;" @command="(cmd) => handleCommand(cmd, scope.row)">
+                  <el-button link size="small" type="primary">更多<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
+                  <template #dropdown>
+                     <el-dropdown-menu>
+                        <el-dropdown-item command="taskList">作业清单</el-dropdown-item>
+                        <el-dropdown-item v-if="scope.row.status !== '已办结'" command="complete" v-hasPermi="['project:project:complete']">办结</el-dropdown-item>
+                        <el-dropdown-item command="delete" v-hasPermi="['project:project:remove']">
+                           <span style="color: var(--el-color-danger)">删除</span>
+                        </el-dropdown-item>
+                     </el-dropdown-menu>
+                  </template>
+               </el-dropdown>
             </template>
          </el-table-column>
       </el-table>
@@ -222,25 +213,25 @@
          <el-descriptions :column="2" border>
             <el-descriptions-item label="工程编号" :span="1">{{ detail.projectCode }}</el-descriptions-item>
             <el-descriptions-item label="项目名称" :span="1">{{ detail.projectName }}</el-descriptions-item>
-            <el-descriptions-item label="项目类别">{{ detail.categoryName || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="工程项目">{{ detail.engineeringProject || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="委托单位">{{ detail.clientUnit || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="工程地点">{{ detail.projectLocation || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="联系人">{{ detail.contactName || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="联系电话">{{ detail.contactPhone || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="合同">{{ detail.contractName || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="项目类别">{{ detail.categoryName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="工程项目">{{ detail.engineeringProject || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="委托单位">{{ detail.clientUnit || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="工程地点">{{ detail.projectLocation || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="联系人">{{ detail.contactName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="联系电话">{{ detail.contactPhone || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="合同">{{ detail.contractName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="状态">
                <el-tag v-if="detail.status === '进行中'" type="primary">{{ detail.status }}</el-tag>
                <el-tag v-else-if="detail.status === '已完成'" type="success">{{ detail.status }}</el-tag>
                <el-tag v-else-if="detail.status === '已暂停'" type="warning">{{ detail.status }}</el-tag>
                <el-tag v-else-if="detail.status === '已取消'" type="danger">{{ detail.status }}</el-tag>
-               <el-tag v-else type="info">{{ detail.status || '—' }}</el-tag>
+               <el-tag v-else type="info">{{ detail.status || '-' }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="负责人" :span="2">{{ detail.leaderNames || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="备注" :span="2">{{ detail.remark || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="创建者">{{ detail.createBy || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="负责人" :span="2">{{ detail.leaderNames || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="创建者">{{ detail.createBy || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ parseTime(detail.createTime) }}</el-descriptions-item>
-            <el-descriptions-item label="修改者">{{ detail.updateBy || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="修改者">{{ detail.updateBy || '-' }}</el-descriptions-item>
             <el-descriptions-item label="修改时间">{{ parseTime(detail.updateTime) }}</el-descriptions-item>
          </el-descriptions>
          <template #footer>
@@ -254,12 +245,7 @@
       <el-dialog :title="'作业清单 — ' + currentProjectName" v-model="taskListOpen" width="900px" append-to-body>
          <el-table v-loading="taskLoading" :data="taskListData" stripe border max-height="500">
             <el-table-column label="任务名称" align="center" prop="taskName" :show-overflow-tooltip="true" min-width="160" />
-            <el-table-column label="执行人" align="center" prop="userName" min-width="100">
-               <template #default="scope">
-                  <span v-if="scope.row.userName">{{ scope.row.userName }}</span>
-                  <span v-else style="color: #c0c4cc">—</span>
-               </template>
-            </el-table-column>
+            <el-table-column label="执行人" align="center" prop="userName" min-width="100" />
             <el-table-column label="安排日期" align="center" prop="assignDate" width="120">
                <template #default="scope">
                   <span>{{ parseTime(scope.row.assignDate, '{y}-{m}-{d}') }}</span>
@@ -494,6 +480,17 @@ function handleTaskList(row) {
     taskListData.value = response.rows || []
     taskLoading.value = false
   })
+}
+
+/** 下拉菜单命令分发 */
+function handleCommand(command, row) {
+  if (command === "taskList") {
+    handleTaskList(row)
+  } else if (command === "complete") {
+    handleComplete(row)
+  } else if (command === "delete") {
+    handleDelete(row)
+  }
 }
 
 /** 办结按钮操作 */
