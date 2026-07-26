@@ -74,7 +74,7 @@
     </el-table>
 
     <!-- 编辑弹窗 -->
-    <el-dialog :title="'合同结算「' + editForm.contractName + '」'" v-model="dialogVisible" width="700px" destroy-on-close>
+    <el-dialog :title="'合同结算「' + editForm.contractName + '」'" :model-value="dialogVisible" @update:model-value="dialogVisible = $event" width="700px" destroy-on-close>
       <el-form ref="formRef" :model="editForm" :rules="rules" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
@@ -110,7 +110,7 @@
     </el-dialog>
 
     <!-- 合同单价明细弹窗 -->
-    <el-dialog :title="'合同单价明细「' + currentContractName + '」'" v-model="priceDialogVisible" width="500px" destroy-on-close>
+    <el-dialog :title="'合同单价明细「' + currentContractName + '」'" :model-value="priceDialogVisible" @update:model-value="priceDialogVisible = $event" width="500px" destroy-on-close>
       <el-table :data="priceData" border stripe size="small">
         <el-table-column label="测绘项目" prop="categoryName" />
         <el-table-column label="合同单价" prop="price" align="right">

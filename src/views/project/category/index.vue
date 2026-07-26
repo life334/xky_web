@@ -95,7 +95,7 @@
       </el-table>
 
       <!-- 添加或修改项目类别对话框 -->
-      <el-dialog :title="title" v-model="open" width="600px" append-to-body>
+      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="600px" append-to-body>
          <el-form ref="categoryRef" :model="form" :rules="rules" label-width="100px">
             <el-row>
                <el-col :span="24" v-if="form.parentId !== undefined && form.parentId !== null">

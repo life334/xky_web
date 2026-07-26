@@ -224,7 +224,7 @@
     </el-row>
 
     <!-- 我的待办弹窗 -->
-    <el-dialog v-model="showMyTodos" title="我的待办任务" width="680px" append-to-body>
+    <el-dialog :model-value="showMyTodos" @update:model-value="showMyTodos = $event" title="我的待办任务" width="680px" append-to-body>
       <el-table :data="dashboard.myTodos" stripe size="small" @row-click="goTaskDetail">
         <el-table-column prop="taskName" label="任务名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="projectName" label="所属项目" min-width="150" show-overflow-tooltip />

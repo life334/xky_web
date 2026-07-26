@@ -46,6 +46,13 @@ import DictTag from '@/components/DictTag'
 
 const app = createApp(App)
 
+// 抑制 Element Plus 内部组件（ElRovingFocusGroupCollectionItem 等）的非根元素指令警告
+// 这是 Element Plus 2.x 的已知问题，不影响功能，但会在控制台大量刷屏
+app.config.warnHandler = (msg) => {
+  if (msg.includes('non-element root node')) return
+  console.warn(msg)
+}
+
 // 全局方法挂载
 app.config.globalProperties.useDict = useDict
 app.config.globalProperties.download = download

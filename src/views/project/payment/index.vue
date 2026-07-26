@@ -95,7 +95,7 @@
       <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
       <!-- 添加或修改付款记录对话框 -->
-      <el-dialog :title="title" v-model="open" width="80%" append-to-body>
+      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
          <el-form ref="paymentRef" :model="form" :rules="rules" label-width="90px">
             <el-row :gutter="20">
                <el-col :span="8">

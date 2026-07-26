@@ -85,7 +85,9 @@
                <el-button link type="primary" size="small" @click="handleView(scope.row)">详情</el-button>
                <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:project:edit']">修改</el-button>
                <el-dropdown style="vertical-align: middle;margin-left: 6px;" @command="(cmd) => handleCommand(cmd, scope.row)">
-                  <el-button link size="small" type="primary">更多<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
+                  <div>
+                     <el-button link size="small" type="primary">更多<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
+                  </div>
                   <template #dropdown>
                      <el-dropdown-menu>
                         <el-dropdown-item command="taskList">作业清单</el-dropdown-item>
@@ -104,7 +106,7 @@
       <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
       <!-- 添加或修改项目对话框 -->
-      <el-dialog :title="title" v-model="open" width="80%" append-to-body>
+      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
          <el-form ref="projectRef" :model="form" :rules="rules" label-width="90px">
             <el-row :gutter="20">
                <el-col :span="8">
@@ -186,6 +188,7 @@
                         :loading="contractLoading"
                         clearable
                         style="width: 100%"
+                        @visible-change="onContractVisibleChange"
                      >
                         <el-option
                            v-for="item in contractOptions"
@@ -219,7 +222,7 @@
       </el-dialog>
 
       <!-- 项目详情对话框 -->
-      <el-dialog :title="'项目详情 — ' + detail.projectCode" v-model="detailOpen" width="750px" append-to-body>
+      <el-dialog :title="'项目详情 — ' + detail.projectCode" :model-value="detailOpen" @update:model-value="detailOpen = $event" width="750px" append-to-body>
          <el-descriptions :column="2" border>
             <el-descriptions-item label="工程编号" :span="1">{{ detail.projectCode }}</el-descriptions-item>
             <el-descriptions-item label="项目名称" :span="1">{{ detail.projectName }}</el-descriptions-item>
@@ -248,7 +251,7 @@
       </el-dialog>
 
       <!-- 作业清单对话框 -->
-      <el-dialog :title="'作业清单 — ' + currentProjectName" v-model="taskListOpen" width="900px" append-to-body>
+      <el-dialog :title="'作业清单 — ' + currentProjectName" :model-value="taskListOpen" @update:model-value="taskListOpen = $event" width="900px" append-to-body>
          <el-table v-loading="taskLoading" :data="taskListData" stripe border max-height="500">
             <el-table-column label="任务名称" align="center" prop="taskName" :show-overflow-tooltip="true" min-width="160" />
             <el-table-column label="执行人" align="center" prop="userName" min-width="100" />
@@ -293,7 +296,7 @@
       </el-dialog>
 
       <!-- 状态变更对话框 -->
-      <el-dialog title="变更项目状态" v-model="statusOpen" width="420px" append-to-body>
+      <el-dialog title="变更项目状态" :model-value="statusOpen" @update:model-value="statusOpen = $event" width="420px" append-to-body>
          <el-form label-width="80px">
             <el-form-item label="项目名称">
                <span>{{ currentRow.projectName }}</span>
@@ -316,7 +319,7 @@
       </el-dialog>
 
       <!-- 区域粘贴对话框 -->
-      <el-dialog title="区域粘贴录入" v-model="pasteOpen" width="950px" append-to-body>
+      <el-dialog title="区域粘贴录入" :model-value="pasteOpen" @update:model-value="pasteOpen = $event" width="950px" append-to-body>
          <el-alert type="info" :closable="false" style="margin-bottom: 12px">
             从 Excel 中选中一块区域（Ctrl+C），然后在此处粘贴（Ctrl+V）。点击「解析数据」后可调整列映射。
          </el-alert>
@@ -470,14 +473,22 @@ function getStatusTagType(status) {
 
 /** 模糊搜索合同 */
 function searchContracts(query) {
+  contractLoading.value = true
+  const params = { pageNum: 1, pageSize: 50 }
   if (query) {
-    contractLoading.value = true
-    listContract({ contractNo: query, contractName: query, pageNum: 1, pageSize: 50 }).then(response => {
-      contractOptions.value = response.rows || []
-      contractLoading.value = false
-    }).catch(() => { contractLoading.value = false })
-  } else {
-    contractOptions.value = []
+    params.contractNo = query
+    params.contractName = query
+  }
+  listContract(params).then(response => {
+    contractOptions.value = response.rows || []
+    contractLoading.value = false
+  }).catch(() => { contractLoading.value = false })
+}
+
+/** 下拉框展开时加载合同列表 */
+function onContractVisibleChange(visible) {
+  if (visible && contractOptions.value.length === 0) {
+    searchContracts("")
   }
 }
 
@@ -589,6 +600,10 @@ function handleUpdate(row) {
     form.value = response.data
     if (!form.value.leaderIds) {
       form.value.leaderIds = []
+    }
+    // 预加载合同选项，确保已选合同能回显名称
+    if (form.value.contractId) {
+      searchContracts("")
     }
     open.value = true
     title.value = "修改项目"

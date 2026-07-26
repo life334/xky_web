@@ -108,7 +108,7 @@
       <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
       <!-- 添加或修改资料提交对话框 -->
-      <el-dialog :title="title" v-model="open" width="80%" append-to-body>
+      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
          <el-form ref="materialRef" :model="form" :rules="rules" label-width="90px">
             <el-row :gutter="20">
                <el-col :span="8">
@@ -165,7 +165,7 @@
       </el-dialog>
 
       <!-- 领取/归还对话框 -->
-      <el-dialog :title="borrowTitle" v-model="borrowOpen" width="500px" append-to-body>
+      <el-dialog :title="borrowTitle" :model-value="borrowOpen" @update:model-value="borrowOpen = $event" width="500px" append-to-body>
          <el-form ref="borrowRef" :model="borrowForm" label-width="80px">
             <el-form-item v-if="borrowForm.flowType === '领取'" label="担保人" prop="guarantorId" :rules="[{ required: true, message: '请选择担保人', trigger: 'change' }]">
                <el-select v-model="borrowForm.guarantorId" filterable placeholder="请选择担保人" style="width: 100%">
@@ -185,7 +185,7 @@
       </el-dialog>
 
       <!-- 流转记录对话框 -->
-      <el-dialog title="流转记录" v-model="flowOpen" width="600px" append-to-body>
+      <el-dialog title="流转记录" :model-value="flowOpen" @update:model-value="flowOpen = $event" width="600px" append-to-body>
          <el-timeline v-if="flowList.length > 0">
             <el-timeline-item v-for="item in flowList" :key="item.id"
                :type="item.flowType === '领取' ? 'primary' : 'success'"

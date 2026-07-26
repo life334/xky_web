@@ -113,7 +113,7 @@
       <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
       <!-- 添加或修改任务对话框 -->
-      <el-dialog :title="title" v-model="open" width="650px" append-to-body>
+      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="650px" append-to-body>
          <el-form ref="taskRef" :model="form" :rules="rules" label-width="100px">
             <el-row>
                <el-col :span="12">
@@ -198,7 +198,7 @@
       </el-dialog>
 
       <!-- 任务详情对话框 -->
-      <el-dialog :title="'任务详情 — ' + detail.taskName" v-model="detailOpen" width="650px" append-to-body>
+      <el-dialog :title="'任务详情 — ' + detail.taskName" :model-value="detailOpen" @update:model-value="detailOpen = $event" width="650px" append-to-body>
          <el-descriptions :column="2" border>
             <el-descriptions-item label="任务名称" :span="2">{{ detail.taskName }}</el-descriptions-item>
             <el-descriptions-item label="所属项目">{{ detail.projectName || '—' }}</el-descriptions-item>

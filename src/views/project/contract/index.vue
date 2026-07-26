@@ -103,7 +103,9 @@
                <el-button link type="primary" @click="handleView(scope.row)">详情</el-button>
                <el-button link type="primary" @click="handleUpdate(scope.row)" v-hasPermi="['project:contract:edit']">修改</el-button>
                <el-dropdown @command="(cmd) => handleCommand(cmd, scope.row)" style="vertical-align: middle">
-                  <el-button link type="primary">更多▾</el-button>
+                  <div>
+                     <el-button link type="primary">更多▾</el-button>
+                  </div>
                   <template #dropdown>
                      <el-dropdown-menu>
                         <el-dropdown-item command="status" icon="Switch">状态变更</el-dropdown-item>
@@ -118,7 +120,7 @@
       <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
       <!-- 添加或修改合同对话框 -->
-      <el-dialog :title="title" v-model="open" width="80%" append-to-body>
+      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
          <el-form ref="contractRef" :model="form" :rules="rules" label-width="90px">
             <el-row :gutter="20">
                <el-col :span="8">
@@ -242,7 +244,7 @@
       </el-dialog>
 
       <!-- 合同详情对话框 -->
-      <el-dialog :title="'合同详情 — ' + detail.contractNo" v-model="detailOpen" width="800px" append-to-body>
+      <el-dialog :title="'合同详情 — ' + detail.contractNo" :model-value="detailOpen" @update:model-value="detailOpen = $event" width="800px" append-to-body>
          <el-descriptions :column="2" border>
             <el-descriptions-item label="合同编号" :span="1">{{ detail.contractNo }}</el-descriptions-item>
             <el-descriptions-item label="合同名称" :span="1">{{ detail.contractName }}</el-descriptions-item>
@@ -278,7 +280,7 @@
       </el-dialog>
 
       <!-- 状态变更弹窗 -->
-      <el-dialog title="状态变更" v-model="statusOpen" width="500px" append-to-body>
+      <el-dialog title="状态变更" :model-value="statusOpen" @update:model-value="statusOpen = $event" width="500px" append-to-body>
          <el-form :model="statusForm" label-width="100px">
             <el-form-item label="当前状态">
                <dict-tag :options="d('proj_contract_status')" :value="statusForm.currentStatus" />
@@ -303,7 +305,7 @@
       </el-dialog>
 
       <!-- 关联项目弹窗 -->
-      <el-dialog :title="'关联项目 — ' + currentContractName" v-model="projectsOpen" width="1000px" append-to-body>
+      <el-dialog :title="'关联项目 — ' + currentContractName" :model-value="projectsOpen" @update:model-value="projectsOpen = $event" width="1000px" append-to-body>
          <el-table :data="projectList" stripe border max-height="450">
             <el-table-column label="工程编号" align="center" prop="project_code" min-width="140" :show-overflow-tooltip="true" />
             <el-table-column label="项目名称" align="center" prop="project_name" min-width="180" :show-overflow-tooltip="true" />
