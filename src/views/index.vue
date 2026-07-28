@@ -3,8 +3,8 @@
     <!-- 顶部标题 + 全局时间筛选 -->
     <div class="dash-header">
       <div class="header-title">
-        <span class="title-bar"></span>
-        <h2>项目运营驾驶舱</h2>
+        
+        <h2></h2>
       </div>
       <div class="header-actions">
         <el-radio-group v-model="globalPeriod" size="small" @change="onGlobalPeriodChange">
@@ -46,7 +46,7 @@
           <template #header>
             <div class="card-header-flex">
               <span class="card-title">合同收款进度</span>
-              <el-link type="primary" :underline="false" @click="goPage('/contract/list')">更多</el-link>
+              <el-link type="primary" :underline="never" @click="goPage('/contract/list')">更多</el-link>
             </div>
           </template>
           <div class="payment-section" v-loading="loading">
@@ -136,7 +136,7 @@
           <template #header>
             <div class="card-header-flex">
               <span class="card-title">项目进度 TOP5</span>
-              <el-link type="primary" :underline="false" @click="goPage('/project/list')">更多</el-link>
+              <el-link type="primary" :underline="never" @click="goPage('/project/list')">更多</el-link>
             </div>
           </template>
           <div class="progress-list" v-loading="loading">
@@ -167,7 +167,7 @@
                 任务预警
                 <el-badge :value="dashboard.taskAlerts?.length || 0" type="danger" class="alert-badge" />
               </span>
-              <el-link type="primary" :underline="false" @click="goPage('/project/task')">更多</el-link>
+              <el-link type="primary" :underline="never" @click="goPage('/project/task')">更多</el-link>
             </div>
           </template>
           <div class="alert-list" v-loading="loading">
@@ -196,7 +196,7 @@
           <template #header>
             <div class="card-header-flex">
               <span class="card-title">资料流转</span>
-              <el-link type="primary" :underline="false" @click="goPage('/material')">更多</el-link>
+              <el-link type="primary" :underline="never" @click="goPage('/material')">更多</el-link>
             </div>
           </template>
           <div class="material-stats" v-loading="loading">

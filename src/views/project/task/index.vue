@@ -30,9 +30,6 @@
 
       <el-row :gutter="10" class="mb8">
          <el-col :span="1.5">
-            <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['project:task:add']">新增</el-button>
-         </el-col>
-         <el-col :span="1.5">
             <el-button type="success" plain icon="Edit" :disabled="single" @click="handleUpdate" v-hasPermi="['project:task:edit']">修改</el-button>
          </el-col>
          <el-col :span="1.5">
@@ -51,22 +48,28 @@
          </el-col>
       </el-row>
 
-      <el-table v-loading="loading" :data="displayTaskList" stripe border row-key="id"
+      <el-table 
+         v-loading="loading" 
+         :data="displayTaskList" 
+         stripe 
+         border
+         row-key="id"
          :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
          :default-expand-all="viewMode !== 'flat'"
-         @selection-change="handleSelectionChange">
+         @selection-change="handleSelectionChange"
+      >
          <el-table-column type="selection" width="50" align="center" v-if="viewMode === 'flat'" />
          <el-table-column label="任务名称" align="center" prop="taskName" :show-overflow-tooltip="true" min-width="160" />
          <el-table-column v-if="viewMode !== 'byProject'" label="所属项目" align="center" prop="projectName" min-width="180">
             <template #default="scope">
                <span v-if="scope.row.projectName">{{ scope.row.projectName }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
+               <span v-else style="color: #c0c4cc">-</span>
             </template>
          </el-table-column>
          <el-table-column v-if="viewMode !== 'byUser'" label="执行人" align="center" prop="userName" min-width="100">
             <template #default="scope">
                <span v-if="scope.row.userName">{{ scope.row.userName }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
+               <span v-else style="color: #c0c4cc">-</span>
             </template>
          </el-table-column>
          <el-table-column label="安排日期" align="center" prop="assignDate" width="120">
@@ -82,7 +85,7 @@
          <el-table-column label="实际完成" align="center" prop="actualFinishDate" width="120">
             <template #default="scope">
                <span v-if="scope.row.actualFinishDate">{{ parseTime(scope.row.actualFinishDate, '{y}-{m}-{d}') }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
+               <span v-else style="color: #c0c4cc">-</span>
             </template>
          </el-table-column>
          <el-table-column label="工期要求" align="center" prop="durationRequire" min-width="100" />
@@ -93,7 +96,7 @@
                <el-tag v-else-if="scope.row.status === '进行中'" type="primary">{{ scope.row.status }}</el-tag>
                <el-tag v-else-if="scope.row.status === '已完成'" type="success">{{ scope.row.status }}</el-tag>
                <el-tag v-else-if="scope.row.status === '已暂停'" type="warning">{{ scope.row.status }}</el-tag>
-               <el-tag v-else type="info">{{ scope.row.status || '—' }}</el-tag>
+               <el-tag v-else type="info">{{ scope.row.status || '-' }}</el-tag>
             </template>
          </el-table-column>
          <el-table-column label="创建时间" align="center" prop="createTime" width="170">
@@ -103,9 +106,12 @@
          </el-table-column>
          <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width">
             <template #default="scope">
-               <el-button link type="primary" icon="View" @click="handleView(scope.row)">详情</el-button>
-               <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['project:task:edit']">修改</el-button>
-               <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['project:task:remove']">删除</el-button>
+               <template v-if="!isGroupRow(scope.row)">
+                  <el-button link type="primary" icon="View" @click="handleView(scope.row)">详情</el-button>
+                  <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['project:task:edit']">修改</el-button>
+                  <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['project:task:remove']">删除</el-button>
+               </template>
+               <span v-else style="color: #c0c4cc">-</span>
             </template>
          </el-table-column>
       </el-table>
@@ -198,27 +204,27 @@
       </el-dialog>
 
       <!-- 任务详情对话框 -->
-      <el-dialog :title="'任务详情 — ' + detail.taskName" :model-value="detailOpen" @update:model-value="detailOpen = $event" width="650px" append-to-body>
+      <el-dialog :title="'任务详情 - ' + detail.taskName" :model-value="detailOpen" @update:model-value="detailOpen = $event" width="650px" append-to-body>
          <el-descriptions :column="2" border>
             <el-descriptions-item label="任务名称" :span="2">{{ detail.taskName }}</el-descriptions-item>
-            <el-descriptions-item label="所属项目">{{ detail.projectName || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="执行人">{{ detail.userName || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="所属项目">{{ detail.projectName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="执行人">{{ detail.userName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="安排日期">{{ parseTime(detail.assignDate, '{y}-{m}-{d}') }}</el-descriptions-item>
             <el-descriptions-item label="要求完成">{{ parseTime(detail.requiredFinishDate, '{y}-{m}-{d}') }}</el-descriptions-item>
-            <el-descriptions-item label="实际完成">{{ detail.actualFinishDate ? parseTime(detail.actualFinishDate, '{y}-{m}-{d}') : '—' }}</el-descriptions-item>
-            <el-descriptions-item label="工期要求">{{ detail.durationRequire || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="总时长(天)">{{ detail.totalDuration != null ? detail.totalDuration : '—' }}</el-descriptions-item>
+            <el-descriptions-item label="实际完成">{{ detail.actualFinishDate ? parseTime(detail.actualFinishDate, '{y}-{m}-{d}') : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="工期要求">{{ detail.durationRequire || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="总时长(天)">{{ detail.totalDuration != null ? detail.totalDuration : '-' }}</el-descriptions-item>
             <el-descriptions-item label="状态">
                <el-tag v-if="detail.status === '待开始'" type="info">{{ detail.status }}</el-tag>
                <el-tag v-else-if="detail.status === '进行中'" type="primary">{{ detail.status }}</el-tag>
                <el-tag v-else-if="detail.status === '已完成'" type="success">{{ detail.status }}</el-tag>
                <el-tag v-else-if="detail.status === '已暂停'" type="warning">{{ detail.status }}</el-tag>
-               <el-tag v-else type="info">{{ detail.status || '—' }}</el-tag>
+               <el-tag v-else type="info">{{ detail.status || '-' }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="备注" :span="2">{{ detail.remark || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="创建者">{{ detail.createBy || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="创建者">{{ detail.createBy || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ parseTime(detail.createTime) }}</el-descriptions-item>
-            <el-descriptions-item label="修改者">{{ detail.updateBy || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="修改者">{{ detail.updateBy || '-' }}</el-descriptions-item>
             <el-descriptions-item label="修改时间">{{ parseTime(detail.updateTime) }}</el-descriptions-item>
          </el-descriptions>
          <template #footer>
@@ -301,6 +307,11 @@ const displayTaskList = computed(() => {
     hasChildren: true
   }))
 })
+
+/** 判断是否为分组行（虚拟父节点） */
+function isGroupRow(row) {
+  return row.id && typeof row.id === 'string' && row.id.startsWith('grp_')
+}
 
 /** 切换视图模式 */
 function handleViewModeChange() {

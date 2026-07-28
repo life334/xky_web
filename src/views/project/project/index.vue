@@ -54,12 +54,14 @@
             </template>
          </el-table-column>
          <el-table-column label="工程编号" align="center" prop="projectCode" :show-overflow-tooltip="true" min-width="100" />
-         <el-table-column label="项目名称" align="center" prop="projectName" :show-overflow-tooltip="true" min-width="150" />
-         <el-table-column label="工程项目" align="center" prop="engineeringProject" :show-overflow-tooltip="true" min-width="140" />
          <el-table-column label="委托单位" align="center" prop="clientUnit" :show-overflow-tooltip="true" min-width="130" />
+         <el-table-column label="联系人" align="center" prop="contactName" min-width="90" />
+         <el-table-column label="联系电话" align="center" prop="contactPhone"  :show-overflow-tooltip="true" min-width="100" />
+          <el-table-column label="工程项目" align="center" prop="engineeringProject" :show-overflow-tooltip="true" min-width="140" />
+         <el-table-column label="工程地点" align="center" prop="projectLocation" :show-overflow-tooltip="true" min-width="120" />
+         <el-table-column label="项目名称" align="center" prop="projectName" :show-overflow-tooltip="true" min-width="150" />
          <el-table-column label="合同" align="center" prop="contractName" min-width="100" />
          <el-table-column label="负责人" align="center" prop="leaderNames" min-width="110" />
-         <el-table-column label="联系人" align="center" prop="contactName" min-width="90" />
          <el-table-column label="安排日期" align="center" prop="assignDate" width="110">
             <template #default="scope">
                <span v-if="scope.row.assignDate">{{ parseTime(scope.row.assignDate, '{y}-{m}-{d}') }}</span>
