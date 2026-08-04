@@ -17,6 +17,12 @@
          <el-col :span="1.5">
             <el-button type="warning" plain icon="Download" @click="handleExport" v-hasPermi="['project:settlement:export']">导出</el-button>
          </el-col>
+         <el-col :span="4">
+            <el-checkbox-group v-model="selectedStatuses" @change="onStatusChange">
+               <el-checkbox label="closed">已办结</el-checkbox>
+               <el-checkbox label="archived">已归档</el-checkbox>
+            </el-checkbox-group>
+         </el-col>
          <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar>
       </el-row>
 
@@ -40,14 +46,9 @@
          </el-table-column>
          <el-table-column label="委托单位" align="center" prop="clientUnit" min-width="120" :show-overflow-tooltip="true" />
          <el-table-column label="工程地点" align="center" prop="projectLocation" min-width="120" :show-overflow-tooltip="true" />
-         <el-table-column label="内部工作量" align="center" prop="internalWorkload" width="110">
+         <el-table-column label="工作量" align="center" prop="workload" width="110">
             <template #default="scope">
-               <span v-if="scope.row.internalWorkload != null">{{ scope.row.internalWorkload }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="外部工作量" align="center" prop="externalWorkload" width="110">
-            <template #default="scope">
-               <span v-if="scope.row.externalWorkload != null">{{ scope.row.externalWorkload }}</span>
+               <span v-if="scope.row.workload != null">{{ scope.row.workload }}</span>
             </template>
          </el-table-column>
          <el-table-column label="内部产值" align="center" prop="internalOutput" width="120">
@@ -55,7 +56,7 @@
                <span v-if="scope.row.internalOutput != null">{{ formatMoney(scope.row.internalOutput) }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="项目金额" align="center" prop="externalOutput" width="120">
+         <el-table-column label="外部产值" align="center" prop="externalOutput" width="120">
             <template #default="scope">
                <span v-if="scope.row.externalOutput != null">{{ formatMoney(scope.row.externalOutput) }}</span>
             </template>
@@ -229,7 +230,7 @@
                      <el-tree-select
                         v-model="scope.row.categoryId"
                         :data="categoryOptions"
-                        :props="{ value: 'id', label: 'label', children: 'children' }"
+                        :props="{ value: 'id', label: 'name', children: 'children' }"
                         value-key="id"
                         placeholder="类别（小类）"
                         check-strictly
@@ -238,9 +239,9 @@
                      />
                   </template>
                </el-table-column>
-               <el-table-column label="内部工作量" align="center" width="120">
+               <el-table-column label="工作量" align="center" width="120">
                   <template #default="scope">
-                     <el-input-number v-model="scope.row.internalWorkload" :min="0" :precision="2" controls-position="right" style="width:100%" @change="calcRow(scope.row)" />
+                     <el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" style="width:100%" @change="calcRow(scope.row)" />
                   </template>
                </el-table-column>
                <el-table-column label="内部单价" align="center" width="120">
@@ -248,22 +249,17 @@
                      <el-input-number v-model="scope.row.internalPrice" :min="0" :precision="2" controls-position="right" style="width:100%" @change="calcRow(scope.row)" />
                   </template>
                </el-table-column>
-               <el-table-column label="内部产值" align="center" width="120">
-                  <template #default="scope">
-                     <span>{{ formatMoney(scope.row.internalOutput) }}</span>
-                  </template>
-               </el-table-column>
-               <el-table-column label="外部工作量" align="center" width="120">
-                  <template #default="scope">
-                     <el-input-number v-model="scope.row.externalWorkload" :min="0" :precision="2" controls-position="right" style="width:100%" @change="calcRow(scope.row)" />
-                  </template>
-               </el-table-column>
                <el-table-column label="外部单价" align="center" width="120">
                   <template #default="scope">
                      <el-input-number v-model="scope.row.externalPrice" :min="0" :precision="2" controls-position="right" style="width:100%" @change="calcRow(scope.row)" />
                   </template>
                </el-table-column>
-               <el-table-column label="外部产值" align="center" width="120">
+               <el-table-column label="内部产值" align="center" width="120">
+                  <template #default="scope">
+                     <span>{{ formatMoney(scope.row.internalOutput) }}</span>
+                  </template>
+               </el-table-column>
+               <el-table-column label="外��产值" align="center" width="120">
                   <template #default="scope">
                      <span>{{ formatMoney(scope.row.externalOutput) }}</span>
                   </template>
@@ -278,7 +274,7 @@
             <!-- 产值合计 -->
             <el-row style="margin-top:12px">
                <el-col :span="24" style="text-align:right;font-weight:bold;color:#409eff">
-                  外部产值（项目金额）合计：{{ formatMoney(totalExternalOutput) }}
+                  产值合计：{{ formatMoney(totalOutput) }}
                </el-col>
             </el-row>
          </el-form>
@@ -294,7 +290,7 @@
 
 <script setup name="Settlement">
 import { treeListSettlement, getSettlementDetail, saveSettlement } from "@/api/project/settlement"
-import { categoryTreeselect } from "@/api/project/category"
+import { categoryTreeselectFull } from "@/api/project/category"
 import { listUser } from "@/api/system/user"
 
 const { proxy } = getCurrentInstance()
@@ -302,6 +298,7 @@ const { proxy } = getCurrentInstance()
 const treeData = ref([])
 const loading = ref(false)
 const showSearch = ref(true)
+const selectedStatuses = ref(['closed', 'archived'])
 const editOpen = ref(false)
 const saveLoading = ref(false)
 const editProjectCode = ref("")
@@ -310,6 +307,7 @@ const editProjectLocation = ref("")
 const editProjectId = ref(null)
 const userOptions = ref([])
 const categoryOptions = ref([])
+const contractPriceMap = ref({})
 
 const data = reactive({
   queryParams: {
@@ -334,10 +332,11 @@ const data = reactive({
 
 const { queryParams, editForm } = toRefs(data)
 
-// 计算外部产值合计
-const totalExternalOutput = computed(() => {
+// 计算产值合计
+const totalOutput = computed(() => {
   let sum = 0
   editForm.value.workloads.forEach(row => {
+    if (row.internalOutput) sum += Number(row.internalOutput)
     if (row.externalOutput) sum += Number(row.externalOutput)
   })
   return sum
@@ -345,19 +344,19 @@ const totalExternalOutput = computed(() => {
 
 /** 金额格式化 */
 function formatMoney(val) {
-  if (val == null) return "—"
+  if (val == null) return ""
   return Number(val).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 /** 计算单行产值 */
 function calcRow(row) {
-  if (row.internalWorkload && row.internalPrice) {
-    row.internalOutput = (Number(row.internalWorkload) * Number(row.internalPrice)).toFixed(2)
+  if (row.workload && row.internalPrice) {
+    row.internalOutput = (Number(row.workload) * Number(row.internalPrice)).toFixed(2)
   } else {
     row.internalOutput = null
   }
-  if (row.externalWorkload && row.externalPrice) {
-    row.externalOutput = (Number(row.externalWorkload) * Number(row.externalPrice)).toFixed(2)
+  if (row.workload && row.externalPrice) {
+    row.externalOutput = (Number(row.workload) * Number(row.externalPrice)).toFixed(2)
   } else {
     row.externalOutput = null
   }
@@ -378,20 +377,34 @@ function onCategoryChange(categoryId, row) {
     return null
   }
   const node = findNode(categoryOptions.value, categoryId)
-  if (node) {
-    if (node.internalPrice != null) row.internalPrice = node.internalPrice
-    if (node.externalPrice != null) row.externalPrice = node.externalPrice
-    calcRow(row)
+  // 内部单价：始终取类别默认值
+  if (node && node.internalPrice != null) {
+    row.internalPrice = node.internalPrice
   }
+  // 外部单价：有合同取合同价，无合同取类别默认值
+  const cp = contractPriceMap.value[categoryId]
+  if (cp && cp.price != null) {
+    row.externalPrice = cp.price
+  } else if (node && node.externalPrice != null) {
+    row.externalPrice = node.externalPrice
+  }
+  calcRow(row)
 }
 
 /** 查询树形列表 */
 function getList() {
   loading.value = true
-  treeListSettlement(queryParams.value).then(response => {
+  const params = { ...queryParams.value }
+  params.projectStatus = selectedStatuses.value.join(',')
+  treeListSettlement(params).then(response => {
     treeData.value = response.data || []
     loading.value = false
   })
+}
+
+/** 状态筛选变更 */
+function onStatusChange(val) {
+  getList()
 }
 
 function handleQuery() {
@@ -411,7 +424,7 @@ function handleEdit(row) {
   editProjectLocation.value = row.projectLocation || ""
 
   // 加载基础数据
-  Promise.all([categoryTreeselect(), listUser({ pageNum: 1, pageSize: 1000 }), getSettlementDetail(row.projectId)])
+  Promise.all([categoryTreeselectFull(), listUser({ pageNum: 1, pageSize: 1000 }), getSettlementDetail(row.projectId)])
     .then(([catRes, userRes, detailRes]) => {
       categoryOptions.value = catRes.data
       userOptions.value = userRes.rows || []
@@ -419,6 +432,14 @@ function handleEdit(row) {
       const detail = detailRes.data
       const payments = detail.payments || []
       const workloads = detail.workloads || []
+
+      // 解析合同单价映射（categoryId → {price}），用于自动带出外部单价
+      const contractPrices = detail.contractPrices || []
+      const cpMap = {}
+      contractPrices.forEach(cp => {
+        if (cp.categoryId) cpMap[cp.categoryId] = cp
+      })
+      contractPriceMap.value = cpMap
 
       // 填充付款信息
       const prepay = payments.find(p => p.paymentType === "预付款")
@@ -443,11 +464,10 @@ function handleEdit(row) {
         workloadId: w.id,
         userId: w.userId,
         categoryId: w.categoryId,
-        internalWorkload: w.internalWorkload,
+        workload: w.workload,
         internalPrice: w.internalPrice,
-        internalOutput: w.internalOutput,
-        externalWorkload: w.externalWorkload,
         externalPrice: w.externalPrice,
+        internalOutput: w.internalOutput,
         externalOutput: w.externalOutput
       }))
 
@@ -461,11 +481,10 @@ function addWorkloadRow() {
     workloadId: null,
     userId: null,
     categoryId: null,
-    internalWorkload: null,
+    workload: null,
     internalPrice: null,
-    internalOutput: null,
-    externalWorkload: null,
     externalPrice: null,
+    internalOutput: null,
     externalOutput: null
   })
 }

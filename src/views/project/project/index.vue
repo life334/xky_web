@@ -1,32 +1,32 @@
 <template>
    <div class="app-container">
-      <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="80px">
+      <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px" class="compact-search">
          <el-form-item label="工程编号" prop="projectCode">
-            <el-input v-model="queryParams.projectCode" placeholder="请输入工程编号" clearable style="width: 180px" @keyup.enter="handleQuery" />
+            <el-input v-model="queryParams.projectCode" placeholder="请输入工程编号" clearable style="width: 150px" @keyup.enter="handleQuery" />
          </el-form-item>
          <el-form-item label="项目名称" prop="projectName">
-            <el-input v-model="queryParams.projectName" placeholder="请输入项目名称" clearable style="width: 200px" @keyup.enter="handleQuery" />
+            <el-input v-model="queryParams.projectName" placeholder="请输入项目名称" clearable style="width: 160px" @keyup.enter="handleQuery" />
          </el-form-item>
          <el-form-item label="状态" prop="status">
-            <el-select v-model="queryParams.status" placeholder="项目状态" clearable style="width: 140px">
+            <el-select v-model="queryParams.status" placeholder="项目状态" clearable style="width: 120px">
                <el-option v-for="dict in (proj_project_status || [])" :key="dict.value" :label="dict.label" :value="dict.value" />
             </el-select>
          </el-form-item>
          <el-form-item label="创建时间">
-            <el-date-picker v-model="dateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width: 240px" />
+            <el-date-picker v-model="dateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width: 210px" />
          </el-form-item>
          <el-form-item>
-            <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
-            <el-button icon="Refresh" @click="resetQuery">重置</el-button>
+            <el-button type="primary" icon="Search" size="small" @click="handleQuery">搜索</el-button>
+            <el-button icon="Refresh" size="small" @click="resetQuery">重置</el-button>
          </el-form-item>
       </el-form>
 
-      <el-row :gutter="10" class="mb8">
+      <el-row :gutter="6" class="mb8 compact-ops">
          <el-col :span="1.5">
             <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['project:project:add']">新增</el-button>
          </el-col>
          <el-col :span="1.5">
-            <el-button type="info" plain icon="Upload" @click="handleImport" v-hasPermi="['project:project:import']">导入</el-button>
+            <el-button type="info" plain icon="Upload"  @click="handleImport" v-hasPermi="['project:project:import']">导入</el-button>
          </el-col>
          <el-col :span="1.5">
             <el-button type="info" plain icon="DocumentCopy" @click="handlePaste" v-hasPermi="['project:project:add']">粘贴</el-button>
@@ -53,13 +53,19 @@
                <span>{{ (queryParams.pageNum - 1) * queryParams.pageSize + scope.$index + 1 }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="工程编号" align="center" prop="projectCode" :show-overflow-tooltip="true" min-width="100" />
-         <el-table-column label="委托单位" align="center" prop="clientUnit" :show-overflow-tooltip="true" min-width="130" />
+         <el-table-column label="工程编号" align="center" prop="projectCode" :show-overflow-tooltip="true" min-width="140" />
+         <el-table-column label="委托单位" align="center" prop="clientUnit"  min-width="180" />
          <el-table-column label="联系人" align="center" prop="contactName" min-width="90" />
-         <el-table-column label="联系电话" align="center" prop="contactPhone"  :show-overflow-tooltip="true" min-width="100" />
+         <el-table-column label="联系电话" align="center" prop="contactPhone"  :show-overflow-tooltip="true" min-width="120" />
           <el-table-column label="工程项目" align="center" prop="engineeringProject" :show-overflow-tooltip="true" min-width="140" />
-         <el-table-column label="工程地点" align="center" prop="projectLocation" :show-overflow-tooltip="true" min-width="120" />
+         <el-table-column label="工程地点" align="center" prop="projectLocation" min-width="180" />
+         <el-table-column label="状态" align="center" prop="status" min-width="90">
+            <template #default="scope">
+               <dict-tag :options="proj_project_status" :value="scope.row.status" />
+            </template>
+         </el-table-column>
          <el-table-column label="项目名称" align="center" prop="projectName" :show-overflow-tooltip="true" min-width="150" />
+         
          <el-table-column label="合同" align="center" prop="contractName" min-width="100" />
          <el-table-column label="负责人" align="center" prop="leaderNames" min-width="110" />
          <el-table-column label="安排日期" align="center" prop="assignDate" width="110">
@@ -77,30 +83,12 @@
                <span v-if="scope.row.totalDuration != null">{{ scope.row.totalDuration }}天</span>
             </template>
          </el-table-column>
-         <el-table-column label="状态" align="center" prop="status" min-width="90">
-            <template #default="scope">
-               <el-tag :type="getStatusTagType(scope.row.status)">{{ scope.row.status || '-' }}</el-tag>
-            </template>
-         </el-table-column>
-         <el-table-column label="操作" align="center" min-width="140" class-name="small-padding fixed-width">
+         
+         <el-table-column label="操作" align="center" min-width="120" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
                <el-button link type="primary" size="small" @click="handleView(scope.row)">详情</el-button>
                <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:project:edit']">修改</el-button>
-               <el-dropdown style="vertical-align: middle;margin-left: 6px;" @command="(cmd) => handleCommand(cmd, scope.row)">
-                  <div>
-                     <el-button link size="small" type="primary">更多<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
-                  </div>
-                  <template #dropdown>
-                     <el-dropdown-menu>
-                        <el-dropdown-item command="taskList">作业清单</el-dropdown-item>
-                        <el-dropdown-item command="changeStatus" v-hasPermi="['project:project:edit']">状态变更</el-dropdown-item>
-                        <el-dropdown-item v-if="scope.row.status !== '已办结'" command="complete" v-hasPermi="['project:project:complete']">办结</el-dropdown-item>
-                        <el-dropdown-item command="delete" v-hasPermi="['project:project:remove']">
-                           <span style="color: var(--el-color-danger)">删除</span>
-                        </el-dropdown-item>
-                     </el-dropdown-menu>
-                  </template>
-               </el-dropdown>
+               <el-button link size="small" type="primary" v-if="scope.row.status !== 'closed'" v-hasPermi="['project:project:complete']" @click="handleComplete(scope.row)">办结</el-button>
             </template>
          </el-table-column>
       </el-table>
@@ -203,7 +191,7 @@
                </el-col>
                <el-col :span="8">
                   <el-form-item label="状态" v-if="form.id">
-                     <el-tag :type="getStatusTagType(form.status)">{{ form.status }}</el-tag>
+                     <dict-tag :options="proj_project_status" :value="form.status" />
                   </el-form-item>
                </el-col>
             </el-row>
@@ -236,7 +224,7 @@
             <el-descriptions-item label="联系电话">{{ detail.contactPhone || '-' }}</el-descriptions-item>
             <el-descriptions-item label="合同">{{ detail.contractName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="状态">
-               <el-tag :type="getStatusTagType(detail.status)">{{ detail.status || '-' }}</el-tag>
+               <dict-tag :options="proj_project_status" :value="detail.status" />
             </el-descriptions-item>
             <el-descriptions-item label="负责人" :span="2">{{ detail.leaderNames || '-' }}</el-descriptions-item>
             <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
@@ -277,11 +265,7 @@
             <el-table-column label="总时长(天)" align="center" prop="totalDuration" width="100" />
             <el-table-column label="状态" align="center" prop="status" width="100">
                <template #default="scope">
-                  <el-tag v-if="scope.row.status === '待开始'" type="info">{{ scope.row.status }}</el-tag>
-                  <el-tag v-else-if="scope.row.status === '进行中'" type="primary">{{ scope.row.status }}</el-tag>
-                  <el-tag v-else-if="scope.row.status === '已完成'" type="success">{{ scope.row.status }}</el-tag>
-                  <el-tag v-else-if="scope.row.status === '已暂停'" type="warning">{{ scope.row.status }}</el-tag>
-                  <el-tag v-else type="info">{{ scope.row.status || '—' }}</el-tag>
+                  <dict-tag :options="proj_task_status" :value="scope.row.status" />
                </template>
             </el-table-column>
             <el-table-column label="创建时间" align="center" prop="createTime" width="170">
@@ -304,11 +288,11 @@
                <span>{{ currentRow.projectName }}</span>
             </el-form-item>
             <el-form-item label="当前状态">
-               <el-tag :type="getStatusTagType(currentRow.status)">{{ currentRow.status }}</el-tag>
+               <dict-tag :options="proj_project_status" :value="currentRow.status" />
             </el-form-item>
             <el-form-item label="变更为">
                <el-select v-model="targetStatus" placeholder="请选择目标状态" style="width: 100%">
-                  <el-option v-for="s in allowedStatuses" :key="s" :label="s" :value="s" />
+                  <el-option v-for="s in allowedStatuses" :key="s.value" :label="s.label" :value="s.value" />
                </el-select>
             </el-form-item>
          </el-form>
@@ -370,7 +354,7 @@ import { listContract } from "@/api/project/contract"
 import ExcelImportDialog from "@/components/ExcelImportDialog"
 
 const { proxy } = getCurrentInstance()
-const { proj_project_status } = useDict("proj_project_status")
+const { proj_project_status, proj_task_status } = useDict("proj_project_status", "proj_task_status")
 
 const projectList = ref([])
 const open = ref(false)
@@ -399,15 +383,16 @@ const statusOpen = ref(false)
 const currentRow = ref({})
 const targetStatus = ref("")
 const STATUS_FLOW = {
-   "待开始": ["进行中"],
-   "进行中": ["已暂停", "已完成", "已取消"],
-   "已暂停": ["进行中"],
-   "已完成": ["已办结"],
-   "已办结": [],
-   "已取消": [],
+   "ongoing": ["closed"],
+   "closed": ["archived"],
+   "archived": [],
 }
 const allowedStatuses = computed(() => {
-   return STATUS_FLOW[currentRow.value.status] || []
+   const flow = STATUS_FLOW[currentRow.value.status] || []
+   return flow.map(s => {
+      const dict = (proj_project_status.value || []).find(d => d.value === s)
+      return { label: dict ? dict.label : s, value: s }
+   })
 })
 
 // 区域粘贴
@@ -459,19 +444,6 @@ const data = reactive({
 })
 
 const { queryParams, form, rules } = toRefs(data)
-
-/** 状态标签类型 */
-function getStatusTagType(status) {
-   const map = {
-      "待开始": "info",
-      "进行中": "primary",
-      "已完成": "success",
-      "已暂停": "warning",
-      "已办结": "success",
-      "已取消": "danger",
-   }
-   return map[status] || "info"
-}
 
 /** 模糊搜索合同 */
 function searchContracts(query) {
@@ -544,7 +516,7 @@ function reset() {
     contactPhone: undefined,
     projectLocation: undefined,
     contractId: undefined,
-    status: "进行中",
+    status: "ongoing",
     leaderIds: [],
     remark: undefined
   }
@@ -612,12 +584,9 @@ function handleUpdate(row) {
   })
 }
 
-/** 查看详情 */
+/** 查看详情（跳转项目工作台） */
 function handleView(row) {
-  getProject(row.id).then(response => {
-    detail.value = response.data
-    detailOpen.value = true
-  })
+  proxy.$router.push('/project/project-detail/index/' + row.id)
 }
 
 /** 查看作业清单 */
@@ -629,19 +598,6 @@ function handleTaskList(row) {
     taskListData.value = response.rows || []
     taskLoading.value = false
   })
-}
-
-/** 下拉菜单命令分发 */
-function handleCommand(command, row) {
-  if (command === "taskList") {
-    handleTaskList(row)
-  } else if (command === "changeStatus") {
-    handleStatusChange(row)
-  } else if (command === "complete") {
-    handleComplete(row)
-  } else if (command === "delete") {
-    handleDelete(row)
-  }
 }
 
 /** 办结按钮操作 */
@@ -777,3 +733,21 @@ function handleExport() {
 
 getList()
 </script>
+
+<style scoped>
+/* 搜索区紧凑化 */
+.compact-search :deep(.el-form-item) {
+  margin-bottom: 6px;
+}
+.compact-search :deep(.el-form-item__label) {
+  font-size: 13px;
+}
+.compact-search :deep(.el-input__inner),
+.compact-search :deep(.el-select .el-input__inner) {
+  font-size: 13px;
+}
+/* 操作栏紧凑化 */
+.compact-ops {
+  margin-bottom: 6px !important;
+}
+</style>

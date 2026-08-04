@@ -42,3 +42,20 @@ export function delPayment(ids) {
     method: 'delete'
   })
 }
+
+// 项目收款总览列表（聚合查询）
+export function paymentOverviewList(query) {
+  return request({
+    url: '/project/payment/overview',
+    method: 'get',
+    params: query
+  })
+}
+
+// 项目收款总览统计（KPI）
+export function paymentOverviewStats() {
+  return request({
+    url: '/project/payment/overview/stats',
+    method: 'get'
+  })
+}

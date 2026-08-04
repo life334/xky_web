@@ -16,10 +16,7 @@
          </el-form-item>
          <el-form-item label="状态" prop="status">
             <el-select v-model="queryParams.status" placeholder="任务状态" clearable style="width: 140px">
-               <el-option label="待开始" value="待开始" />
-               <el-option label="进行中" value="进行中" />
-               <el-option label="已完成" value="已完成" />
-               <el-option label="已暂停" value="已暂停" />
+               <el-option v-for="dict in proj_task_status" :key="dict.value" :label="dict.label" :value="dict.value" />
             </el-select>
          </el-form-item>
          <el-form-item>
@@ -92,11 +89,7 @@
          <el-table-column label="总时长(天)" align="center" prop="totalDuration" width="100" />
          <el-table-column label="状态" align="center" prop="status" width="100">
             <template #default="scope">
-               <el-tag v-if="scope.row.status === '待开始'" type="info">{{ scope.row.status }}</el-tag>
-               <el-tag v-else-if="scope.row.status === '进行中'" type="primary">{{ scope.row.status }}</el-tag>
-               <el-tag v-else-if="scope.row.status === '已完成'" type="success">{{ scope.row.status }}</el-tag>
-               <el-tag v-else-if="scope.row.status === '已暂停'" type="warning">{{ scope.row.status }}</el-tag>
-               <el-tag v-else type="info">{{ scope.row.status || '-' }}</el-tag>
+               <dict-tag :options="proj_task_status" :value="scope.row.status" />
             </template>
          </el-table-column>
          <el-table-column label="创建时间" align="center" prop="createTime" width="170">
@@ -179,10 +172,7 @@
                <el-col :span="12">
                   <el-form-item label="状态" prop="status">
                      <el-select v-model="form.status" placeholder="任务状态" style="width: 100%">
-                        <el-option label="待开始" value="待开始" />
-                        <el-option label="进行中" value="进行中" />
-                        <el-option label="已完成" value="已完成" />
-                        <el-option label="已暂停" value="已暂停" />
+                        <el-option v-for="dict in proj_task_status" :key="dict.value" :label="dict.label" :value="dict.value" />
                      </el-select>
                   </el-form-item>
                </el-col>
@@ -215,11 +205,7 @@
             <el-descriptions-item label="工期要求">{{ detail.durationRequire || '-' }}</el-descriptions-item>
             <el-descriptions-item label="总时长(天)">{{ detail.totalDuration != null ? detail.totalDuration : '-' }}</el-descriptions-item>
             <el-descriptions-item label="状态">
-               <el-tag v-if="detail.status === '待开始'" type="info">{{ detail.status }}</el-tag>
-               <el-tag v-else-if="detail.status === '进行中'" type="primary">{{ detail.status }}</el-tag>
-               <el-tag v-else-if="detail.status === '已完成'" type="success">{{ detail.status }}</el-tag>
-               <el-tag v-else-if="detail.status === '已暂停'" type="warning">{{ detail.status }}</el-tag>
-               <el-tag v-else type="info">{{ detail.status || '-' }}</el-tag>
+               <dict-tag :options="proj_task_status" :value="detail.status" />
             </el-descriptions-item>
             <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建者">{{ detail.createBy || '-' }}</el-descriptions-item>
@@ -242,6 +228,7 @@ import { listProject } from "@/api/project/project"
 import { listUser } from "@/api/system/user"
 
 const { proxy } = getCurrentInstance()
+const { proj_task_status } = useDict("proj_task_status")
 
 const taskList = ref([])
 const open = ref(false)
@@ -361,7 +348,7 @@ function reset() {
     actualFinishDate: undefined,
     durationRequire: undefined,
     totalDuration: undefined,
-    status: "待开始",
+    status: "pending",
     remark: undefined
   }
   proxy.resetForm("taskRef")

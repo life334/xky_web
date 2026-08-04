@@ -181,7 +181,7 @@
             </el-row>
             <el-row :gutter="20">
                <el-col :span="8">
-                  <el-form-item label="委托时间" prop="entrustDate">
+                  <el-form-item label="登记时间" prop="entrustDate">
                      <el-date-picker v-model="form.entrustDate" type="date" placeholder="选择委托时间" value-format="YYYY-MM-DD" style="width: 100%" />
                   </el-form-item>
                </el-col>
@@ -259,7 +259,7 @@
             <el-descriptions-item label="联系人">{{ detail.contactName || '—' }}</el-descriptions-item>
             <el-descriptions-item label="联系电话">{{ detail.contactPhone || '—' }}</el-descriptions-item>
             <el-descriptions-item label="签署日期">{{ parseDate(detail.signDate) }}</el-descriptions-item>
-            <el-descriptions-item label="委托时间">{{ parseDate(detail.entrustDate) }}</el-descriptions-item>
+            <el-descriptions-item label="登记时间">{{ parseDate(detail.entrustDate) }}</el-descriptions-item>
             <el-descriptions-item label="审核日期">{{ parseDate(detail.auditDate) }}</el-descriptions-item>
             <el-descriptions-item label="返回日期">{{ parseDate(detail.returnDate) }}</el-descriptions-item>
             <el-descriptions-item label="完成日期">{{ parseDate(detail.finishDate) }}</el-descriptions-item>
@@ -367,10 +367,10 @@ const projectList = ref([])
 
 /** 合同状态流转规则 */
 const STATUS_TRANSITIONS = {
-  "草稿":   ["已签署", "已取消"],
-  "已签署": ["执行中", "已取消"],
-  "执行中": ["已完成", "已取消"],
-  "已完成": ["已归档", "已取消"]
+  "draft":     ["signed", "cancelled"],
+  "signed":    ["ongoing", "cancelled"],
+  "ongoing":   ["completed", "cancelled"],
+  "completed": ["archived", "cancelled"]
 }
 
 const data = reactive({
@@ -524,7 +524,7 @@ function handleCommand(cmd, row) {
 
 /** 状态变更弹窗 */
 function handleStatusChange(row) {
-  const current = row.status || "草稿"
+  const current = row.status || "draft"
   const allowed = STATUS_TRANSITIONS[current] || []
   if (allowed.length === 0) {
     proxy.$modal.msgWarning("当前状态【" + getDictLabel(d('proj_contract_status'), current) + "】为终态，不允许变更")

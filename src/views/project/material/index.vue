@@ -11,19 +11,17 @@
          </el-form-item>
          <el-form-item label="成果类型" prop="resultType">
             <el-select v-model="queryParams.resultType" placeholder="请选择成果类型" clearable style="width: 160px">
-               <el-option label="报告" value="报告" />
-               <el-option label="图纸" value="图纸" />
-               <el-option label="数据" value="数据" />
-               <el-option label="影像" value="影像" />
-               <el-option label="文档" value="文档" />
-               <el-option label="其他" value="其他" />
+               <el-option
+                  v-for="dict in proj_material_result_type"
+                  :key="dict.value"
+                  :label="dict.label"
+                  :value="dict.value"
+               />
             </el-select>
          </el-form-item>
          <el-form-item label="状态" prop="status">
             <el-select v-model="queryParams.status" placeholder="资料状态" clearable style="width: 140px">
-               <el-option label="待领取" value="待领取" />
-               <el-option label="已领取" value="已领取" />
-               <el-option label="已归还" value="已归还" />
+               <el-option v-for="dict in proj_material_status" :key="dict.value" :label="dict.label" :value="dict.value" />
             </el-select>
          </el-form-item>
          <el-form-item>
@@ -34,14 +32,11 @@
 
       <el-row :gutter="10" class="mb8">
          <el-col :span="1.5">
-            <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['project:material:add']">新增</el-button>
-         </el-col>
-         <el-col :span="1.5">
             <el-button type="success" plain icon="Edit" :disabled="single" @click="handleUpdate" v-hasPermi="['project:material:edit']">修改</el-button>
          </el-col>
-         <el-col :span="1.5">
+         <!-- <el-col :span="1.5">
             <el-button type="danger" plain icon="Delete" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:material:remove']">删除</el-button>
-         </el-col>
+         </el-col> -->
          <el-col :span="1.5">
             <el-button type="warning" plain icon="Download" @click="handleExport" v-hasPermi="['project:material:export']">导出</el-button>
          </el-col>
@@ -50,101 +45,88 @@
 
       <el-table v-loading="loading" :data="materialList" stripe border @selection-change="handleSelectionChange">
          <el-table-column type="selection" width="50" align="center" />
-         <el-table-column label="所属项目" align="center" prop="projectName" min-width="170" :show-overflow-tooltip="true">
-            <template #default="scope">
-               <span v-if="scope.row.projectName">{{ scope.row.projectName }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
-            </template>
-         </el-table-column>
+         <el-table-column label="工程编号" align="center" prop="projectCode" min-width="130" :show-overflow-tooltip="false" />
+         <el-table-column label="委托任务" align="center" prop="engineeringProject" min-width="160" :show-overflow-tooltip="false" />
+         <el-table-column label="工程地点" align="center" prop="projectLocation" min-width="140" :show-overflow-tooltip="false" />
+         <el-table-column label="项目名称" align="center" prop="projectName" min-width="170" :show-overflow-tooltip="false" />
          <el-table-column label="提交时间" align="center" prop="submitTime" min-width="155">
             <template #default="scope">
                <span v-if="scope.row.submitTime">{{ parseTime(scope.row.submitTime, '{y}-{m}-{d} {h}:{i}:{s}') }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
-         <el-table-column label="联系人" align="center" prop="contactName" min-width="100" :show-overflow-tooltip="true">
-            <template #default="scope">
-               <span v-if="scope.row.contactName">{{ scope.row.contactName }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="联系电话" align="center" prop="contactPhone" min-width="130">
-            <template #default="scope">
-               <span v-if="scope.row.contactPhone">{{ scope.row.contactPhone }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
-            </template>
-         </el-table-column>
+         <el-table-column label="联系人" align="center" prop="contactName" min-width="100" :show-overflow-tooltip="false" />
+         <el-table-column label="联系电话" align="center" prop="contactPhone" min-width="130" />
          <el-table-column label="成果类型" align="center" prop="resultType" min-width="100">
             <template #default="scope">
-               <el-tag v-if="scope.row.resultType" :type="resultTypeTag(scope.row.resultType)">{{ scope.row.resultType }}</el-tag>
-               <span v-else style="color: #c0c4cc">—</span>
+               <dict-tag v-if="scope.row.resultType" :options="proj_material_result_type" :value="scope.row.resultType" />
             </template>
          </el-table-column>
+         <el-table-column label="目录" align="center" prop="archiveDir" min-width="160" :show-overflow-tooltip="false" />
          <el-table-column label="状态" align="center" prop="status" width="90">
             <template #default="scope">
-               <el-tag v-if="scope.row.status === '待领取'" type="info">待领取</el-tag>
-               <el-tag v-else-if="scope.row.status === '已领取'" type="warning">已领取</el-tag>
-               <el-tag v-else-if="scope.row.status === '已归还'" type="success">已归还</el-tag>
-               <span v-else style="color: #c0c4cc">—</span>
+               <dict-tag :options="proj_material_status" :value="scope.row.status" />
             </template>
          </el-table-column>
-         <el-table-column label="备注" align="center" prop="remark" min-width="160" :show-overflow-tooltip="true">
+         <el-table-column label="备注" align="center" prop="remark" min-width="160" :show-overflow-tooltip="false" />
+         <el-table-column label="操作" align="center" min-width="100" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
-               <span v-if="scope.row.remark">{{ scope.row.remark }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="操作" align="center" width="180" class-name="small-padding fixed-width">
-            <template #default="scope">
-               <el-button v-if="scope.row.status === '待领取' || scope.row.status === '已归还'" link type="warning" @click="handleBorrow(scope.row)" v-hasPermi="['project:material:borrow']" v-text="scope.row.status === '已归还' ? '再次领取' : '领取'" />
-               <el-button v-if="scope.row.status === '已领取'" link type="success" @click="handleReturn(scope.row)" v-hasPermi="['project:material:return']">归还</el-button>
+               <!-- <el-button v-if="scope.row.status === 'pending' || scope.row.status === 'returned'" link type="warning" @click="handleBorrow(scope.row)" v-hasPermi="['project:material:borrow']" v-text="scope.row.status === 'returned' ? '再次领取' : '领取'" /> -->
+               <!-- <el-button v-if="scope.row.status === 'received'" link type="success" @click="handleReturn(scope.row)" v-hasPermi="['project:material:return']">归还</el-button> -->
                <el-button link type="primary" @click="handleUpdate(scope.row)" v-hasPermi="['project:material:edit']">修改</el-button>
-               <el-button link type="primary" @click="handleFlow(scope.row)">流转</el-button>
-               <el-button link type="danger" @click="handleDelete(scope.row)" v-hasPermi="['project:material:remove']">删除</el-button>
+               <!-- <el-button link type="primary" @click="handleFlow(scope.row)">流转</el-button> -->
+               <!-- <el-button link type="danger" @click="handleDelete(scope.row)" v-hasPermi="['project:material:remove']">删除</el-button> -->
             </template>
          </el-table-column>
       </el-table>
 
       <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
-      <!-- 添加或修改资料提交对话框 -->
-      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
+      <!-- 修改资料提交对话框 -->
+      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="700px" append-to-body>
+         <!-- 项目信息（只读） -->
+         <el-descriptions :column="2" border size="small" class="mb20">
+            <el-descriptions-item label="工程编号">{{ form.projectCode}}</el-descriptions-item>
+            <el-descriptions-item label="委托任务">{{ form.engineeringProject }}</el-descriptions-item>
+            <el-descriptions-item label="工程地点">{{ form.projectLocation}}</el-descriptions-item>
+            <el-descriptions-item label="项目名称">{{ form.projectName}}</el-descriptions-item>
+         </el-descriptions>
+         <!-- 资料属性（可编辑） -->
          <el-form ref="materialRef" :model="form" :rules="rules" label-width="90px">
             <el-row :gutter="20">
-               <el-col :span="8">
-                  <el-form-item label="所属项目" prop="projectId">
-                     <el-select v-model="form.projectId" placeholder="请选择项目" filterable style="width: 100%">
-                        <el-option v-for="p in projectOptions" :key="p.id" :label="p.projectName" :value="p.id" />
-                     </el-select>
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
+               <el-col :span="12">
                   <el-form-item label="提交时间" prop="submitTime">
                      <el-date-picker v-model="form.submitTime" type="datetime" placeholder="选择提交时间" value-format="YYYY-MM-DD HH:mm:ss" style="width: 100%" />
                   </el-form-item>
                </el-col>
-               <el-col :span="8">
+               <el-col :span="12">
                   <el-form-item label="成果类型" prop="resultType">
-                     <el-select v-model="form.resultType" placeholder="请选择成果类型" clearable filterable allow-create style="width: 100%">
-                        <el-option label="报告" value="报告" />
-                        <el-option label="图纸" value="图纸" />
-                        <el-option label="数据" value="数据" />
-                        <el-option label="影像" value="影像" />
-                        <el-option label="文档" value="文档" />
-                        <el-option label="其他" value="其他" />
+                     <el-select v-model="form.resultType" placeholder="请选择成果类型" clearable filterable style="width: 100%">
+                        <el-option
+                           v-for="dict in proj_material_result_type"
+                           :key="dict.value"
+                           :label="dict.label"
+                           :value="dict.value"
+                        />
                      </el-select>
                   </el-form-item>
                </el-col>
             </el-row>
             <el-row :gutter="20">
-               <el-col :span="8">
+               <el-col :span="12">
                   <el-form-item label="联系人" prop="contactName">
                      <el-input v-model="form.contactName" placeholder="请输入联系人" maxlength="50" />
                   </el-form-item>
                </el-col>
-               <el-col :span="8">
+               <el-col :span="12">
                   <el-form-item label="联系电话" prop="contactPhone">
                      <el-input v-model="form.contactPhone" placeholder="请输入联系电话" maxlength="30" />
+                  </el-form-item>
+               </el-col>
+            </el-row>
+            <el-row :gutter="20">
+               <el-col :span="24">
+                  <el-form-item label="目录" prop="archiveDir">
+                     <el-input v-model="form.archiveDir" placeholder="请输入归档目录" maxlength="500" />
                   </el-form-item>
                </el-col>
             </el-row>
@@ -191,7 +173,7 @@
                :type="item.flowType === '领取' ? 'primary' : 'success'"
                :timestamp="item.operateTime" placement="top">
                <el-card shadow="never">
-                  <p><strong>{{ item.flowType }}</strong> — 操作人：{{ item.userName || '—' }}</p>
+                  <p><strong>{{ item.flowType }}</strong> — 操作人：{{ item.userName }}</p>
                   <p v-if="item.guarantorName">担保人：{{ item.guarantorName }}</p>
                   <p v-if="item.remark">备注：{{ item.remark }}</p>
                </el-card>
@@ -208,11 +190,14 @@
 </template>
 
 <script setup name="Material">
-import { listMaterial, getMaterial, addMaterial, updateMaterial, delMaterial, borrowMaterial, returnMaterial, getFlowList } from "@/api/project/material"
+import { listMaterial, getMaterial, updateMaterial, delMaterial, borrowMaterial, returnMaterial, getFlowList } from "@/api/project/material"
 import { listProject } from "@/api/project/project"
 import { listUser } from "@/api/system/user"
 
 const { proxy } = getCurrentInstance()
+
+// 字典
+const { proj_material_result_type, proj_material_status } = useDict("proj_material_result_type", "proj_material_status")
 
 const materialList = ref([])
 const open = ref(false)
@@ -246,9 +231,7 @@ const data = reactive({
     resultType: undefined,
     status: undefined
   },
-  rules: {
-    projectId: [{ required: true, message: "请选择项目", trigger: "change" }]
-  }
+  rules: {}
 })
 
 const { queryParams, form, rules } = toRefs(data)
@@ -262,7 +245,8 @@ function loadOptions() {
 /** 查询 */
 function getList() {
   loading.value = true
-  listMaterial(queryParams.value).then(response => {
+  const params = { ...queryParams.value }
+  listMaterial(params).then(response => {
     materialList.value = response.rows
     total.value = response.total
     loading.value = false
@@ -275,7 +259,7 @@ function reset() {
   form.value = {
     id: undefined, projectId: undefined, submitTime: undefined,
     contactName: undefined, contactPhone: undefined,
-    resultType: undefined, remark: undefined
+    resultType: undefined, archiveDir: undefined, remark: undefined
   }
   proxy.resetForm("materialRef")
 }
@@ -288,13 +272,6 @@ function handleSelectionChange(selection) {
   single.value = selection.length !== 1
   multiple.value = !selection.length
 }
-
-function resultTypeTag(type) {
-  const map = { '报告': '', '图纸': 'success', '数据': 'primary', '影像': 'warning', '文档': 'info' }
-  return map[type] || 'info'
-}
-
-function handleAdd() { reset(); open.value = true; title.value = "新增资料提交" }
 
 function handleUpdate(row) {
   reset()
@@ -309,9 +286,8 @@ function handleUpdate(row) {
 function submitForm() {
   proxy.$refs["materialRef"].validate(valid => {
     if (valid) {
-      const action = form.value.id != undefined ? updateMaterial : addMaterial
-      action(form.value).then(() => {
-        proxy.$modal.msgSuccess(form.value.id != undefined ? "修改成功" : "新增成功")
+      updateMaterial(form.value).then(() => {
+        proxy.$modal.msgSuccess("修改成功")
         open.value = false
         getList()
       })
@@ -323,7 +299,7 @@ function submitForm() {
 function handleBorrow(row) {
   currentMaterial.value = row
   borrowForm.value = { flowType: "领取", guarantorId: undefined, remark: "" }
-  borrowTitle.value = row.status === "已归还" ? "再次领取" : "领取资料"
+  borrowTitle.value = row.status === "returned" ? "再次领取" : "领取资料"
   borrowOpen.value = true
 }
 

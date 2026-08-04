@@ -64,6 +64,12 @@
           </span>
         </template>
       </el-table-column>
+      <el-table-column label="是否结算" prop="isSettled" min-width="90" align="center">
+        <template #default="scope">
+          <el-tag v-if="scope.row.isSettled === '1'" type="success" size="small">已结算</el-tag>
+          <el-tag v-else type="info" size="small">未结算</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="工程编号" prop="projectCode" min-width="130" show-overflow-tooltip />
       <el-table-column label="备注" prop="remark" min-width="120" show-overflow-tooltip />
       <el-table-column label="操作" align="center" width="120" fixed="right">
@@ -78,8 +84,13 @@
       <el-form ref="formRef" :model="editForm" :rules="rules" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="已到账" prop="receivedAmount">
-              <el-input-number v-model="editForm.receivedAmount" :min="0" :precision="2" style="width: 100%" controls-position="right" placeholder="请输入" />
+            <el-form-item label="已到账">
+              <el-input :model-value="formatMoney(editForm.receivedAmount)" disabled />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="是否结算" prop="isSettled">
+              <el-switch v-model="editForm.isSettled" active-value="1" inactive-value="0" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -149,6 +160,7 @@ const editForm = reactive({
   contractId: null,
   contractName: '',
   receivedAmount: null,
+  isSettled: '0',
   contractPeriod: '',
   paymentTerms: '',
   remark: ''
@@ -201,6 +213,7 @@ function handleEdit(row) {
   editForm.contractId = row.contractId
   editForm.contractName = row.contractName
   editForm.receivedAmount = row.receivedAmount
+  editForm.isSettled = row.isSettled || '0'
   editForm.contractPeriod = row.contractPeriod || ''
   editForm.paymentTerms = row.paymentTerms || ''
   editForm.remark = row.remark || ''
@@ -213,7 +226,7 @@ async function submitForm() {
   try {
     await saveContractSettlement({
       contractId: editForm.contractId,
-      receivedAmount: editForm.receivedAmount,
+      isSettled: editForm.isSettled,
       contractPeriod: editForm.contractPeriod,
       paymentTerms: editForm.paymentTerms,
       remark: editForm.remark
@@ -241,6 +254,12 @@ async function openPriceDetail(row) {
 /** 导出 */
 function handleExport() {
   ElMessage.info('导出功能开发中')
+}
+
+/** 金额格式化 */
+function formatMoney(val) {
+  if (val == null || val === 0) return '—'
+  return Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 onMounted(() => {

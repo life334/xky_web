@@ -240,8 +240,8 @@ function getList() {
 }
 
 function calculateProgress(row) {
-  if (row.status === '已完成' || row.status === '已办结') return 100
-  if (row.status === '已暂停') return Math.round(row.totalDuration ? (row.totalDuration - (row.durationRequire || 0)) / row.totalDuration * 50 + 30 : 35)
+  if (row.status === 'completed' || row.status === 'closed') return 100
+  if (row.status === 'paused') return Math.round(row.totalDuration ? (row.totalDuration - (row.durationRequire || 0)) / row.totalDuration * 50 + 30 : 35)
   if (row.totalDuration && row.durationRequire) {
     return Math.round((row.totalDuration - row.durationRequire) / row.totalDuration * 100)
   }

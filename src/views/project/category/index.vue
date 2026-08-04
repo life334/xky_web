@@ -62,15 +62,15 @@
                <el-tag v-else type="success">小类</el-tag>
             </template>
          </el-table-column>
-         <el-table-column prop="internalPrice" label="内部默认单价" width="150" align="center">
+         <el-table-column prop="internalPrice" label="内部单价" width="150" align="center">
             <template #default="scope">
-               <span v-if="scope.row.level === 2">{{ scope.row.internalPrice }}</span>
+               <span v-if="scope.row.level === 2 && scope.row.internalPrice != null">{{ scope.row.internalPrice }}</span>
                <span v-else>—</span>
             </template>
          </el-table-column>
-         <el-table-column prop="externalPrice" label="外部默认单价" width="150" align="center">
+         <el-table-column prop="externalPrice" label="外部单价" width="150" align="center">
             <template #default="scope">
-               <span v-if="scope.row.level === 2">{{ scope.row.externalPrice }}</span>
+               <span v-if="scope.row.level === 2 && scope.row.externalPrice != null">{{ scope.row.externalPrice }}</span>
                <span v-else>—</span>
             </template>
          </el-table-column>
@@ -129,12 +129,12 @@
                <template v-if="form.parentId !== undefined && form.parentId !== null">
                   <el-col :span="12">
                      <el-form-item label="内部单价" prop="internalPrice">
-                        <el-input-number v-model="form.internalPrice" controls-position="right" :precision="2" :min="0" placeholder="请输入内部单价" />
+                        <el-input-number v-model="form.internalPrice" controls-position="right" :precision="2" :min="0" placeholder="内部单价" />
                      </el-form-item>
                   </el-col>
                   <el-col :span="12">
                      <el-form-item label="外部单价" prop="externalPrice">
-                        <el-input-number v-model="form.externalPrice" controls-position="right" :precision="2" :min="0" placeholder="请输入外部单价" />
+                        <el-input-number v-model="form.externalPrice" controls-position="right" :precision="2" :min="0" placeholder="外部单价" />
                      </el-form-item>
                   </el-col>
                </template>

@@ -200,23 +200,51 @@
             </div>
           </template>
           <div class="material-stats" v-loading="loading">
-            <div class="material-stat-item" @click="goMaterial('待领取')">
+            <div class="material-stat-item" @click="goMaterial('pending')">
               <div class="stat-circle stat-pending">
                 <span class="stat-num">{{ dashboard.materialFlow?.pendingReceive || 0 }}</span>
               </div>
               <span class="stat-label">待领取</span>
             </div>
-            <div class="material-stat-item" @click="goMaterial('已领取')">
+            <div class="material-stat-item" @click="goMaterial('received')">
               <div class="stat-circle stat-active">
                 <span class="stat-num">{{ dashboard.materialFlow?.pendingReturn || 0 }}</span>
               </div>
               <span class="stat-label">待归还</span>
             </div>
-            <div class="material-stat-item" @click="goMaterial('已归还')">
+            <div class="material-stat-item" @click="goMaterial('returned')">
               <div class="stat-circle stat-done">
                 <span class="stat-num">{{ dashboard.materialFlow?.returned || 0 }}</span>
               </div>
               <span class="stat-label">已归还</span>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <!-- ⑤ 合同超时预警 -->
+    <el-row :gutter="16" class="panel-row" v-if="timeoutAlerts.length > 0">
+      <el-col :span="24">
+        <el-card shadow="never" class="dash-card timeout-alert-card">
+          <template #header>
+            <div class="card-header-flex">
+              <span class="card-title">
+                <el-icon color="#f56c6c" :size="16"><WarningFilled /></el-icon>
+                合同超时预警
+                <el-badge :value="timeoutAlerts.length" type="danger" class="alert-badge" />
+              </span>
+              <el-link type="primary" :underline="never" @click="goPage('/contract/list')">去处理</el-link>
+            </div>
+          </template>
+          <div class="timeout-list" v-loading="alertLoading">
+            <div v-for="item in timeoutAlerts" :key="item.id" class="timeout-item">
+              <el-tag type="danger" size="small" effect="dark">超时</el-tag>
+              <span class="timeout-contract">{{ item.contractNo }} — {{ item.contractName }}</span>
+              <span class="timeout-desc">
+                登记时间 {{ formatDate(item.entrustDate) }}，已超过7天未设置完成日期
+              </span>
+              <el-button size="small" type="primary" link @click="goContractDetail(item.contractId)">查看合同</el-button>
             </div>
           </div>
         </el-card>
@@ -248,10 +276,10 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from "vue"
 import { useRouter } from "vue-router"
 import * as echarts from "echarts"
-import { getDashboardData } from "@/api/project/dashboard"
+import { getDashboardData, getAlertList } from "@/api/project/dashboard"
 import {
   Refresh, CaretTop, CaretBottom, FolderAdd, EditPen, Document, Files, Bell,
-  Folder, Loading, TrendCharts, Wallet
+  Folder, Loading, TrendCharts, Wallet, WarningFilled
 } from "@element-plus/icons-vue"
 
 const router = useRouter()
@@ -262,6 +290,8 @@ const globalPeriod = ref("month")
 const outputPeriod = ref("month")
 const showMyTodos = ref(false)
 const dashboard = ref({})
+const timeoutAlerts = ref([])
+const alertLoading = ref(false)
 
 // ===== 图表 ref =====
 const outputChartRef = ref(null)
@@ -295,7 +325,7 @@ const kpiCards = computed(() => {
       display: formatMoney(k.periodOutput),
       unit: "元",
       trend: k.outputTrend ?? null,
-      sub: `内 ${formatMoney(k.internalOutput)} / 外 ${formatMoney(k.externalOutput)}`,
+      sub: formatMoney(k.periodOutput),
       icon: TrendCharts,
       cls: "card-green"
     },
@@ -369,9 +399,14 @@ function onGlobalPeriodChange(val) {
 // ===== 拉取数据 =====
 async function fetchData() {
   loading.value = true
+  alertLoading.value = true
   try {
-    const res = await getDashboardData(outputPeriod.value)
-    dashboard.value = res.data || {}
+    const [dashRes, alertRes] = await Promise.all([
+      getDashboardData(outputPeriod.value),
+      getAlertList()
+    ])
+    dashboard.value = dashRes.data || {}
+    timeoutAlerts.value = alertRes.data || []
     await nextTick()
     renderOutputChart()
     renderStatusChart()
@@ -379,6 +414,7 @@ async function fetchData() {
     console.error("Dashboard data fetch error:", e)
   } finally {
     loading.value = false
+    alertLoading.value = false
   }
 }
 
@@ -390,8 +426,7 @@ function renderOutputChart() {
   }
   const trend = dashboard.value.outputTrend || {}
   const labels = trend.labels || []
-  const internal = (trend.internal || []).map(v => Number(v))
-  const external = (trend.external || []).map(v => Number(v))
+  const values = (trend.values || []).map(v => Number(v))
 
   outputChart.setOption({
     tooltip: {
@@ -409,7 +444,7 @@ function renderOutputChart() {
       }
     },
     legend: {
-      data: ["内部产值", "外部产值"],
+      data: ["产值"],
       bottom: 0,
       icon: "circle",
       itemWidth: 8,
@@ -437,9 +472,9 @@ function renderOutputChart() {
     },
     series: [
       {
-        name: "内部产值",
+        name: "产值",
         type: "line",
-        data: internal,
+        data: values,
         smooth: true,
         symbol: "circle",
         symbolSize: 5,
@@ -449,22 +484,6 @@ function renderOutputChart() {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: "rgba(64,158,255,0.25)" },
             { offset: 1, color: "rgba(64,158,255,0.01)" }
-          ])
-        }
-      },
-      {
-        name: "外部产值",
-        type: "line",
-        data: external,
-        smooth: true,
-        symbol: "circle",
-        symbolSize: 5,
-        lineStyle: { width: 2, color: "#faad14" },
-        itemStyle: { color: "#faad14" },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: "rgba(250,173,20,0.2)" },
-            { offset: 1, color: "rgba(250,173,20,0.01)" }
           ])
         }
       }
@@ -480,12 +499,13 @@ function renderStatusChart() {
   }
   const dist = dashboard.value.projectStatusDist || []
   const colorMap = {
-    "待开始": "#909399",
-    "进行中": "#409eff",
-    "已暂停": "#e6a23c",
-    "已完成": "#67c23a",
-    "已办结": "#13ce66",
-    "已取消": "#f56c6c"
+    "pending": "#909399",
+    "ongoing": "#409eff",
+    "paused": "#e6a23c",
+    "completed": "#67c23a",
+    "closed": "#13ce66",
+    "archived": "#909399",
+    "cancelled": "#f56c6c"
   }
   const data = dist.map(d => ({
     name: d.name,
@@ -542,6 +562,9 @@ function goTaskDetail(id) {
 }
 function goMaterial(status) {
   router.push({ path: "/material" })
+}
+function goContractDetail(id) {
+  router.push({ path: "/contract/list", query: { id } })
 }
 
 // ===== 窗口缩放 =====
@@ -1059,6 +1082,48 @@ onBeforeUnmount(() => {
 
 :deep(.el-table__row) {
   cursor: pointer;
+}
+
+/* ===== 合同超时预警 ===== */
+.timeout-alert-card {
+  :deep(.el-card__header) {
+    background: linear-gradient(135deg, #fff2f0, #fff1f0);
+    border-bottom: 1px solid #ffccc7;
+  }
+}
+
+.timeout-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.timeout-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fffaf0;
+  border: 1px solid #ffe58f;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #fff7e6;
+    border-color: #ffd591;
+  }
+
+  .timeout-contract {
+    font-weight: 600;
+    color: #303133;
+    min-width: 0;
+  }
+
+  .timeout-desc {
+    flex: 1;
+    font-size: 13px;
+    color: #909399;
+  }
 }
 
 /* ===== 响应式 ===== */

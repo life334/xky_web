@@ -72,10 +72,7 @@
             <div class="metric-card metric-settlement">
               <div class="metric-label">结算产值</div>
               <div class="big-num">¥{{ formatMoney(project.totalOutput) }}</div>
-              <div class="dual">
-                <span>内部 {{ formatMoney(project.internalOutput) }}</span>
-                <span>外部 {{ formatMoney(project.externalOutput) }}</span>
-              </div>
+              <div class="sub-text">内部 ¥{{ formatMoney(project.internalOutput) }} | 外部 ¥{{ formatMoney(project.externalOutput) }}</div>
             </div>
             <div class="metric-card metric-material">
               <div class="metric-label">成果资料</div>
@@ -97,11 +94,11 @@
                 <el-radio-button label="done">已完成</el-radio-button>
               </el-radio-group>
             </div>
-            <div v-for="t in filteredTasks" :key="t.id" class="task-row" :class="{ overdue: t.isOverdue, done: t.status === '已完成' }">
+            <div v-for="t in filteredTasks" :key="t.id" class="task-row" :class="{ overdue: t.isOverdue, done: t.status === 'completed' }">
               <el-checkbox
-                :model-value="t.status === '已完成'"
+                :model-value="t.status === 'completed'"
                 @change="(v) => toggleTask(t, v)"
-                :disabled="t.status === '已完成'"
+                :disabled="t.status === 'completed'"
               />
               <div class="task-main">
                 <div class="task-name">
@@ -123,11 +120,11 @@
         <el-tab-pane :label="`合同 (${contracts.length})`" name="contracts" lazy>
           <div v-if="contractLoading" class="tab-loading"><el-icon class="is-loading"><Loading /></el-icon></div>
           <div v-else class="contract-grid">
-            <div v-for="c in contracts" :key="c.id" class="contract-card" :class="{ 'is-unarchived': c.archiveStatus !== '已归档' }">
+            <div v-for="c in contracts" :key="c.id" class="contract-card" :class="{ 'is-unarchived': c.archiveStatus !== 'archived' }">
               <div class="contract-head">
                 <div class="contract-no mono">{{ c.contractNo }}</div>
-                <el-tag :type="c.archiveStatus === '已归档' ? 'success' : 'warning'" size="small" effect="light">
-                  {{ c.archiveStatus || '未归档' }}
+                <el-tag :type="c.archiveStatus === 'archived' ? 'success' : 'warning'" size="small" effect="light">
+                  {{ c.archiveStatus === 'archived' ? '已归档' : '未归档' }}
                 </el-tag>
               </div>
               <div class="contract-name">{{ c.contractName }}</div>
@@ -157,13 +154,13 @@
           <div v-if="paymentLoading" class="tab-loading"><el-icon class="is-loading"><Loading /></el-icon></div>
           <div v-else class="payment-timeline">
             <div v-for="p in payments" :key="p.id" class="timeline-item" :class="{ overdue: p.isOverdue }">
-              <div class="timeline-dot" :class="p.receivedStatus === '已到账' ? 'received' : 'pending'">
-                <el-icon v-if="p.receivedStatus === '已到账'"><Check /></el-icon>
+              <div class="timeline-dot" :class="p.receivedStatus === 'received' ? 'received' : 'pending'">
+                <el-icon v-if="p.receivedStatus === 'received'"><Check /></el-icon>
                 <el-icon v-else><Clock /></el-icon>
               </div>
               <div class="timeline-body">
                 <div class="timeline-head">
-                  <span class="pay-type">{{ p.paymentType || '-' }}</span>
+                  <span class="pay-type">{{ payTypeLabel(p) }}</span>
                   <span class="pay-amount">¥{{ formatMoney(p.amount) }}</span>
                   <el-tag :type="paymentStatusType(p)" size="small" effect="light">
                     {{ paymentStatusLabel(p) }}
@@ -183,14 +180,12 @@
           <div v-if="settlementLoading" class="tab-loading"><el-icon class="is-loading"><Loading /></el-icon></div>
           <div v-else-if="settlement" class="settlement-grid">
             <div class="set-col">
-              <div class="col-head internal">内部</div>
-              <div class="set-row"><span>工作量</span><b>{{ settlement.internalWorkload || 0 }} 人·天</b></div>
-              <div class="set-row"><span>产值</span><b>¥{{ formatMoney(settlement.internalOutput) }}</b></div>
+              <div class="col-head internal">内部产值</div>
+              <div class="set-row"><span>内部产值</span><b>¥{{ formatMoney(settlement.internalOutput || 0) }}</b></div>
             </div>
             <div class="set-col">
-              <div class="col-head external">外部</div>
-              <div class="set-row"><span>工作量</span><b>{{ settlement.externalWorkload || 0 }} 人·天</b></div>
-              <div class="set-row"><span>产值</span><b>¥{{ formatMoney(settlement.externalOutput) }}</b></div>
+              <div class="col-head external">外部产值</div>
+              <div class="set-row"><span>外部产值</span><b>¥{{ formatMoney(settlement.externalOutput || 0) }}</b></div>
             </div>
             <div class="set-total">
               <div class="lbl">合计产值</div>
@@ -202,15 +197,13 @@
         <el-tab-pane :label="`资料 (${materials.length})`" name="materials" lazy>
           <div v-if="materialLoading" class="tab-loading"><el-icon class="is-loading"><Loading /></el-icon></div>
           <div v-else class="material-list">
-            <div v-for="m in materials" :key="m.id" class="material-row" :class="{ pending: m.submitStatus !== '已提交' }">
+            <div v-for="m in materials" :key="m.id" class="material-row" :class="{ pending: m.submitStatus !== 'submitted' }">
               <el-icon class="file-icon"><Document /></el-icon>
               <div class="mat-main">
                 <div class="mat-type">{{ m.resultType || m.materialName || '-' }}</div>
                 <div class="mat-meta">提交时间：{{ m.submitTime ? parseTime(m.submitTime, '{y}-{m}-{d}') : '—' }} <span v-if="m.receiverName">| 领取人：{{ m.receiverName }}</span></div>
               </div>
-              <el-tag :type="m.submitStatus === '已提交' ? 'success' : 'warning'" size="small" effect="light">
-                {{ m.submitStatus || '待提交' }}
-              </el-tag>
+              <dict-tag :options="proj_material_submit_status" :value="m.submitStatus" />
             </div>
           </div>
         </el-tab-pane>
@@ -238,12 +231,18 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:visible'])
 
+const { proj_payment_received_status, proj_material_submit_status, proj_payment_type } = useDict(
+  'proj_payment_received_status', 'proj_material_submit_status', 'proj_payment_type'
+)
+
 const localVisible = computed({
   get: () => props.visible,
   set: (v) => emit('update:visible', v)
 })
 
 function normalizeStatus(status) {
+  // 后端已返回 dict value（如 ongoing/closed/archived），直接用作 CSS class
+  // 保留中文→英文映射作为安全网
   const map = {
     "待开始": "pending",
     "进行中": "ongoing",
@@ -252,29 +251,37 @@ function normalizeStatus(status) {
     "已办结": "closed",
     "已取消": "cancelled"
   }
-  return map[status] || status
+  return map[status] || status || ''
 }
 
 function taskStatusType(status) {
   const map = {
-    "待开始": "info",
-    "进行中": "",
-    "已完成": "success",
-    "已暂停": "warning"
+    "pending": "info",
+    "ongoing": "",
+    "completed": "success",
+    "paused": "warning"
   }
   return map[status] || "info"
 }
 
 function paymentStatusType(p) {
-  if (p.receivedStatus === '已到账') return 'success'
+  if (p.receivedStatus === 'received') return 'success'
   if (p.isOverdue) return 'danger'
   return 'warning'
 }
 
 function paymentStatusLabel(p) {
-  if (p.receivedStatus === '已到账') return '已到账'
+  if (p.receivedStatus === 'received') {
+    const dict = (proj_payment_received_status.value || []).find(d => d.value === 'received')
+    return dict ? dict.label : '已到账'
+  }
   if (p.isOverdue) return '超期未到账'
   return '待到账'
+}
+
+function payTypeLabel(p) {
+  const dict = (proj_payment_type.value || []).find(d => d.value === p.paymentType)
+  return dict ? dict.label : (p.paymentType || '-')
 }
 
 function progressColor(p) {
@@ -307,8 +314,8 @@ const materials = ref([])
 const taskFilter = ref('all')
 const filteredTasks = computed(() => {
   if (taskFilter.value === 'overdue') return tasks.value.filter(t => t.isOverdue)
-  if (taskFilter.value === 'pending') return tasks.value.filter(t => t.status === '待开始')
-  if (taskFilter.value === 'done') return tasks.value.filter(t => t.status === '已完成')
+  if (taskFilter.value === 'pending') return tasks.value.filter(t => t.status === 'pending')
+  if (taskFilter.value === 'done') return tasks.value.filter(t => t.status === 'completed')
   return tasks.value
 })
 
@@ -355,7 +362,7 @@ async function loadTaskStats() {
     const response = await listTask({ projectId: props.projectId, pageNum: 1, pageSize: 1000 })
     const taskData = response.rows || []
     project.value.taskTotal = taskData.length
-    project.value.taskDone = taskData.filter(t => t.status === '已完成').length
+    project.value.taskDone = taskData.filter(t => t.status === 'completed').length
     project.value.taskProgress = project.value.taskTotal > 0 ? Math.round(project.value.taskDone / project.value.taskTotal * 100) : 0
   } catch (e) {}
 }
@@ -374,7 +381,7 @@ async function loadPaymentStats() {
     const response = await listPayment({ projectId: props.projectId, pageNum: 1, pageSize: 100 })
     const paymentData = response.rows || []
     project.value.paymentCount = paymentData.length
-    project.value.paidCount = paymentData.filter(p => p.receivedStatus === '已到账').length
+    project.value.paidCount = paymentData.filter(p => p.receivedStatus === 'received').length
     project.value.paymentRate = project.value.paymentCount > 0 ? Math.round(project.value.paidCount / project.value.paymentCount * 100) : 0
   } catch (e) {}
 }
@@ -394,12 +401,12 @@ async function loadMaterialStats() {
     const response = await listMaterial({ projectId: props.projectId, pageNum: 1, pageSize: 100 })
     const materialData = response.rows || []
     project.value.materialCount = materialData.length
-    project.value.materialSubmitted = materialData.filter(m => m.submitStatus === '已提交').length
+    project.value.materialSubmitted = materialData.filter(m => m.submitStatus === 'submitted').length
   } catch (e) {}
 }
 
 function calculateTaskProgress(data) {
-  if (data.status === '已完成' || data.status === '已办结') return 100
+  if (data.status === 'completed' || data.status === 'closed') return 100
   return 50
 }
 
@@ -443,7 +450,7 @@ async function loadSettlement() {
     const response = await getSettlementDetail(props.projectId)
     settlement.value = response.data || {}
   } catch (e) {
-    settlement.value = { internalWorkload: 0, externalWorkload: 0, internalOutput: 0, externalOutput: 0 }
+    settlement.value = { internalOutput: 0, externalOutput: 0 }
   }
   tabLoaded.settlement = true
   settlementLoading.value = false
@@ -458,14 +465,14 @@ async function loadMaterials() {
 }
 
 function calculateIsOverdue(task) {
-  if (!task.requiredFinishDate || task.status === '已完成') return false
+  if (!task.requiredFinishDate || task.status === 'completed') return false
   const deadline = new Date(task.requiredFinishDate)
   const today = new Date()
   return deadline < today
 }
 
 function calculateOverdueDays(task) {
-  if (!task.requiredFinishDate || task.status === '已完成') return 0
+  if (!task.requiredFinishDate || task.status === 'completed') return 0
   const deadline = new Date(task.requiredFinishDate)
   const today = new Date()
   const diff = Math.floor((today - deadline) / (1000 * 60 * 60 * 24))
@@ -473,7 +480,7 @@ function calculateOverdueDays(task) {
 }
 
 function calculatePaymentOverdue(payment) {
-  if (payment.receivedStatus === '已到账') return false
+  if (payment.receivedStatus === 'received') return false
   if (!payment.paymentTime) return false
   const paymentDate = new Date(payment.paymentTime)
   const today = new Date()
@@ -482,7 +489,7 @@ function calculatePaymentOverdue(payment) {
 }
 
 function calculatePaymentOverdueDays(payment) {
-  if (payment.receivedStatus === '已到账') return 0
+  if (payment.receivedStatus === 'received') return 0
   if (!payment.paymentTime) return 0
   const paymentDate = new Date(payment.paymentTime)
   const today = new Date()
@@ -516,14 +523,14 @@ async function handleTabChange(name) {
 
 async function toggleTask(task, checked) {
   const old = task.status
-  task.status = checked ? '已完成' : old
+  task.status = checked ? 'completed' : old
   if (checked) {
     task.actualFinishDate = new Date().toISOString().slice(0, 10)
     task.isOverdue = false
     task.overdueDays = 0
   }
   try {
-    await proxy.$http.put('/project/task', { ...task, status: checked ? '已完成' : old })
+    await proxy.$http.put('/project/task', { ...task, status: checked ? 'completed' : old })
     proxy.$modal.msgSuccess(`任务【${task.taskName}】已标记完成`)
     loadTaskStats()
   } catch (e) {

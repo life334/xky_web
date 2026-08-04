@@ -164,6 +164,34 @@ export const dynamicRoutes = [
         meta: { title: '修改生成配置', activeMenu: '/tool/gen' }
       }
     ]
+  },
+  {
+    path: '/project/project-detail',
+    component: Layout,
+    hidden: true,
+    permissions: ['project:project:query'],
+    children: [
+      {
+        path: 'index/:projectId(\\d+)',
+        component: () => import('@/views/project/project/detail'),
+        name: 'ProjectDetail',
+        meta: { title: '项目工作台', activeMenu: '/project/list', noTagsView: true }
+      }
+    ]
+  },
+  {
+    path: '/project/payment-overview',
+    component: Layout,
+    hidden: true,
+    permissions: ['project:payment:list'],
+    children: [
+      {
+        path: 'index',
+        component: () => import('@/views/project/payment/overview'),
+        name: 'PaymentOverview',
+        meta: { title: '项目收款总览', activeMenu: '/project/payment', noTagsView: true }
+      }
+    ]
   }
 ]
 

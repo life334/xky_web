@@ -8,3 +8,11 @@ export function getDashboardData(period) {
     params: { period }
   })
 }
+
+// 获取预警列表（合同超时预警等）
+export function getAlertList() {
+  return request({
+    url: '/project/dashboard/alerts',
+    method: 'get'
+  })
+}

@@ -8,9 +8,7 @@
          </el-form-item>
          <el-form-item label="付款类型" prop="paymentType">
             <el-select v-model="queryParams.paymentType" placeholder="请选择付款类型" clearable style="width: 140px">
-               <el-option label="预付款" value="预付款" />
-               <el-option label="进度款" value="进度款" />
-               <el-option label="尾款" value="尾款" />
+               <el-option v-for="d in proj_payment_type" :key="d.value" :label="d.label" :value="d.value" />
             </el-select>
          </el-form-item>
          <el-form-item label="付款单位" prop="payUnit">
@@ -48,10 +46,7 @@
          </el-table-column>
          <el-table-column label="付款类型" align="center" prop="paymentType" min-width="100">
             <template #default="scope">
-               <el-tag v-if="scope.row.paymentType === '预付款'" type="info">{{ scope.row.paymentType }}</el-tag>
-               <el-tag v-else-if="scope.row.paymentType === '进度款'" type="primary">{{ scope.row.paymentType }}</el-tag>
-               <el-tag v-else-if="scope.row.paymentType === '尾款'" type="success">{{ scope.row.paymentType }}</el-tag>
-               <span v-else style="color: #c0c4cc">—</span>
+               <dict-tag :options="proj_payment_type" :value="scope.row.paymentType" />
             </template>
          </el-table-column>
          <el-table-column label="金额(元)" align="center" prop="amount" min-width="130">
@@ -108,9 +103,7 @@
                <el-col :span="8">
                   <el-form-item label="付款类型" prop="paymentType">
                      <el-select v-model="form.paymentType" placeholder="请选择付款类型" style="width: 100%">
-                        <el-option label="预付款" value="预付款" />
-                        <el-option label="进度款" value="进度款" />
-                        <el-option label="尾款" value="尾款" />
+                        <el-option v-for="d in proj_payment_type" :key="d.value" :label="d.label" :value="d.value" />
                      </el-select>
                   </el-form-item>
                </el-col>
@@ -165,6 +158,7 @@ import { listPayment, getPayment, addPayment, updatePayment, delPayment } from "
 import { listProject } from "@/api/project/project"
 
 const { proxy } = getCurrentInstance()
+const { proj_payment_type } = useDict('proj_payment_type')
 
 const paymentList = ref([])
 const open = ref(false)

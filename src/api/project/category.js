@@ -18,6 +18,15 @@ export function categoryTreeselect(query) {
   })
 }
 
+// 查询项目类别下拉树结构（含单价等完整字段）
+export function categoryTreeselectFull(query) {
+  return request({
+    url: '/project/category/treeselectFull',
+    method: 'get',
+    params: query
+  })
+}
+
 // 查询项目类别详细
 export function getCategory(id) {
   return request({
