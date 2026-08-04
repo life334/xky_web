@@ -84,3 +84,12 @@ export function getProjectStatusCounts() {
     method: 'get'
   })
 }
+
+// 查询字段去重值列表（高级筛选下拉选项）
+export function getDistinctValues(field) {
+  return request({
+    url: '/project/project/distinctValues',
+    method: 'get',
+    params: { field }
+  })
+}

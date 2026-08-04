@@ -77,6 +77,30 @@
                   </el-select>
                </div>
                <div class="filter-item">
+                  <div class="filter-item-label">工程编号</div>
+                  <el-input v-model="queryParams.projectCode" placeholder="模糊搜索" clearable style="width: 100%" @keyup.enter="handleQuery" @clear="handleQuery" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">委托单位</div>
+                  <el-select v-model="queryParams.clientUnit" filterable clearable placeholder="全部单位" style="width: 100%">
+                     <el-option v-for="item in clientUnitOptions" :key="item" :label="item" :value="item" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">工程项目</div>
+                  <el-select v-model="queryParams.engineeringProject" filterable clearable placeholder="全部项目" style="width: 100%">
+                     <el-option v-for="item in engineeringProjectOptions" :key="item" :label="item" :value="item" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">工程地点</div>
+                  <el-input v-model="queryParams.projectLocation" placeholder="模糊搜索" clearable style="width: 100%" @keyup.enter="handleQuery" @clear="handleQuery" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">联系人</div>
+                  <el-input v-model="queryParams.contactName" placeholder="模糊搜索" clearable style="width: 100%" @keyup.enter="handleQuery" @clear="handleQuery" />
+               </div>
+               <div class="filter-item">
                   <div class="filter-item-label">安排日期</div>
                   <el-date-picker
                      v-model="assignDateRange"
@@ -445,7 +469,7 @@
 </template>
 
 <script setup name="Project">
-import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts } from "@/api/project/project"
+import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues } from "@/api/project/project"
 import { categoryTreeselect } from "@/api/project/category"
 import { listUser } from "@/api/system/user"
 import { listTask } from "@/api/project/task"
@@ -481,6 +505,8 @@ const savedSchemes = ref([])
 const saveSchemeVisible = ref(false)
 const schemeName = ref("")
 const currentSchemeName = ref("")
+const clientUnitOptions = ref([])
+const engineeringProjectOptions = ref([])
 const taskListOpen = ref(false)
 const taskLoading = ref(false)
 const taskListData = ref([])
@@ -565,6 +591,7 @@ const data = reactive({
     projectCategoryId: undefined,
     leaderId: undefined,
     contractId: undefined,
+    projectCode: undefined,
     contactName: undefined,
     projectLocation: undefined,
     engineeringProject: undefined,
@@ -726,6 +753,16 @@ function loadSavedSchemes() {
   } catch (e) { /* ignore */ }
 }
 
+/** 加载高级筛选下拉选项（委托单位、工程项目去重列表） */
+function loadDistinctValues() {
+  getDistinctValues('client_unit').then(res => {
+    clientUnitOptions.value = (res.data || []).filter(Boolean)
+  }).catch(() => {})
+  getDistinctValues('engineering_project').then(res => {
+    engineeringProjectOptions.value = (res.data || []).filter(Boolean)
+  }).catch(() => {})
+}
+
 /** 加载类别树 */
 function loadCategoryTree() {
   categoryTreeselect().then(response => {
@@ -787,6 +824,7 @@ function resetQuery() {
   queryParams.value.projectCategoryId = undefined
   queryParams.value.leaderId = undefined
   queryParams.value.contractId = undefined
+  queryParams.value.projectCode = undefined
   queryParams.value.contactName = undefined
   queryParams.value.projectLocation = undefined
   queryParams.value.engineeringProject = undefined
@@ -996,6 +1034,7 @@ getList()
 loadSavedSchemes()
 loadCategoryTree()
 loadUserList()
+loadDistinctValues()
 </script>
 
 <style scoped>
@@ -1092,7 +1131,7 @@ loadUserList()
 }
 .filter-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 16px 24px;
 }
 .filter-item-label {
