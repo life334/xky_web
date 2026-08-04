@@ -1,46 +1,132 @@
 <template>
    <div class="app-container">
-      <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px" class="compact-search">
-         <el-form-item label="工程编号" prop="projectCode">
-            <el-input v-model="queryParams.projectCode" placeholder="请输入工程编号" clearable style="width: 150px" @keyup.enter="handleQuery" />
-         </el-form-item>
-         <el-form-item label="项目名称" prop="projectName">
-            <el-input v-model="queryParams.projectName" placeholder="请输入项目名称" clearable style="width: 160px" @keyup.enter="handleQuery" />
-         </el-form-item>
-         <el-form-item label="状态" prop="status">
-            <el-select v-model="queryParams.status" placeholder="项目状态" clearable style="width: 120px">
-               <el-option v-for="dict in (proj_project_status || [])" :key="dict.value" :label="dict.label" :value="dict.value" />
-            </el-select>
-         </el-form-item>
-         <el-form-item label="创建时间">
-            <el-date-picker v-model="dateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width: 210px" />
-         </el-form-item>
-         <el-form-item>
-            <el-button type="primary" icon="Search" size="small" @click="handleQuery">搜索</el-button>
-            <el-button icon="Refresh" size="small" @click="resetQuery">重置</el-button>
-         </el-form-item>
-      </el-form>
+      <!-- 第一行：全局搜索 + 搜索/重置按钮 -->
+      <div class="search-toolbar" v-show="showSearch">
+         <el-input
+            v-model="queryParams.keyword"
+            placeholder="全局搜索 — 工程编号 / 项目名称 / 委托单位 / 工程项目 / 联系人"
+            clearable
+            size="default"
+            class="global-search"
+            @keyup.enter="handleQuery"
+            @clear="handleQuery"
+         >
+            <template #prefix>
+               <svg-icon icon-class="search" />
+            </template>
+         </el-input>
+         <el-button type="primary" size="small" @click="handleQuery" style="flex-shrink:0;margin-left:8px">搜索</el-button>
+         <el-button size="small" @click="resetQuery" style="flex-shrink:0;margin-left:4px">重置</el-button>
+      </div>
 
-      <el-row :gutter="6" class="mb8 compact-ops">
-         <el-col :span="1.5">
-            <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['project:project:add']">新增</el-button>
-         </el-col>
-         <el-col :span="1.5">
-            <el-button type="info" plain icon="Upload"  @click="handleImport" v-hasPermi="['project:project:import']">导入</el-button>
-         </el-col>
-         <el-col :span="1.5">
-            <el-button type="info" plain icon="DocumentCopy" @click="handlePaste" v-hasPermi="['project:project:add']">粘贴</el-button>
-         </el-col>
-         <el-col :span="1.5">
-            <el-button type="success" plain icon="Edit" :disabled="single" @click="handleUpdate" v-hasPermi="['project:project:edit']">修改</el-button>
-         </el-col>
-         <el-col :span="1.5">
-            <el-button type="danger" plain icon="Delete" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:project:remove']">删除</el-button>
-         </el-col>
-         <el-col :span="1.5">
-            <el-button type="warning" plain icon="Download" @click="handleExport" v-hasPermi="['project:project:export']">导出</el-button>
-         </el-col>
-         <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar>
+      <!-- 第二行：状态胶囊导航 -->
+      <div class="status-capsules" v-show="showSearch">
+         <span class="status-label">状态：</span>
+         <span
+            v-for="item in statusCapsules"
+            :key="item.value"
+            :class="['status-capsule', { active: queryParams.status === item.value }]"
+            @click="toggleStatus(item.value)"
+         >
+            {{ item.label }} {{ item.count > 0 ? item.count : '' }}
+         </span>
+      </div>
+
+      <!-- 第三行：高级筛选折叠触发器 -->
+      <div class="advanced-toggle" v-show="showSearch" @click="advancedVisible = !advancedVisible">
+         <span class="toggle-arrow" :class="{ 'is-open': advancedVisible }">▼</span>
+         <span class="toggle-label">高级筛选</span>
+         <span class="toggle-hint">（项目类别、负责人、合同、时间范围等）</span>
+      </div>
+
+      <!-- 第四行：高级筛选面板 -->
+      <el-collapse-transition>
+         <div v-show="advancedVisible" class="advanced-filter-panel">
+            <div class="filter-grid">
+               <div class="filter-item">
+                  <div class="filter-item-label">项目类别</div>
+                  <el-tree-select
+                     v-model="queryParams.projectCategoryId"
+                     :data="categoryOptions"
+                     :props="{ value: 'id', label: 'label', children: 'children' }"
+                     value-key="id"
+                     placeholder="全部类别"
+                     check-strictly
+                     clearable
+                     style="width: 100%"
+                  />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">负责人</div>
+                  <el-select v-model="queryParams.leaderId" filterable clearable placeholder="全部负责人" style="width: 100%">
+                     <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">合同</div>
+                  <el-select
+                     v-model="queryParams.contractId"
+                     filterable remote reserve-keyword clearable
+                     placeholder="全部合同"
+                     :remote-method="searchContracts"
+                     :loading="contractLoading"
+                     style="width: 100%"
+                     @visible-change="onContractVisibleChange"
+                  >
+                     <el-option v-for="c in contractOptions" :key="c.id" :label="c.contractNo + ' — ' + c.contractName" :value="c.id" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">安排日期</div>
+                  <el-date-picker
+                     v-model="assignDateRange"
+                     value-format="YYYY-MM-DD"
+                     type="daterange"
+                     range-separator="-"
+                     start-placeholder="开始"
+                     end-placeholder="结束"
+                     style="width: 100%"
+                     @change="onAssignDateChange"
+                  />
+               </div>
+            </div>
+            <!-- 快捷日期 -->
+            <div class="quick-date-row">
+               <span class="quick-date-label">快捷：</span>
+               <el-button size="small" v-for="btn in quickDateBtns" :key="btn.label" @click="setQuickDate(btn.range)">{{ btn.label }}</el-button>
+            </div>
+            <!-- 分割线 -->
+            <div class="filter-divider"></div>
+            <!-- 筛选方案 -->
+            <div class="scheme-row">
+               <span class="scheme-label">筛选方案：</span>
+               <span
+                  v-for="s in savedSchemes"
+                  :key="s.name"
+                  :class="['scheme-tag', { active: currentSchemeName === s.name }]"
+                  @click="loadSavedScheme(s.name)"
+               >{{ s.name }}</span>
+               <el-button link type="primary" size="small" @click="saveSchemeVisible = true">+ 保存当前</el-button>
+               <span class="collapse-link" @click="advancedVisible = false">
+                  收起 <span class="collapse-arrow">▲</span>
+               </span>
+            </div>
+         </div>
+      </el-collapse-transition>
+
+      <!-- 第四行：操作按钮行（左：增删改，右：导出+列设置） -->
+      <el-row :gutter="6" class="mb8 compact-ops" justify="space-between">
+         <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <el-button type="primary" plain icon="Plus" size="small" @click="handleAdd" v-hasPermi="['project:project:add']">新增</el-button>
+            <el-button type="info" plain icon="Upload" size="small" @click="handleImport" v-hasPermi="['project:project:import']">导入</el-button>
+            <el-button type="info" plain icon="DocumentCopy" size="small" @click="handlePaste" v-hasPermi="['project:project:add']">粘贴</el-button>
+            <el-button type="success" plain icon="Edit" size="small" :disabled="single" @click="handleUpdate" v-hasPermi="['project:project:edit']">修改</el-button>
+            <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:project:remove']">删除</el-button>
+         </div>
+         <div style="display:flex;align-items:center;gap:6px">
+            <el-button type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:project:export']">导出</el-button>
+            <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" />
+         </div>
       </el-row>
 
       <el-table ref="tableRef" v-loading="loading" :data="projectList" stripe border @selection-change="handleSelectionChange">
@@ -340,18 +426,33 @@
          </template>
       </el-dialog>
 
+      <!-- 保存筛选方案对话框 -->
+      <el-dialog title="保存筛选方案" :model-value="saveSchemeVisible" @update:model-value="saveSchemeVisible = $event" width="400px" append-to-body>
+         <el-form label-width="80px">
+            <el-form-item label="方案名称">
+               <el-input v-model="schemeName" placeholder="请输入方案名称" maxlength="30" @keyup.enter="saveScheme" />
+            </el-form-item>
+         </el-form>
+         <template #footer>
+            <el-button type="primary" @click="saveScheme">保 存</el-button>
+            <el-button @click="saveSchemeVisible = false">取 消</el-button>
+         </template>
+      </el-dialog>
+
       <!-- Excel导入对话框 -->
       <excel-import-dialog ref="importRef" title="项目导入" action="/project/project/importData" template-action="/project/project/importTemplate" template-file-name="project_template" update-support-label="是否更新已存在的项目数据" @success="getList" />
    </div>
 </template>
 
 <script setup name="Project">
-import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject } from "@/api/project/project"
+import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts } from "@/api/project/project"
 import { categoryTreeselect } from "@/api/project/category"
 import { listUser } from "@/api/system/user"
 import { listTask } from "@/api/project/task"
 import { listContract } from "@/api/project/contract"
 import ExcelImportDialog from "@/components/ExcelImportDialog"
+/** 格式化日期 YYYY-MM-DD */
+function fmt(d) { return d.toISOString().slice(0, 10) }
 
 const { proxy } = getCurrentInstance()
 const { proj_project_status, proj_task_status } = useDict("proj_project_status", "proj_task_status")
@@ -373,6 +474,13 @@ const contractLoading = ref(false)
 const detail = ref({})
 const ids = ref([])
 const dateRange = ref([])
+const assignDateRange = ref([])
+const advancedVisible = ref(false)
+const statusCounts = ref({})
+const savedSchemes = ref([])
+const saveSchemeVisible = ref(false)
+const schemeName = ref("")
+const currentSchemeName = ref("")
 const taskListOpen = ref(false)
 const taskLoading = ref(false)
 const taskListData = ref([])
@@ -394,6 +502,26 @@ const allowedStatuses = computed(() => {
       return { label: dict ? dict.label : s, value: s }
    })
 })
+
+// 状态胶囊数据（字典 + 计数）
+const statusCapsules = computed(() => {
+  const dict = proj_project_status.value || []
+  const total = Object.values(statusCounts.value).reduce((sum, c) => sum + (Number(c) || 0), 0)
+  const items = [{ label: '全部', value: undefined, count: total }]
+  dict.forEach(d => {
+    items.push({ label: d.label, value: d.value, count: statusCounts.value[d.value] || 0 })
+  })
+  return items
+})
+
+// 快捷时间按钮
+const quickDateBtns = [
+   { label: '今天', range: () => { const d = fmt(new Date()); return [d, d] } },
+   { label: '本周', range: () => { const d = new Date(); const day = d.getDay(); const mon = new Date(d); mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); const sun = new Date(mon); sun.setDate(mon.getDate() + 6); return [fmt(mon), fmt(sun)] } },
+   { label: '本月', range: () => [fmt(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), fmt(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0))] },
+   { label: '近7天', range: () => { const end = new Date(); const start = new Date(end); start.setDate(end.getDate() - 6); return [fmt(start), fmt(end)] } },
+   { label: '近30天', range: () => { const end = new Date(); const start = new Date(end); start.setDate(end.getDate() - 29); return [fmt(start), fmt(end)] } },
+]
 
 // 区域粘贴
 const pasteOpen = ref(false)
@@ -432,9 +560,17 @@ const data = reactive({
   queryParams: {
     pageNum: 1,
     pageSize: 10,
-    projectCode: undefined,
-    projectName: undefined,
-    status: undefined
+    keyword: undefined,
+    status: undefined,
+    projectCategoryId: undefined,
+    leaderId: undefined,
+    contractId: undefined,
+    contactName: undefined,
+    projectLocation: undefined,
+    engineeringProject: undefined,
+    clientUnit: undefined,
+    assignDateBegin: undefined,
+    assignDateEnd: undefined
   },
   rules: {
     projectCode: [{ required: true, message: "工程编号不能为空", trigger: "blur" }],
@@ -475,6 +611,119 @@ function getList() {
     total.value = response.total
     loading.value = false
   })
+  fetchStatusCounts()
+}
+
+/** 加载状态统计数据 */
+function fetchStatusCounts() {
+  getProjectStatusCounts().then(response => {
+    const counts = {}
+    const list = response.data || []
+    list.forEach(item => { counts[item.status] = Number(item.cnt) || 0 })
+    statusCounts.value = counts
+  }).catch(() => {})
+}
+
+/** 状态胶囊点击切换 */
+function toggleStatus(val) {
+  if (queryParams.value.status === val) {
+    queryParams.value.status = undefined
+  } else {
+    queryParams.value.status = val
+  }
+  handleQuery()
+}
+
+/** 安排日期变化 */
+function onAssignDateChange(val) {
+  if (val && val.length === 2) {
+    queryParams.value.assignDateBegin = val[0]
+    queryParams.value.assignDateEnd = val[1]
+  } else {
+    queryParams.value.assignDateBegin = undefined
+    queryParams.value.assignDateEnd = undefined
+  }
+}
+
+/** 快捷时间按钮 */
+function setQuickDate(rangeFn) {
+  const range = rangeFn()
+  if (range) {
+    dateRange.value = range
+  }
+}
+
+/** 筛选方案：保存当前 */
+function saveScheme() {
+  const name = (schemeName.value || '').trim()
+  if (!name) { proxy.$modal.msgWarning('请输入方案名称'); return }
+  const scheme = {}
+  Object.keys(queryParams.value).forEach(k => {
+    const v = queryParams.value[k]
+    if (v !== undefined && v !== '' && v !== null && !(Array.isArray(v) && v.length === 0)) {
+      scheme[k] = v
+    }
+  })
+  if (dateRange.value && dateRange.value.length === 2) {
+    scheme._dateRange = [...dateRange.value]
+  }
+  if (assignDateRange.value && assignDateRange.value.length === 2) {
+    scheme._assignDateRange = [...assignDateRange.value]
+  }
+  const schemes = [...savedSchemes.value]
+  const idx = schemes.findIndex(s => s.name === name)
+  if (idx >= 0) { schemes[idx] = { name, params: scheme } }
+  else { schemes.push({ name, params: scheme }) }
+  localStorage.setItem('proj_filter_schemes', JSON.stringify(schemes))
+  savedSchemes.value = schemes
+  saveSchemeVisible.value = false
+  schemeName.value = ''
+  currentSchemeName.value = name
+  proxy.$modal.msgSuccess('方案已保存')
+}
+
+/** 筛选方案：加载 */
+function loadSavedScheme(name) {
+  const scheme = savedSchemes.value.find(s => s.name === name)
+  if (!scheme) return
+  const p = scheme.params
+  Object.keys(queryParams.value).forEach(k => {
+    if (k === 'pageNum' || k === 'pageSize') return
+    queryParams.value[k] = undefined
+  })
+  Object.entries(p).forEach(([k, v]) => {
+    if (k.startsWith('_')) return
+    queryParams.value[k] = v
+  })
+  if (p._dateRange) dateRange.value = [...p._dateRange]
+  else dateRange.value = []
+  if (p._assignDateRange) {
+    assignDateRange.value = [...p._assignDateRange]
+    onAssignDateChange(assignDateRange.value)
+  } else {
+    assignDateRange.value = []
+    queryParams.value.assignDateBegin = undefined
+    queryParams.value.assignDateEnd = undefined
+  }
+  handleQuery()
+  currentSchemeName.value = name
+}
+
+/** 筛选方案：删除 */
+function deleteScheme(name) {
+  const schemes = savedSchemes.value.filter(s => s.name !== name)
+  localStorage.setItem('proj_filter_schemes', JSON.stringify(schemes))
+  savedSchemes.value = schemes
+  if (currentSchemeName.value === name) currentSchemeName.value = ''
+  proxy.$modal.msgSuccess('方案已删除')
+}
+
+/** 加载已保存的筛选方案 */
+function loadSavedSchemes() {
+  try {
+    const raw = localStorage.getItem('proj_filter_schemes')
+    if (raw) savedSchemes.value = JSON.parse(raw)
+  } catch (e) { /* ignore */ }
 }
 
 /** 加载类别树 */
@@ -532,7 +781,19 @@ function handleQuery() {
 /** 重置按钮操作 */
 function resetQuery() {
   dateRange.value = []
-  proxy.resetForm("queryRef")
+  assignDateRange.value = []
+  queryParams.value.keyword = undefined
+  queryParams.value.status = undefined
+  queryParams.value.projectCategoryId = undefined
+  queryParams.value.leaderId = undefined
+  queryParams.value.contractId = undefined
+  queryParams.value.contactName = undefined
+  queryParams.value.projectLocation = undefined
+  queryParams.value.engineeringProject = undefined
+  queryParams.value.clientUnit = undefined
+  queryParams.value.assignDateBegin = undefined
+  queryParams.value.assignDateEnd = undefined
+  currentSchemeName.value = ''
   handleQuery()
 }
 
@@ -732,22 +993,192 @@ function handleExport() {
 }
 
 getList()
+loadSavedSchemes()
+loadCategoryTree()
+loadUserList()
 </script>
 
 <style scoped>
-/* 搜索区紧凑化 */
-.compact-search :deep(.el-form-item) {
+/* 搜索工具栏 */
+.search-toolbar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.global-search {
+  flex: 1;
+}
+.global-search :deep(.el-input__wrapper) {
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+/* 状态胶囊导航 */
+.status-capsules {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 12px 0;
+  border-bottom: 1px solid #ebeef5;
+  margin-bottom: 0;
+}
+.status-label {
+  font-size: 13px;
+  color: #606266;
+  margin-right: 4px;
+}
+.status-capsule {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  background: #f5f7fa;
+  color: #606266;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  border: 1px solid transparent;
+}
+.status-capsule:hover {
+  background: #ecf5ff;
+  color: #409EFF;
+}
+.status-capsule.active {
+  background: #ecf5ff;
+  color: #409EFF;
+  border-color: #409EFF;
+  font-weight: 600;
+}
+
+/* 高级筛选折叠触发器 */
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  font-size: 13px;
+  color: #606266;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid #ebeef5;
+}
+.advanced-toggle:hover {
+  color: #409EFF;
+}
+.toggle-arrow {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+  color: #909399;
+}
+.toggle-arrow.is-open {
+  transform: rotate(180deg);
+}
+.toggle-label {
+  font-weight: 500;
+  color: #303133;
+}
+.toggle-hint {
+  color: #909399;
+  font-size: 12px;
+}
+
+/* 高级筛选面板 */
+.advanced-filter-panel {
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 10px 0;
+}
+.filter-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 24px;
+}
+.filter-item-label {
+  font-size: 13px;
   margin-bottom: 6px;
 }
-.compact-search :deep(.el-form-item__label) {
+
+
+/* 快捷日期 */
+.quick-date-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+}
+.quick-date-label {
   font-size: 13px;
 }
-.compact-search :deep(.el-input__inner),
-.compact-search :deep(.el-select .el-input__inner) {
-  font-size: 13px;
+.quick-date-row .el-button {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: transparent;
 }
-/* 操作栏紧凑化 */
+.quick-date-row .el-button:hover {
+  border-color: #409EFF;
+  color: #409EFF;
+}
+
+/* 分割线 */
+.filter-divider {
+  height: 1px;
+  background: #ebeef5;
+  margin: 14px 0;
+}
+
+/* 筛选方案 */
+.scheme-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  position: relative;
+}
+.scheme-label {
+  font-size: 13px;
+  color: #c0c4cc;
+}
+.scheme-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: #3a3a3a;
+  color: #c0c4cc;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+.scheme-tag:hover {
+  background: #4a4a4a;
+}
+.scheme-tag.active {
+  background: #409EFF;
+  color: #fff;
+  border-color: #409EFF;
+}
+.collapse-link {
+  margin-left: auto;
+  font-size: 12px;
+  color: #909399;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.collapse-link:hover {
+  color: #409EFF;
+}
+.collapse-arrow {
+  font-size: 10px;
+}
+
+/* 操作栏紧凑化（保留兼容） */
 .compact-ops {
-  margin-bottom: 6px !important;
+  margin-top: 5px !important;
+  margin-bottom: 0 !important;
 }
 </style>

@@ -76,3 +76,11 @@ export function batchAddProject(data) {
     data: data
   })
 }
+
+// 统计各状态下的项目数量
+export function getProjectStatusCounts() {
+  return request({
+    url: '/project/project/statusCounts',
+    method: 'get'
+  })
+}
