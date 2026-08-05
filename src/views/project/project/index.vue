@@ -676,7 +676,9 @@ function onAssignDateChange(val) {
 function setQuickDate(rangeFn) {
   const range = rangeFn()
   if (range) {
-    dateRange.value = range
+    assignDateRange.value = range
+    onAssignDateChange(range)
+    handleQuery()
   }
 }
 
