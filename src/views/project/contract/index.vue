@@ -1,55 +1,117 @@
 <template>
    <div class="app-container">
-      <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="80px">
-         <el-form-item label="合同编号" prop="contractNo">
-            <el-input v-model="queryParams.contractNo" placeholder="请输入合同编号" clearable style="width: 180px" @keyup.enter="handleQuery" />
-         </el-form-item>
-         <el-form-item label="合同名称" prop="contractName">
-            <el-input v-model="queryParams.contractName" placeholder="请输入合同名称" clearable style="width: 200px" @keyup.enter="handleQuery" />
-         </el-form-item>
-         <el-form-item label="委托单位" prop="clientUnit">
-            <el-input v-model="queryParams.clientUnit" placeholder="请输入委托单位" clearable style="width: 180px" @keyup.enter="handleQuery" />
-         </el-form-item>
-         <el-form-item label="合同类型" prop="contractType">
-            <el-select v-model="queryParams.contractType" placeholder="合同类型" clearable style="width: 140px">
-               <el-option label="勘察合同" value="勘察合同" />
-               <el-option label="测绘合同" value="测绘合同" />
-               <el-option label="设计合同" value="设计合同" />
-               <el-option label="施工合同" value="施工合同" />
-               <el-option label="其他合同" value="其他合同" />
-            </el-select>
-         </el-form-item>
-         <el-form-item label="状态" prop="status">
-            <el-select v-model="queryParams.status" placeholder="合同状态" clearable style="width: 140px">
-               <el-option
-                  v-for="dict in d('proj_contract_status')"
-                  :key="dict.value"
-                  :label="dict.label"
-                  :value="dict.value"
-               />
-            </el-select>
-         </el-form-item>
-         <el-form-item>
-            <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
-            <el-button icon="Refresh" @click="resetQuery">重置</el-button>
-         </el-form-item>
-      </el-form>
+      <!-- Row 1: 全局搜索 -->
+      <div class="search-bar-row">
+         <div class="search-input-wrapper">
+            <el-input v-model="queryParams.keyword" placeholder="搜索合同编号/名称/委托单位/联系人..." clearable @keyup.enter="handleQuery" @clear="handleQuery" class="global-search-input">
+               <template #prefix><el-icon><Search /></el-icon></template>
+            </el-input>
+         </div>
+         <el-button type="primary" size="small" @click="handleQuery">搜索</el-button>
+         <el-button size="small" @click="resetQuery">重置</el-button>
+      </div>
 
+      <!-- Row 2: 状态胶囊导航（字典驱动） -->
+      <div class="status-capsule-row">
+         <span
+            v-for="item in statusCapsules"
+            :key="item.value"
+            :class="['status-capsule', { active: queryParams.status === item.value }]"
+            @click="handleStatusClick(item.value)"
+         >{{ item.label }}<span class="capsule-count">{{ item.count }}</span></span>
+      </div>
+
+      <!-- Row 3: 高级筛选 -->
+      <div class="advanced-toggle-row" @click="advancedVisible = !advancedVisible">
+         <span>{{ advancedVisible ? '▲' : '▼' }} 高级筛选</span>
+      </div>
+
+      <!-- Row 4: 高级面板 -->
+      <el-collapse-transition>
+         <div v-show="advancedVisible" class="advanced-filter-panel">
+            <div class="filter-grid">
+               <div class="filter-item">
+                  <div class="filter-item-label">合同类型</div>
+                  <el-select v-model="queryParams.contractType" clearable placeholder="全部类型" style="width:100%" @change="handleQuery">
+                     <el-option v-for="d in proj_contract_type" :key="d.value" :label="d.label" :value="d.value" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">委托单位</div>
+                  <el-select v-model="queryParams.clientUnit" filterable clearable placeholder="全部单位" style="width:100%" @change="handleQuery">
+                     <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">联系人</div>
+                  <el-input v-model="queryParams.contactName" placeholder="联系人" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">签署日期</div>
+                  <el-date-picker v-model="signDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onSignDateChange" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">委托时间</div>
+                  <el-date-picker v-model="entrustDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onEntrustDateChange" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">审核日期</div>
+                  <el-date-picker v-model="auditDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onAuditDateChange" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">完成日期</div>
+                  <el-date-picker v-model="finishDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onFinishDateChange" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">合同金额</div>
+                  <div style="display:flex;gap:8px;align-items:center">
+                     <el-input-number v-model="queryParams.contractAmountMin" :min="0" :precision="2" controls-position="right" placeholder="最低" style="flex:1" @change="handleQuery" />
+                     <span style="color:#999">~</span>
+                     <el-input-number v-model="queryParams.contractAmountMax" :min="0" :precision="2" controls-position="right" placeholder="最高" style="flex:1" @change="handleQuery" />
+                  </div>
+               </div>
+            </div>
+            <!-- 快捷日期 + 方案 -->
+            <div class="quick-filter-row">
+               <span class="quick-label">快捷：</span>
+               <span class="quick-chip" @click="setQuickDate('today')">今天</span>
+               <span class="quick-chip" @click="setQuickDate('week')">本周</span>
+               <span class="quick-chip" @click="setQuickDate('month')">本月</span>
+               <span class="quick-chip" @click="setQuickDate('7days')">近7天</span>
+               <span class="quick-chip" @click="setQuickDate('30days')">近30天</span>
+               <el-divider direction="vertical" />
+               <span class="quick-label">方案：</span>
+               <span v-for="s in savedSchemes" :key="s.name" class="quick-chip scheme-chip" @click="activateScheme(s)">{{ s.name }}</span>
+               <span class="quick-chip scheme-chip" @click="saveSchemeVisible = true">+ 保存当前</span>
+               <span class="collapse-link" @click="advancedVisible = false">收起 ▲</span>
+            </div>
+         </div>
+      </el-collapse-transition>
+
+      <!-- Row 5: 操作按钮行 -->
       <el-row :gutter="10" class="mb8">
          <el-col :span="1.5">
-            <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['project:contract:add']">新增</el-button>
+            <el-button type="primary" plain icon="Plus" size="small" @click="handleAdd" v-hasPermi="['project:contract:add']">新增</el-button>
          </el-col>
          <el-col :span="1.5">
-            <el-button type="success" plain icon="Edit" :disabled="single" @click="handleUpdate" v-hasPermi="['project:contract:edit']">修改</el-button>
+            <el-button type="success" plain icon="Edit" size="small" :disabled="single" @click="handleUpdate" v-hasPermi="['project:contract:edit']">修改</el-button>
          </el-col>
          <el-col :span="1.5">
-            <el-button type="danger" plain icon="Delete" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:contract:remove']">删除</el-button>
+            <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:contract:remove']">删除</el-button>
          </el-col>
-         <el-col :span="1.5">
-            <el-button type="warning" plain icon="Download" @click="handleExport" v-hasPermi="['project:contract:export']">导出</el-button>
+         <el-col :span="1.5" style="margin-left:auto;display:flex;gap:8px">
+            <el-button type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:contract:export']">导出</el-button>
          </el-col>
-         <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar>
       </el-row>
+
+      <!-- 保存方案弹窗 -->
+      <el-dialog v-model="saveSchemeVisible" title="保存筛选方案" width="400px" append-to-body>
+         <el-input v-model="schemeName" placeholder="请输入方案名称" maxlength="20" />
+         <template #footer>
+            <el-button @click="saveSchemeVisible = false">取消</el-button>
+            <el-button type="primary" @click="saveScheme" :disabled="!schemeName">保存</el-button>
+         </template>
+      </el-dialog>
 
       <el-table v-loading="loading" :data="contractList" stripe border @selection-change="handleSelectionChange">
          <el-table-column type="selection" width="50" align="center" />
@@ -58,8 +120,7 @@
          <el-table-column label="委托单位" align="center" prop="clientUnit" :show-overflow-tooltip="true" min-width="160" />
          <el-table-column label="合同类型" align="center" prop="contractType" min-width="100">
             <template #default="scope">
-               <span v-if="scope.row.contractType">{{ scope.row.contractType }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
+               <dict-tag :options="proj_contract_type" :value="scope.row.contractType" />
             </template>
          </el-table-column>
          <el-table-column label="状态" align="center" prop="status" min-width="90">
@@ -136,11 +197,7 @@
                <el-col :span="8">
                   <el-form-item label="合同类型" prop="contractType">
                      <el-select v-model="form.contractType" placeholder="请选择合同类型" style="width: 100%">
-                        <el-option label="勘察合同" value="勘察合同" />
-                        <el-option label="测绘合同" value="测绘合同" />
-                        <el-option label="设计合同" value="设计合同" />
-                        <el-option label="施工合同" value="施工合同" />
-                        <el-option label="其他合同" value="其他合同" />
+                        <el-option v-for="d in proj_contract_type" :key="d.value" :label="d.label" :value="d.value" />
                      </el-select>
                   </el-form-item>
                </el-col>
@@ -248,7 +305,7 @@
          <el-descriptions :column="2" border>
             <el-descriptions-item label="合同编号" :span="1">{{ detail.contractNo }}</el-descriptions-item>
             <el-descriptions-item label="合同名称" :span="1">{{ detail.contractName }}</el-descriptions-item>
-            <el-descriptions-item label="合同类型">{{ detail.contractType || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="合同类型"><dict-tag :options="proj_contract_type" :value="detail.contractType" /></el-descriptions-item>
             <el-descriptions-item label="合同状态">
                <dict-tag v-if="detail.status" :options="d('proj_contract_status')" :value="detail.status" />
                <span v-else>草稿</span>
@@ -335,17 +392,18 @@
 </template>
 
 <script setup name="Contract">
-import { listContract, getContract, addContract, updateContract, delContract, changeContractStatus, getContractProjects } from "@/api/project/contract"
+import { listContract, getContract, addContract, updateContract, delContract, changeContractStatus, getContractProjects, getContractStatusCounts, getContractDistinctValues } from "@/api/project/contract"
 
 const { proxy } = getCurrentInstance()
 
 // 字典
-const { dicts } = useDict("proj_contract_status", "proj_project_status")
+const dicts = useDict("proj_contract_status", "proj_project_status", "proj_contract_type")
+const { proj_contract_type } = dicts
 
 /** 安全获取字典选项 */
 function d(key) {
   const src = unref(dicts) || {}
-  return src[key] || []
+  return unref(src[key]) || []
 }
 
 const contractList = ref([])
@@ -364,6 +422,19 @@ const ids = ref([])
 const statusSubmitting = ref(false)
 const currentContractName = ref("")
 const projectList = ref([])
+
+// 新增：智能查询面板
+const signDateRange = ref([])
+const entrustDateRange = ref([])
+const auditDateRange = ref([])
+const finishDateRange = ref([])
+const statusCounts = ref({})
+const advancedVisible = ref(false)
+const savedSchemes = ref([])
+const saveSchemeVisible = ref(false)
+const schemeName = ref("")
+const currentSchemeName = ref("")
+const clientUnitOptions = ref([])
 
 /** 合同状态流转规则 */
 const STATUS_TRANSITIONS = {
@@ -384,11 +455,23 @@ const data = reactive({
   queryParams: {
     pageNum: 1,
     pageSize: 10,
+    keyword: undefined,
     contractNo: undefined,
     contractName: undefined,
     clientUnit: undefined,
     contractType: undefined,
-    status: undefined
+    contactName: undefined,
+    status: undefined,
+    signDateBegin: undefined,
+    signDateEnd: undefined,
+    entrustDateBegin: undefined,
+    entrustDateEnd: undefined,
+    contractAmountMin: undefined,
+    contractAmountMax: undefined,
+    auditDateBegin: undefined,
+    auditDateEnd: undefined,
+    finishDateBegin: undefined,
+    finishDateEnd: undefined
   },
   rules: {
     contractNo: [{ required: true, message: "合同编号不能为空", trigger: "blur" }],
@@ -455,8 +538,214 @@ function handleQuery() {
 
 /** 重置搜索 */
 function resetQuery() {
-  proxy.resetForm("queryRef")
+  signDateRange.value = []
+  entrustDateRange.value = []
+  auditDateRange.value = []
+  finishDateRange.value = []
+  queryParams.value.keyword = undefined
+  queryParams.value.contractNo = undefined
+  queryParams.value.contractName = undefined
+  queryParams.value.clientUnit = undefined
+  queryParams.value.contractType = undefined
+  queryParams.value.contactName = undefined
+  queryParams.value.status = undefined
+  queryParams.value.signDateBegin = undefined
+  queryParams.value.signDateEnd = undefined
+  queryParams.value.entrustDateBegin = undefined
+  queryParams.value.entrustDateEnd = undefined
+  queryParams.value.contractAmountMin = undefined
+  queryParams.value.contractAmountMax = undefined
+  queryParams.value.auditDateBegin = undefined
+  queryParams.value.auditDateEnd = undefined
+  queryParams.value.finishDateBegin = undefined
+  queryParams.value.finishDateEnd = undefined
+  currentSchemeName.value = ''
   handleQuery()
+}
+
+/** 状态胶囊数据（字典驱动 - 始终显示全部字典定义的状态） */
+const statusCapsules = computed(() => {
+  const dict = d('proj_contract_status')
+  const total = Object.values(statusCounts.value).reduce((sum, c) => sum + (Number(c) || 0), 0)
+  const items = [{ label: '全部', value: undefined, count: total }]
+  dict.forEach(d => {
+    items.push({ label: d.label, value: d.value, count: statusCounts.value[d.value] || 0 })
+  })
+  return items
+})
+
+/** 加载状态统计（填充 statusCounts 对象） */
+function loadStatusCounts() {
+  getContractStatusCounts().then(response => {
+    const counts = {}
+    const list = response.data || []
+    list.forEach(item => { counts[item.status] = Number(item.cnt) || 0 })
+    statusCounts.value = counts
+  }).catch(() => {})
+}
+
+/** 状态胶囊点击（支持取消选中） */
+function handleStatusClick(status) {
+  if (queryParams.value.status === status) {
+    queryParams.value.status = undefined
+  } else {
+    queryParams.value.status = status
+  }
+  handleQuery()
+}
+
+/** 签署日期变更 */
+function onSignDateChange(val) {
+  if (val && val.length === 2) {
+    queryParams.value.signDateBegin = val[0]
+    queryParams.value.signDateEnd = val[1]
+  } else {
+    queryParams.value.signDateBegin = undefined
+    queryParams.value.signDateEnd = undefined
+  }
+  handleQuery()
+}
+
+/** 委托时间变更 */
+function onEntrustDateChange(val) {
+  if (val && val.length === 2) {
+    queryParams.value.entrustDateBegin = val[0]
+    queryParams.value.entrustDateEnd = val[1]
+  } else {
+    queryParams.value.entrustDateBegin = undefined
+    queryParams.value.entrustDateEnd = undefined
+  }
+  handleQuery()
+}
+
+/** 审核日期变更 */
+function onAuditDateChange(val) {
+  if (val && val.length === 2) {
+    queryParams.value.auditDateBegin = val[0]
+    queryParams.value.auditDateEnd = val[1]
+  } else {
+    queryParams.value.auditDateBegin = undefined
+    queryParams.value.auditDateEnd = undefined
+  }
+  handleQuery()
+}
+
+/** 完成日期变更 */
+function onFinishDateChange(val) {
+  if (val && val.length === 2) {
+    queryParams.value.finishDateBegin = val[0]
+    queryParams.value.finishDateEnd = val[1]
+  } else {
+    queryParams.value.finishDateBegin = undefined
+    queryParams.value.finishDateEnd = undefined
+  }
+  handleQuery()
+}
+
+/** 加载委托单位去重值 */
+function loadClientUnits() {
+  getContractDistinctValues('clientUnit').then(response => {
+    clientUnitOptions.value = response.data || []
+  }).catch(() => {})
+}
+
+/** 快捷日期 */
+function setQuickDate(type) {
+  const now = new Date()
+  const fmt = (d) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+  let begin, end
+  switch (type) {
+    case 'today':
+      begin = end = fmt(now)
+      break
+    case 'week': {
+      const d = now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)
+      const mon = new Date(now.getFullYear(), now.getMonth(), d)
+      const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6)
+      begin = fmt(mon); end = fmt(sun)
+      break
+    }
+    case 'month':
+      begin = fmt(new Date(now.getFullYear(), now.getMonth(), 1))
+      end = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+      break
+    case '7days': {
+      const d7 = new Date(now.getTime() - 6 * 86400000)
+      begin = fmt(d7); end = fmt(now)
+      break
+    }
+    case '30days': {
+      const d30 = new Date(now.getTime() - 29 * 86400000)
+      begin = fmt(d30); end = fmt(now)
+      break
+    }
+  }
+  if (begin && end) {
+    signDateRange.value = [begin, end]
+    onSignDateChange([begin, end])
+  }
+}
+
+/** 加载已保存的筛选方案 */
+function loadSavedSchemes() {
+  try {
+    const raw = localStorage.getItem('contract_filter_schemes')
+    if (raw) savedSchemes.value = JSON.parse(raw)
+  } catch (e) { /* ignore */ }
+}
+
+/** 激活筛选方案 */
+function activateScheme(scheme) {
+  const qp = queryParams.value
+  signDateRange.value = []
+  entrustDateRange.value = []
+  auditDateRange.value = []
+  finishDateRange.value = []
+  Object.keys(qp).forEach(k => { if (k !== 'pageNum' && k !== 'pageSize') qp[k] = undefined })
+  if (scheme.data) {
+    Object.assign(qp, scheme.data)
+    if (scheme.data.signDateBegin && scheme.data.signDateEnd) {
+      signDateRange.value = [scheme.data.signDateBegin, scheme.data.signDateEnd]
+    }
+    if (scheme.data.entrustDateBegin && scheme.data.entrustDateEnd) {
+      entrustDateRange.value = [scheme.data.entrustDateBegin, scheme.data.entrustDateEnd]
+    }
+    if (scheme.data.auditDateBegin && scheme.data.auditDateEnd) {
+      auditDateRange.value = [scheme.data.auditDateBegin, scheme.data.auditDateEnd]
+    }
+    if (scheme.data.finishDateBegin && scheme.data.finishDateEnd) {
+      finishDateRange.value = [scheme.data.finishDateBegin, scheme.data.finishDateEnd]
+    }
+  }
+  currentSchemeName.value = scheme.name
+  handleQuery()
+}
+
+/** 保存当前筛选方案 */
+function saveScheme() {
+  if (!schemeName.value.trim()) return
+  const name = schemeName.value.trim()
+  const data = {}
+  const qp = queryParams.value
+  const keys = ['keyword','contractNo','contractName','clientUnit','contractType','contactName','status',
+                'signDateBegin','signDateEnd','entrustDateBegin','entrustDateEnd',
+                'auditDateBegin','auditDateEnd','finishDateBegin','finishDateEnd',
+                'contractAmountMin','contractAmountMax']
+  keys.forEach(k => { if (qp[k] !== undefined && qp[k] !== '') data[k] = qp[k] })
+  const existing = savedSchemes.value.findIndex(s => s.name === name)
+  if (existing >= 0) savedSchemes.value.splice(existing, 1)
+  savedSchemes.value.unshift({ name, data })
+  if (savedSchemes.value.length > 8) savedSchemes.value = savedSchemes.value.slice(0, 8)
+  localStorage.setItem('contract_filter_schemes', JSON.stringify(savedSchemes.value))
+  currentSchemeName.value = name
+  saveSchemeVisible.value = false
+  schemeName.value = ''
+  proxy.$modal.msgSuccess('方案已保存')
 }
 
 /** 多选框 */
@@ -597,4 +886,110 @@ function parseDate(val) {
 }
 
 getList()
+loadStatusCounts()
+loadSavedSchemes()
+loadClientUnits()
 </script>
+
+<style scoped>
+/* ===== 智能查询面板 ===== */
+.search-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.search-input-wrapper { flex: 1; }
+.global-search-input :deep(.el-input__wrapper) {
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+.status-capsule-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.status-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  cursor: pointer;
+  background: #f5f5f5;
+  color: #666;
+  transition: all 0.2s;
+  user-select: none;
+}
+.status-capsule:hover { background: #e8e8e8; }
+.status-capsule.active { background: #409eff; color: #fff; }
+.capsule-count {
+  font-size: 11px;
+  background: rgba(0,0,0,0.08);
+  border-radius: 10px;
+  padding: 0 6px;
+  min-width: 20px;
+  text-align: center;
+}
+.status-capsule.active .capsule-count { background: rgba(255,255,255,0.25); }
+
+.advanced-toggle-row {
+  cursor: pointer;
+  color: #909399;
+  font-size: 13px;
+  padding: 4px 0;
+  margin-bottom: 8px;
+  user-select: none;
+}
+.advanced-toggle-row:hover { color: #409eff; }
+
+.advanced-filter-panel {
+  border-radius: 10px;
+  padding: 10px 20px 12px;
+  margin-bottom: 16px;
+}
+.filter-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 16px 24px;
+}
+.filter-item-label {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.quick-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.quick-label { font-size: 12px; color: #888; }
+.quick-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  cursor: pointer;
+  background: rgba(255,255,255,0.07);
+  color: #aaa;
+  transition: all 0.2s;
+  user-select: none;
+}
+.quick-chip:hover { background: rgba(64,158,255,0.25); color: #409eff; }
+.scheme-chip { background: rgba(64,158,255,0.1); color: #79bbff; }
+.scheme-chip:hover { background: rgba(64,158,255,0.3); }
+.collapse-link {
+  margin-left: auto;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  user-select: none;
+}
+.collapse-link:hover { color: #409eff; }
+</style>

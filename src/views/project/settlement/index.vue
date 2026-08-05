@@ -1,29 +1,88 @@
 <template>
    <div class="app-container">
-      <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="80px">
-         <el-form-item label="工程编号" prop="projectCode">
-            <el-input v-model="queryParams.projectCode" placeholder="请输入工程编号" clearable style="width: 180px" @keyup.enter="handleQuery" />
-         </el-form-item>
-         <el-form-item label="委托单位" prop="clientUnit">
-            <el-input v-model="queryParams.clientUnit" placeholder="请输入委托单位" clearable style="width: 180px" @keyup.enter="handleQuery" />
-         </el-form-item>
-         <el-form-item>
-            <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
-            <el-button icon="Refresh" @click="resetQuery">重置</el-button>
-         </el-form-item>
-      </el-form>
+      <!-- Row 1: 全局搜索 -->
+      <div class="search-bar-row">
+         <div class="search-input-wrapper">
+            <el-input v-model="queryParams.keyword" placeholder="搜索工程编号/委托单位/工程地点..." clearable @keyup.enter="handleQuery" @clear="handleQuery" class="global-search-input">
+               <template #prefix><el-icon><Search /></el-icon></template>
+            </el-input>
+         </div>
+         <el-button type="primary" size="small" @click="handleQuery">搜索</el-button>
+         <el-button size="small" @click="resetQuery">重置</el-button>
+      </div>
 
+      <!-- Row 2: 状态胶囊 -->
+      <!-- <div class="status-capsule-row">
+         <span class="status-capsule" :class="{ active: selectedStatuses.length === 0 }" @click="onStatusCapsuleClick([])">全部</span>
+         <span class="status-capsule" :class="{ active: selectedStatuses.includes('closed') && selectedStatuses.length === 1 }" @click="onStatusCapsuleClick(['closed'])">已办结</span>
+         <span class="status-capsule" :class="{ active: selectedStatuses.includes('archived') && selectedStatuses.length === 1 }" @click="onStatusCapsuleClick(['archived'])">已归档</span>
+         <span class="status-capsule" :class="{ active: selectedStatuses.includes('closed') && selectedStatuses.includes('archived') }" @click="onStatusCapsuleClick(['closed','archived'])">已办结 + 已归档</span>
+      </div> -->
+
+      <!-- Row 3: 高级筛选 -->
+      <div class="advanced-toggle-row" @click="advancedVisible = !advancedVisible">
+         <span>{{ advancedVisible ? '▲' : '▼' }} 高级筛选</span>
+      </div>
+
+      <!-- Row 4: 高级面板 -->
+      <el-collapse-transition>
+         <div v-show="advancedVisible" class="advanced-filter-panel">
+            <div class="filter-grid">
+               <div class="filter-item">
+                  <div class="filter-item-label">工程编号</div>
+                  <el-input v-model="queryParams.projectCode" placeholder="工程编号" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">委托单位</div>
+                  <el-select v-model="queryParams.clientUnit" filterable clearable placeholder="全部单位" style="width:100%" @change="handleQuery">
+                     <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">工程地点</div>
+                  <el-input v-model="queryParams.projectLocation" placeholder="工程地点" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">工程项目</div>
+                  <el-input v-model="queryParams.engineeringProject" placeholder="工程项目" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">负责人</div>
+                  <el-select v-model="queryParams.leaderId" filterable clearable placeholder="全部负责人" style="width:100%" @change="handleQuery">
+                     <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">联系人</div>
+                  <el-input v-model="queryParams.contactName" placeholder="联系人" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">联系电话</div>
+                  <el-input v-model="queryParams.contactPhone" placeholder="联系电话" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">安排日期</div>
+                  <el-date-picker v-model="assignDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onAssignDateChange" />
+               </div>
+            </div>
+            <!-- 快捷日期 -->
+            <div class="quick-filter-row">
+               <span class="quick-label">快捷：</span>
+               <span class="quick-chip" @click="setQuickDate('today')">今天</span>
+               <span class="quick-chip" @click="setQuickDate('week')">本周</span>
+               <span class="quick-chip" @click="setQuickDate('month')">本月</span>
+               <span class="quick-chip" @click="setQuickDate('7days')">近7天</span>
+               <span class="quick-chip" @click="setQuickDate('30days')">近30天</span>
+               <span class="collapse-link" @click="advancedVisible = false">收起 ▲</span>
+            </div>
+         </div>
+      </el-collapse-transition>
+
+      <!-- Row 5: 操作按钮行 -->
       <el-row :gutter="10" class="mb8">
          <el-col :span="1.5">
-            <el-button type="warning" plain icon="Download" @click="handleExport" v-hasPermi="['project:settlement:export']">导出</el-button>
+            <el-button type="warning" size="small" plain icon="Download" @click="handleExport" v-hasPermi="['project:settlement:export']">导出</el-button>
          </el-col>
-         <el-col :span="4">
-            <el-checkbox-group v-model="selectedStatuses" @change="onStatusChange">
-               <el-checkbox label="closed">已办结</el-checkbox>
-               <el-checkbox label="archived">已归档</el-checkbox>
-            </el-checkbox-group>
-         </el-col>
-         <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar>
       </el-row>
 
       <el-table
@@ -292,6 +351,7 @@
 import { treeListSettlement, getSettlementDetail, saveSettlement } from "@/api/project/settlement"
 import { categoryTreeselectFull } from "@/api/project/category"
 import { listUser } from "@/api/system/user"
+import { getDistinctValues } from "@/api/project/project"
 
 const { proxy } = getCurrentInstance()
 
@@ -308,11 +368,24 @@ const editProjectId = ref(null)
 const userOptions = ref([])
 const categoryOptions = ref([])
 const contractPriceMap = ref({})
+const clientUnitOptions = ref([])
+
+// 新增：智能查询面板
+const assignDateRange = ref([])
+const advancedVisible = ref(false)
 
 const data = reactive({
   queryParams: {
+    keyword: undefined,
     projectCode: undefined,
-    clientUnit: undefined
+    clientUnit: undefined,
+    projectLocation: undefined,
+    engineeringProject: undefined,
+    leaderId: undefined,
+    contactName: undefined,
+    contactPhone: undefined,
+    assignDateBegin: undefined,
+    assignDateEnd: undefined
   },
   editForm: {
     prepayAmount: null,
@@ -402,6 +475,12 @@ function getList() {
   })
 }
 
+/** 状态胶囊点击 */
+function onStatusCapsuleClick(statuses) {
+  selectedStatuses.value = statuses
+  getList()
+}
+
 /** 状态筛选变更 */
 function onStatusChange(val) {
   getList()
@@ -412,8 +491,62 @@ function handleQuery() {
 }
 
 function resetQuery() {
-  proxy.resetForm("queryRef")
+  assignDateRange.value = []
+  queryParams.value.keyword = undefined
+  queryParams.value.projectCode = undefined
+  queryParams.value.clientUnit = undefined
+  queryParams.value.projectLocation = undefined
+  queryParams.value.engineeringProject = undefined
+  queryParams.value.leaderId = undefined
+  queryParams.value.contactName = undefined
+  queryParams.value.contactPhone = undefined
+  queryParams.value.assignDateBegin = undefined
+  queryParams.value.assignDateEnd = undefined
   handleQuery()
+}
+
+/** 安排日期变更 */
+function onAssignDateChange(val) {
+  if (val && val.length === 2) {
+    queryParams.value.assignDateBegin = val[0]
+    queryParams.value.assignDateEnd = val[1]
+  } else {
+    queryParams.value.assignDateBegin = undefined
+    queryParams.value.assignDateEnd = undefined
+  }
+  handleQuery()
+}
+
+/** 快捷日期 */
+function setQuickDate(type) {
+  const now = new Date()
+  const fmt = (d) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+  let begin, end
+  switch (type) {
+    case 'today': begin = end = fmt(now); break
+    case 'week': {
+      const d = now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)
+      const mon = new Date(now.getFullYear(), now.getMonth(), d)
+      const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6)
+      begin = fmt(mon); end = fmt(sun)
+      break
+    }
+    case 'month':
+      begin = fmt(new Date(now.getFullYear(), now.getMonth(), 1))
+      end = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+      break
+    case '7days': begin = fmt(new Date(now.getTime() - 6 * 86400000)); end = fmt(now); break
+    case '30days': begin = fmt(new Date(now.getTime() - 29 * 86400000)); end = fmt(now); break
+  }
+  if (begin && end) {
+    assignDateRange.value = [begin, end]
+    onAssignDateChange([begin, end])
+  }
 }
 
 /** 编辑结算 */
@@ -534,5 +667,105 @@ function handleExport() {
   proxy.$modal.msgWarning("导出功能暂未实现")
 }
 
+/** 加载委托单位去重值 */
+function loadDistinctValues() {
+  getDistinctValues('client_unit').then(res => {
+    clientUnitOptions.value = (res.data || []).filter(Boolean)
+  }).catch(() => {})
+}
+
 getList()
+loadDistinctValues()
 </script>
+
+<style scoped>
+/* ===== 智能查询面板 ===== */
+.search-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.search-input-wrapper { flex: 1; }
+.global-search-input :deep(.el-input__wrapper) {
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+.status-capsule-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.status-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  cursor: pointer;
+  background: #f5f5f5;
+  color: #666;
+  transition: all 0.2s;
+  user-select: none;
+}
+.status-capsule:hover { background: #e8e8e8; }
+.status-capsule.active { background: #409eff; color: #fff; }
+
+.advanced-toggle-row {
+  cursor: pointer;
+  color: #909399;
+  font-size: 13px;
+  padding: 4px 0;
+  margin-bottom: 8px;
+  user-select: none;
+}
+.advanced-toggle-row:hover { color: #409eff; }
+
+.advanced-filter-panel {
+  border-radius: 10px;
+  padding: 10px 20px 12px;
+  margin-bottom: 16px;
+}
+.filter-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 16px 24px;
+}
+.filter-item-label {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.quick-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.quick-label { font-size: 12px; color: #888; }
+.quick-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  cursor: pointer;
+  background: rgba(255,255,255,0.07);
+  color: #aaa;
+  transition: all 0.2s;
+  user-select: none;
+}
+.quick-chip:hover { background: rgba(64,158,255,0.25); color: #409eff; }
+.collapse-link {
+  margin-left: auto;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  user-select: none;
+}
+.collapse-link:hover { color: #409eff; }
+</style>

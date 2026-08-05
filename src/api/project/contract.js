@@ -67,3 +67,20 @@ export function getContractProjects(id) {
     method: 'get'
   })
 }
+
+// 统计各状态下的合同数量
+export function getContractStatusCounts() {
+  return request({
+    url: '/project/contract/statusCounts',
+    method: 'get'
+  })
+}
+
+// 查询字段去重值（高级筛选下拉选项用）
+export function getContractDistinctValues(field) {
+  return request({
+    url: '/project/contract/distinctValues',
+    method: 'get',
+    params: { field }
+  })
+}

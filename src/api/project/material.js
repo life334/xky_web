@@ -68,3 +68,11 @@ export function getFlowList(id) {
     method: 'get'
   })
 }
+
+// 统计各状态下的资料数量
+export function getMaterialStatusCounts() {
+  return request({
+    url: '/project/material/statusCounts',
+    method: 'get'
+  })
+}
