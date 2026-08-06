@@ -1,11 +1,11 @@
 import request from '@/utils/request'
 
-// 获取驾驶舱聚合数据
-export function getDashboardData(period) {
+// 获取驾驶舱聚合数据（V2：日期范围驱动）
+export function getDashboardData(params) {
   return request({
     url: '/project/dashboard',
     method: 'get',
-    params: { period }
+    params
   })
 }
 

@@ -7,9 +7,9 @@
       </el-breadcrumb>
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
          <div style="display: flex; align-items: center; gap: 10px;">
-            <span style="font-size: 18px; font-weight: 600;">{{ projectInfo.projectName || '加载中...' }}</span>
-            <el-tag v-if="projectInfo.status" :type="getStatusTagType(projectInfo.status)">{{ projectInfo.status }}</el-tag>
-            <span style="font-size: 13px; color: #909399;">工程编号：{{ projectInfo.projectCode || '-' }}</span>
+            <span style="font-size: 18px; font-weight: 600;">{{ projectInfo.projectName || projectInfo.projectCode || '' }}</span>
+            <dict-tag v-if="projectInfo.status" :options="proj_project_status" :value="projectInfo.status" />
+            <span v-if="projectInfo.projectName && projectInfo.projectCode" style="font-size: 13px; color: #909399;">工程编号：{{ projectInfo.projectCode }}</span>
          </div>
          <el-button icon="Back" @click="goBack">返回列表</el-button>
       </div>
@@ -56,7 +56,8 @@
                <el-descriptions-item label="合同">{{ projectInfo.contractName || '-' }}</el-descriptions-item>
                <el-descriptions-item label="负责人">{{ projectInfo.leaderNames || '-' }}</el-descriptions-item>
                <el-descriptions-item label="状态">
-                  <el-tag :type="getStatusTagType(projectInfo.status)">{{ projectInfo.status || '-' }}</el-tag>
+                  <dict-tag v-if="projectInfo.status" :options="proj_project_status" :value="projectInfo.status" />
+                  <span v-else style="color: #c0c4cc">-</span>
                </el-descriptions-item>
                <el-descriptions-item label="备注">{{ projectInfo.remark || '-' }}</el-descriptions-item>
                <el-descriptions-item label="创建者">{{ projectInfo.createBy || '-' }}</el-descriptions-item>
@@ -140,11 +141,16 @@
                </el-table-column>
                <el-table-column label="联系人" align="center" prop="contactName" min-width="90" />
                <el-table-column label="联系电话" align="center" prop="contactPhone" min-width="110" />
-               <el-table-column label="成果类型" align="center" prop="resultType" min-width="100" />
+               <el-table-column label="成果类型" align="center" prop="resultType" min-width="100">
+                  <template #default="scope">
+                     <dict-tag v-if="scope.row.resultType" :options="proj_material_result_type" :value="scope.row.resultType" />
+                     <span v-else style="color: #c0c4cc">—</span>
+                  </template>
+               </el-table-column>
                <el-table-column label="目录" align="center" prop="archiveDir" min-width="120" :show-overflow-tooltip="true" />
                <el-table-column label="状态" align="center" prop="status" min-width="90">
                   <template #default="scope">
-                     <el-tag v-if="scope.row.status">{{ scope.row.status }}</el-tag>
+                     <dict-tag v-if="scope.row.status" :options="proj_material_status" :value="scope.row.status" />
                      <span v-else style="color: #c0c4cc">—</span>
                   </template>
                </el-table-column>
@@ -155,20 +161,14 @@
          <!-- 产值结算 -->
          <el-tab-pane label="产值结算" name="settlement">
             <el-row :gutter="12" style="margin-top: 8px">
-               <el-col :span="6">
+               <el-col :span="8">
                   <div class="kpi-card"><div class="kpi-label">内部产值</div><div class="kpi-value" style="color:#67c23a">{{ formatMoney(totalInternalOutput) }}</div></div>
                </el-col>
-               <el-col :span="6">
+               <el-col :span="8">
                   <div class="kpi-card kpi-green"><div class="kpi-label">外部产值</div><div class="kpi-value" style="color:#e6a23c">{{ formatMoney(totalExternalOutput) }}</div></div>
                </el-col>
-               <el-col :span="6">
+               <el-col :span="8">
                   <div class="kpi-card"><div class="kpi-label">产值合计</div><div class="kpi-value" style="color:#409eff">{{ formatMoney(totalOutput) }}</div></div>
-               </el-col>
-               <el-col :span="6">
-                  <div class="kpi-card kpi-green"><div class="kpi-label">已收款合计</div><div class="kpi-value">{{ formatMoney(receivedAmount) }}</div></div>
-               </el-col>
-               <el-col :span="6">
-                  <div class="kpi-card"><div class="kpi-label">合同金额</div><div class="kpi-value">{{ formatMoney(contractAmount) }}</div></div>
                </el-col>
             </el-row>
             <el-alert type="info" :closable="false" style="margin-top: 12px">
@@ -272,7 +272,7 @@ import { listCategory, categoryTreeselect } from "@/api/project/category"
 import { listUser } from "@/api/system/user"
 
 const { proxy } = getCurrentInstance()
-const { proj_payment_type } = useDict('proj_payment_type')
+const { proj_payment_type, proj_project_status, proj_material_result_type, proj_material_status } = useDict('proj_payment_type', 'proj_project_status', 'proj_material_result_type', 'proj_material_status')
 const route = useRoute()
 
 const projectId = route.params.projectId
@@ -369,6 +369,8 @@ function loadProjectInfo() {
             contractAmount.value = res.data.contractAmount || 0
          })
       }
+   }).catch(() => {
+      projectInfo.value = {}
    })
    loadPayments()
 }

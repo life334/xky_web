@@ -1,388 +1,276 @@
 <template>
   <div class="dashboard-container">
-    <!-- 顶部标题 + 全局时间筛选 -->
+    <!-- 顶部日期栏 -->
     <div class="dash-header">
-      <div class="header-title">
-        
-        <h2></h2>
-      </div>
-      <div class="header-actions">
-        <el-radio-group v-model="globalPeriod" size="small" @change="onGlobalPeriodChange">
+      <div class="header-left">
+        <span class="stat-label">统计周期</span>
+        <el-date-picker
+          v-model="dateRange"
+          type="daterange"
+          range-separator="~"
+          start-placeholder="起始日期"
+          end-placeholder="截止日期"
+          value-format="YYYY-MM-DD"
+          size="default"
+          :shortcuts="dateShortcuts"
+          @change="onDateRangeChange"
+        />
+        <el-radio-group v-model="quickPeriod" size="small" @change="onQuickPeriodChange">
           <el-radio-button value="month">本月</el-radio-button>
           <el-radio-button value="quarter">本季</el-radio-button>
           <el-radio-button value="year">本年</el-radio-button>
         </el-radio-group>
-        <el-button :icon="Refresh" circle size="small" @click="fetchData" />
+      </div>
+      <div class="header-right">
+        <el-button type="primary" plain size="small" :icon="Refresh" @click="fetchData">对比周期</el-button>
       </div>
     </div>
 
-    <!-- ① KPI 卡片区 -->
-    <div class="kpi-grid" v-loading="loading">
-      <div v-for="(card, i) in kpiCards" :key="i" class="kpi-card" :class="card.cls">
-        <div class="kpi-icon-wrap">
-          <el-icon :size="22"><component :is="card.icon" /></el-icon>
-        </div>
-        <div class="kpi-body">
-          <div class="kpi-value">
-            <span class="num">{{ card.display }}</span>
-            <span class="unit">{{ card.unit }}</span>
+    <!-- 第一行：项目动态宽卡 + 待办预警 + 进行中项目 -->
+    <div class="kpi-row" v-loading="loading">
+      <!-- 项目动态宽卡 -->
+      <div class="kpi-card kpi-wide">
+        <div class="kpi-dynamic-inner">
+          <div class="dyn-left">
+            <div class="dyn-label">本期新增</div>
+            <div class="dyn-value">{{ k.newProjects ?? 0 }}</div>
+            <div class="dyn-unit">项目</div>
           </div>
-          <div class="kpi-label">{{ card.label }}</div>
-          <div class="kpi-trend" v-if="card.trend !== null" :class="card.trend >= 0 ? 'up' : 'down'">
-            <el-icon size="12"><CaretTop v-if="card.trend >= 0" /><CaretBottom v-else /></el-icon>
-            {{ Math.abs(card.trend) }}% 环比
+          <div class="dyn-divider">
+            <div class="dyn-divider-line"></div>
+            <div class="dyn-divider-text">项目动态</div>
+            <div class="dyn-divider-line"></div>
           </div>
-          <div class="kpi-sub" v-if="card.sub">{{ card.sub }}</div>
+          <div class="dyn-right">
+            <div class="dyn-label">本期办结</div>
+            <div class="dyn-value">{{ k.completedProjects ?? 0 }}</div>
+          </div>
+          <div class="dyn-progress">
+            <el-progress
+              :percentage="Math.min(k.completedRate ?? 0, 100)"
+              :stroke-width="6"
+              :show-text="false"
+              color="#36cfc9"
+            />
+            <span class="dyn-progress-text">{{ k.completedRate ?? 0 }}%</span>
+          </div>
         </div>
-        <div class="kpi-pulse" v-if="card.pulse"></div>
+      </div>
+
+      <!-- 待办预警 -->
+      <div class="kpi-card">
+        <div class="kpi-simple">
+          <div class="kpi-simple-label">待办预警</div>
+          <div class="kpi-simple-value">{{ k.alertCount ?? 0 }}</div>
+          <div class="kpi-simple-sub">超期 {{ k.overdueCount ?? 0 }} · 待领 {{ k.pendingMaterialCount ?? 0 }}</div>
+        </div>
+      </div>
+
+      <!-- 进行中项目 -->
+      <div class="kpi-card">
+        <div class="kpi-simple">
+          <div class="kpi-simple-label">进行中项目</div>
+          <div class="kpi-simple-value">{{ k.activeProjectCount ?? 0 }}</div>
+          <div class="kpi-simple-sub">占比 {{ k.activeRatio ?? 0 }}%</div>
+        </div>
       </div>
     </div>
 
-    <!-- ② 合同收款 + 快捷入口 -->
-    <el-row :gutter="16" class="bottom-row">
-      <!-- 合同收款进度 -->
-      <el-col :xs="24" :lg="14">
-        <el-card shadow="never" class="dash-card">
-          <template #header>
-            <div class="card-header-flex">
-              <span class="card-title">合同收款进度</span>
-              <el-link type="primary" :underline="never" @click="goPage('/contract/list')">更多</el-link>
-            </div>
-          </template>
-          <div class="payment-section" v-loading="loading">
-            <div class="payment-summary">
-              <div class="pay-item">
-                <span class="pay-label">合同总额</span>
-                <span class="pay-value">¥{{ formatMoney(dashboard.contractPayment?.totalAmount) }}</span>
-              </div>
-              <div class="pay-item">
-                <span class="pay-label">已收款</span>
-                <span class="pay-value green">¥{{ formatMoney(dashboard.contractPayment?.receivedAmount) }}</span>
-              </div>
-              <div class="pay-item">
-                <span class="pay-label">待收款</span>
-                <span class="pay-value red">¥{{ formatMoney(dashboard.contractPayment?.pendingAmount) }}</span>
-              </div>
-            </div>
-            <div class="payment-bar-wrap">
-              <el-progress :percentage="paymentRatio" :stroke-width="22" :format="() => paymentRatio + '%'"
-                           color="#67c23a" />
-            </div>
+    <!-- 第二行：财务卡片（4张） -->
+    <div class="finance-row" v-loading="loading">
+      <div class="finance-card">
+        <div class="finance-label">本月到账</div>
+        <div class="finance-value">¥{{ formatMoney(f.periodPayment) }}</div>
+        <div class="finance-meta">
+          <span>年度 ¥{{ formatMoney(f.annualPayment) }}</span>
+          <span class="finance-pct">{{ f.paymentAnnualRatio ?? 0 }}%</span>
+        </div>
+      </div>
+      <div class="finance-card">
+        <div class="finance-label">本月产值</div>
+        <div class="finance-value">¥{{ formatMoney(f.periodOutput) }}</div>
+        <div class="finance-meta">
+          <span>年度 ¥{{ formatMoney(f.annualOutput) }}</span>
+          <span class="finance-pct">{{ f.outputMonthlyRatio ?? 0 }}%</span>
+        </div>
+      </div>
+      <div class="finance-card">
+        <div class="finance-label">合同总额</div>
+        <div class="finance-value">¥{{ formatMoney(f.contractTotalAmount) }}</div>
+        <div class="finance-meta">
+          <span>{{ f.contractCount ?? 0 }}份合同</span>
+        </div>
+      </div>
+      <div class="finance-card">
+        <div class="finance-label">应收未收</div>
+        <div class="finance-value red">¥{{ formatMoney(f.pendingPayment) }}</div>
+        <div class="finance-meta">
+          <span>回款率 {{ paymentRatio }}%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 第三行：产值与到账趋势 + 项目类型产值分布 -->
+    <div class="chart-row">
+      <div class="chart-card chart-wide">
+        <div class="chart-header">
+          <span class="chart-title">产值与到账趋势</span>
+        </div>
+        <div ref="outputPaymentRef" class="chart-canvas"></div>
+      </div>
+      <div class="chart-card chart-narrow">
+        <div class="chart-header">
+          <span class="chart-title">项目类型产值分布</span>
+        </div>
+        <div ref="categoryDistRef" class="chart-canvas"></div>
+      </div>
+    </div>
+
+    <!-- 第四行：产值累计趋势 + 项目动态 -->
+    <div class="chart-row">
+      <div class="chart-card chart-wide">
+        <div class="chart-header">
+          <span class="chart-title">产值累计趋势</span>
+          <span class="chart-subtitle">面积折线</span>
+        </div>
+        <div ref="cumulativeRef" class="chart-canvas"></div>
+      </div>
+      <div class="chart-card chart-narrow">
+        <div class="chart-header">
+          <span class="chart-title">项目动态</span>
+        </div>
+        <div ref="dynamicRef" class="chart-canvas"></div>
+      </div>
+    </div>
+
+    <!-- 第五行：合同收款进度 + 快捷入口 -->
+    <div class="bottom-row">
+      <div class="bottom-card bottom-wide">
+        <div class="chart-header">
+          <span class="chart-title">合同收款进度</span>
+        </div>
+        <div class="contract-list" v-loading="loading">
+          <div v-for="item in dashboard.contractPaymentList" :key="item.contractNo" class="contract-item">
+            <span class="contract-code">{{ item.contractNo }}</span>
+            <el-progress
+              :percentage="Number(item.progress)"
+              :stroke-width="8"
+              :show-text="false"
+              :color="getProgressColor(Number(item.progress))"
+              class="contract-progress"
+            />
+            <span class="contract-pct" :style="{ color: getProgressColor(Number(item.progress)) }">{{ item.progress }}%</span>
+            <span class="contract-amount">¥{{ formatMoney(item.receivedAmount) }}/¥{{ formatMoney(item.contractAmount) }}</span>
           </div>
-        </el-card>
-      </el-col>
+          <el-empty v-if="!loading && !dashboard.contractPaymentList?.length" description="暂无合同数据" :image-size="50" />
+        </div>
+      </div>
 
-      <!-- 快捷入口 -->
-      <el-col :xs="24" :lg="10">
-        <el-card shadow="never" class="dash-card">
-          <template #header><span class="card-title">快捷入口</span></template>
-          <div class="quick-actions">
-            <div class="action-btn" @click="goPage('/project/list')">
-              <el-icon :size="20"><FolderAdd /></el-icon>
-              <span>新建项目</span>
-            </div>
-            <div class="action-btn" @click="goPage('/settlement')">
-              <el-icon :size="20"><EditPen /></el-icon>
-              <span>录工作量</span>
-            </div>
-            <div class="action-btn" @click="goPage('/contract/list')">
-              <el-icon :size="20"><Document /></el-icon>
-              <span>登记合同</span>
-            </div>
-            <div class="action-btn" @click="goPage('/material')">
-              <el-icon :size="20"><Files /></el-icon>
-              <span>登记资料</span>
-            </div>
-            <div class="action-btn todo-btn" @click="showMyTodos = true">
-              <el-icon :size="20"><Bell /></el-icon>
-              <span>我的待办</span>
-              <el-badge :value="dashboard.myTodos?.length || 0" type="danger" class="todo-badge" />
-            </div>
+      <div class="bottom-card bottom-narrow">
+        <div class="chart-header">
+          <span class="chart-title">快捷入口</span>
+        </div>
+        <div class="quick-grid">
+          <div class="quick-btn" @click="goPage('/project/list')">
+            <span>新增项目</span>
           </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- ③ 核心图表区 -->
-    <el-row :gutter="16" class="chart-row">
-      <el-col :xs="24" :lg="14">
-        <el-card shadow="never" class="dash-card">
-          <template #header>
-            <div class="card-header-flex">
-              <span class="card-title">产值趋势</span>
-              <el-radio-group v-model="outputPeriod" size="small" @change="fetchData">
-                <el-radio-button value="month">本月</el-radio-button>
-                <el-radio-button value="quarter">本季</el-radio-button>
-                <el-radio-button value="year">本年</el-radio-button>
-              </el-radio-group>
-            </div>
-          </template>
-          <div ref="outputChartRef" class="chart-canvas"></div>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :lg="10">
-        <el-card shadow="never" class="dash-card">
-          <template #header><span class="card-title">项目状态分布</span></template>
-          <div ref="statusChartRef" class="chart-canvas"></div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- ④ 三栏看板 -->
-    <el-row :gutter="16" class="panel-row">
-      <!-- 项目进度 TOP5 -->
-      <el-col :xs="24" :lg="8">
-        <el-card shadow="never" class="dash-card">
-          <template #header>
-            <div class="card-header-flex">
-              <span class="card-title">项目进度 TOP5</span>
-              <el-link type="primary" :underline="never" @click="goPage('/project/list')">更多</el-link>
-            </div>
-          </template>
-          <div class="progress-list" v-loading="loading">
-            <div v-for="(item, idx) in dashboard.projectProgress" :key="item.id" class="progress-item"
-                 @click="goProjectDetail(item.id)">
-              <div class="progress-rank" :class="'rank-' + (idx + 1)">{{ idx + 1 }}</div>
-              <div class="progress-main">
-                <div class="progress-info">
-                  <span class="progress-name" :title="item.projectName">{{ item.projectName }}</span>
-                  <span class="progress-pct">{{ item.progress }}%</span>
-                </div>
-                <el-progress :percentage="Number(item.progress)" :show-text="false" :stroke-width="6"
-                             :color="progressColors" />
-                <div class="progress-meta">{{ item.completedTasks }}/{{ item.totalTasks }} 任务</div>
-              </div>
-            </div>
-            <el-empty v-if="!loading && !dashboard.projectProgress?.length" description="暂无进行中项目" :image-size="50" />
+          <div class="quick-btn" @click="goPage('/settlement')">
+            <span>录入工作量</span>
           </div>
-        </el-card>
-      </el-col>
-
-      <!-- 任务预警 -->
-      <el-col :xs="24" :lg="8">
-        <el-card shadow="never" class="dash-card alert-card">
-          <template #header>
-            <div class="card-header-flex">
-              <span class="card-title">
-                任务预警
-                <el-badge :value="dashboard.taskAlerts?.length || 0" type="danger" class="alert-badge" />
-              </span>
-              <el-link type="primary" :underline="never" @click="goPage('/project/task')">更多</el-link>
-            </div>
-          </template>
-          <div class="alert-list" v-loading="loading">
-            <div v-for="item in dashboard.taskAlerts" :key="item.id" class="alert-item"
-                 @click="goTaskDetail(item.id)">
-              <div class="alert-dot" :class="Number(item.overdueDays) > 3 ? 'severe' : 'warning'"></div>
-              <div class="alert-body">
-                <div class="alert-title" :title="item.taskName">{{ item.taskName }}</div>
-                <div class="alert-meta">{{ item.projectName }}</div>
-              </div>
-              <div class="alert-days">
-                <span class="days-num" :class="Number(item.overdueDays) > 3 ? 'severe' : 'warning'">
-                  +{{ item.overdueDays }}
-                </span>
-                <span class="days-label">天</span>
-              </div>
-            </div>
-            <el-empty v-if="!loading && !dashboard.taskAlerts?.length" description="暂无超期任务" :image-size="50" />
+          <div class="quick-btn" @click="goPage('/contract/list')">
+            <span>登记合同</span>
           </div>
-        </el-card>
-      </el-col>
-
-      <!-- 资料流转 -->
-      <el-col :xs="24" :lg="8">
-        <el-card shadow="never" class="dash-card">
-          <template #header>
-            <div class="card-header-flex">
-              <span class="card-title">资料流转</span>
-              <el-link type="primary" :underline="never" @click="goPage('/material')">更多</el-link>
-            </div>
-          </template>
-          <div class="material-stats" v-loading="loading">
-            <div class="material-stat-item" @click="goMaterial('pending')">
-              <div class="stat-circle stat-pending">
-                <span class="stat-num">{{ dashboard.materialFlow?.pendingReceive || 0 }}</span>
-              </div>
-              <span class="stat-label">待领取</span>
-            </div>
-            <div class="material-stat-item" @click="goMaterial('received')">
-              <div class="stat-circle stat-active">
-                <span class="stat-num">{{ dashboard.materialFlow?.pendingReturn || 0 }}</span>
-              </div>
-              <span class="stat-label">待归还</span>
-            </div>
-            <div class="material-stat-item" @click="goMaterial('returned')">
-              <div class="stat-circle stat-done">
-                <span class="stat-num">{{ dashboard.materialFlow?.returned || 0 }}</span>
-              </div>
-              <span class="stat-label">已归还</span>
-            </div>
+          <div class="quick-btn" @click="goPage('/material')">
+            <span>提交资料</span>
           </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- ⑤ 合同超时预警 -->
-    <el-row :gutter="16" class="panel-row" v-if="timeoutAlerts.length > 0">
-      <el-col :span="24">
-        <el-card shadow="never" class="dash-card timeout-alert-card">
-          <template #header>
-            <div class="card-header-flex">
-              <span class="card-title">
-                <el-icon color="#f56c6c" :size="16"><WarningFilled /></el-icon>
-                合同超时预警
-                <el-badge :value="timeoutAlerts.length" type="danger" class="alert-badge" />
-              </span>
-              <el-link type="primary" :underline="never" @click="goPage('/contract/list')">去处理</el-link>
-            </div>
-          </template>
-          <div class="timeout-list" v-loading="alertLoading">
-            <div v-for="item in timeoutAlerts" :key="item.id" class="timeout-item">
-              <el-tag type="danger" size="small" effect="dark">超时</el-tag>
-              <span class="timeout-contract">{{ item.contractNo }} — {{ item.contractName }}</span>
-              <span class="timeout-desc">
-                登记时间 {{ formatDate(item.entrustDate) }}，已超过7天未设置完成日期
-              </span>
-              <el-button size="small" type="primary" link @click="goContractDetail(item.contractId)">查看合同</el-button>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- 我的待办弹窗 -->
-    <el-dialog :model-value="showMyTodos" @update:model-value="showMyTodos = $event" title="我的待办任务" width="680px" append-to-body>
-      <el-table :data="dashboard.myTodos" stripe size="small" @row-click="goTaskDetail">
-        <el-table-column prop="taskName" label="任务名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="projectName" label="所属项目" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="requiredFinishDate" label="截止日期" width="120">
-          <template #default="{ row }">
-            <span :class="{ 'overdue-text': Number(row.overdueDays) > 0 }">{{ formatDate(row.requiredFinishDate) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="110" align="center">
-          <template #default="{ row }">
-            <el-tag v-if="Number(row.overdueDays) > 0" type="danger" size="small">超期{{ row.overdueDays }}天</el-tag>
-            <el-tag v-else type="warning" size="small">进行中</el-tag>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup name="Index">
-import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from "vue"
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from "vue"
 import { useRouter } from "vue-router"
 import * as echarts from "echarts"
 import { getDashboardData, getAlertList } from "@/api/project/dashboard"
-import {
-  Refresh, CaretTop, CaretBottom, FolderAdd, EditPen, Document, Files, Bell,
-  Folder, Loading, TrendCharts, Wallet, WarningFilled
-} from "@element-plus/icons-vue"
+import { Refresh } from "@element-plus/icons-vue"
 
 const router = useRouter()
 
+// ===== 日期范围 =====
+const quickPeriod = ref("month")
+const dateRange = ref([])
+const dateShortcuts = [
+  { text: "本月", value: () => { const d = new Date(); return [new Date(d.getFullYear(), d.getMonth(), 1), new Date()] } },
+  { text: "本季", value: () => { const d = new Date(); const q = Math.floor(d.getMonth() / 3); return [new Date(d.getFullYear(), q * 3, 1), new Date()] } },
+  { text: "本年", value: () => { const d = new Date(); return [new Date(d.getFullYear(), 0, 1), new Date()] } },
+  { text: "近3个月", value: () => { const d = new Date(); return [new Date(d.getFullYear(), d.getMonth() - 2, 1), new Date()] } },
+  { text: "近6个月", value: () => { const d = new Date(); return [new Date(d.getFullYear(), d.getMonth() - 5, 1), new Date()] } },
+]
+
 // ===== 数据 =====
 const loading = ref(false)
-const globalPeriod = ref("month")
-const outputPeriod = ref("month")
-const showMyTodos = ref(false)
+const alertLoading = ref(false)
 const dashboard = ref({})
 const timeoutAlerts = ref([])
-const alertLoading = ref(false)
 
-// ===== 图表 ref =====
-const outputChartRef = ref(null)
-const statusChartRef = ref(null)
-let outputChart = null
-let statusChart = null
+// ===== 图表 refs =====
+const outputPaymentRef = ref(null)
+const categoryDistRef = ref(null)
+const cumulativeRef = ref(null)
+const dynamicRef = ref(null)
+let charts = {}
 
-// ===== KPI 卡片计算 =====
-const kpiCards = computed(() => {
-  const k = dashboard.value.kpis || {}
-  return [
-    {
-      label: "在册项目",
-      display: k.projectCount ?? 0,
-      unit: "个",
-      trend: k.projectTrend ?? null,
-      icon: Folder,
-      cls: "card-blue"
-    },
-    {
-      label: "进行中项目",
-      display: k.activeProjectCount ?? 0,
-      unit: "个",
-      trend: null,
-      sub: k.activeRatio != null ? `占比 ${k.activeRatio}%` : "",
-      icon: Loading,
-      cls: "card-cyan"
-    },
-    {
-      label: "本期产值",
-      display: formatMoney(k.periodOutput),
-      unit: "元",
-      trend: k.outputTrend ?? null,
-      sub: formatMoney(k.periodOutput),
-      icon: TrendCharts,
-      cls: "card-green"
-    },
-    {
-      label: "合同总额",
-      display: formatMoney(k.contractTotalAmount),
-      unit: "元",
-      trend: null,
-      icon: Document,
-      cls: "card-purple"
-    },
-    {
-      label: "待收款",
-      display: formatMoney(k.pendingPayment),
-      unit: "元",
-      trend: null,
-      icon: Wallet,
-      cls: "card-red"
-    },
-    {
-      label: "待办预警",
-      display: k.alertCount ?? 0,
-      unit: "项",
-      trend: null,
-      icon: Bell,
-      cls: "card-amber",
-      pulse: (k.alertCount ?? 0) > 0
-    }
-  ]
-})
+// ===== 计算属性 =====
+const k = computed(() => dashboard.value.kpis || {})
+const f = computed(() => dashboard.value.finance || {})
 
-// ===== 收款进度比 =====
 const paymentRatio = computed(() => {
   const c = dashboard.value.contractPayment
   if (!c || !c.totalAmount || Number(c.totalAmount) === 0) return 0
   return Math.round(Number(c.receivedAmount) / Number(c.totalAmount) * 1000) / 10
 })
 
-// ===== 进度条渐变色 =====
-const progressColors = [
-  { color: "#409eff", percentage: 50 },
-  { color: "#36cfc9", percentage: 80 },
-  { color: "#52c41a", percentage: 100 }
-]
+const totalProjects = computed(() => {
+  const kpi = dashboard.value.kpis || {}
+  return (kpi.activeProjectCount || 0) + (kpi.completedProjects || 0)
+})
 
-// ===== 格式化金额（万元） =====
+// ===== 初始化日期 =====
+function initDateRange() {
+  const now = new Date()
+  dateRange.value = [
+    new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10),
+    now.toISOString().slice(0, 10)
+  ]
+}
+
+// ===== 快捷周期 =====
+function onQuickPeriodChange(val) {
+  const now = new Date()
+  if (val === "month") { dateRange.value = [new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10), now.toISOString().slice(0, 10)] }
+  else if (val === "quarter") { const q = Math.floor(now.getMonth() / 3); dateRange.value = [new Date(now.getFullYear(), q * 3, 1).toISOString().slice(0, 10), now.toISOString().slice(0, 10)] }
+  else if (val === "year") { dateRange.value = [new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10), now.toISOString().slice(0, 10)] }
+  fetchData()
+}
+
+function onDateRangeChange() {
+  if (dateRange.value && dateRange.value.length === 2) {
+    quickPeriod.value = ""
+    fetchData()
+  }
+}
+
+// ===== 格式化 =====
 function formatMoney(val) {
   if (val == null) return "0"
   const num = Number(val)
   if (isNaN(num)) return "0"
-  if (num >= 10000) {
-    return (num / 10000).toFixed(2) + "万"
-  }
-  return num.toLocaleString("zh-CN", { maximumFractionDigits: 2 })
+  if (num >= 10000) return (num / 10000).toFixed(0) + "万"
+  return num.toLocaleString("zh-CN", { maximumFractionDigits: 0 })
 }
 
-// ===== 格式化日期 =====
 function formatDate(val) {
   if (!val) return "—"
   const d = new Date(val)
@@ -390,10 +278,11 @@ function formatDate(val) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
-// ===== 全局周期切换 → 同步产值趋势周期 =====
-function onGlobalPeriodChange(val) {
-  outputPeriod.value = val
-  fetchData()
+function getProgressColor(pct) {
+  if (pct >= 80) return "#52c41a"
+  if (pct >= 50) return "#1890ff"
+  if (pct >= 30) return "#faad14"
+  return "#ff4d4f"
 }
 
 // ===== 拉取数据 =====
@@ -401,744 +290,541 @@ async function fetchData() {
   loading.value = true
   alertLoading.value = true
   try {
+    const params = {}
+    if (dateRange.value && dateRange.value.length === 2) {
+      params.beginDate = dateRange.value[0]
+      params.endDate = dateRange.value[1]
+    }
     const [dashRes, alertRes] = await Promise.all([
-      getDashboardData(outputPeriod.value),
+      getDashboardData(params),
       getAlertList()
     ])
     dashboard.value = dashRes.data || {}
     timeoutAlerts.value = alertRes.data || []
     await nextTick()
-    renderOutputChart()
-    renderStatusChart()
+    renderAllCharts()
   } catch (e) {
-    console.error("Dashboard data fetch error:", e)
+    console.error("Dashboard fetch error:", e)
   } finally {
     loading.value = false
     alertLoading.value = false
   }
 }
 
-// ===== 产值趋势折线图 =====
-function renderOutputChart() {
-  if (!outputChartRef.value) return
-  if (!outputChart) {
-    outputChart = echarts.init(outputChartRef.value)
-  }
-  const trend = dashboard.value.outputTrend || {}
-  const labels = trend.labels || []
-  const values = (trend.values || []).map(v => Number(v))
+// ===== 渲染所有图表 =====
+function renderAllCharts() {
+  renderOutputPaymentChart()
+  renderCategoryDistChart()
+  renderCumulativeChart()
+  renderDynamicChart()
+}
 
-  outputChart.setOption({
+// 图表1：产值与到账趋势（分组柱状图）
+function renderOutputPaymentChart() {
+  const el = outputPaymentRef.value
+  if (!el) return
+  if (!charts.outputPayment) charts.outputPayment = echarts.init(el)
+  const chart = charts.outputPayment
+  const data = dashboard.value.outputPaymentTrend || []
+  const labels = data.map(d => d.label)
+  const outputs = data.map(d => Number(d.output) || 0)
+  const payments = data.map(d => Number(d.payment) || 0)
+
+  chart.setOption({
+    backgroundColor: "transparent",
     tooltip: {
       trigger: "axis",
-      formatter: (params) => {
-        let html = `<div style="font-weight:600;margin-bottom:4px">${params[0].axisValue}</div>`
-        params.forEach(p => {
-          html += `<div style="display:flex;align-items:center;gap:6px">
-            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>
-            <span>${p.seriesName}</span>
-            <span style="font-weight:600;margin-left:auto">${formatMoney(p.value)}元</span>
-          </div>`
-        })
-        return html
+      axisPointer: { type: "shadow" },
+      backgroundColor: "#fff",
+      borderColor: "#e8eaed",
+      textStyle: { color: "#303133" },
+      formatter: (p) => {
+        let h = `<b>${p[0].axisValue}</b><br/>`
+        p.forEach(v => { h += `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${v.color};margin-right:6px"></span>${v.seriesName}: ¥${formatMoney(v.value)}<br/>` })
+        return h
       }
     },
-    legend: {
-      data: ["产值"],
-      bottom: 0,
-      icon: "circle",
-      itemWidth: 8,
-      itemHeight: 8
-    },
-    grid: { top: 20, left: 10, right: 20, bottom: 35, containLabel: true },
+    legend: { data: ["产值", "到账"], bottom: 0, icon: "rect", itemWidth: 10, itemHeight: 10, textStyle: { color: "#909399", fontSize: 12 } },
+    grid: { top: 16, left: 8, right: 16, bottom: 36, containLabel: true },
     xAxis: {
-      type: "category",
-      data: labels,
-      boundaryGap: false,
-      axisLine: { lineStyle: { color: "#dcdfe6" } },
+      type: "category", data: labels,
+      axisLine: { lineStyle: { color: "#e8eaed" } },
+      axisLabel: { color: "#909399", fontSize: 11, rotate: labels.length > 8 ? 30 : 0 },
+      axisTick: { show: false }
+    },
+    yAxis: {
+      type: "value",
+      splitLine: { lineStyle: { color: "#f0f0f0", type: "dashed" } },
+      axisLabel: { color: "#909399", fontSize: 11, formatter: v => v >= 10000 ? (v / 10000).toFixed(1) + "万" : v }
+    },
+    series: [
+      { name: "产值", type: "bar", data: outputs, barWidth: "35%", itemStyle: { color: "#1890ff", borderRadius: [3, 3, 0, 0] } },
+      { name: "到账", type: "bar", data: payments, barWidth: "35%", itemStyle: { color: "#52c41a", borderRadius: [3, 3, 0, 0] } }
+    ]
+  }, true)
+}
+
+// 图表2：项目类型产值分布（环形图）
+function renderCategoryDistChart() {
+  const el = categoryDistRef.value
+  if (!el) return
+  if (!charts.categoryDist) charts.categoryDist = echarts.init(el)
+  const chart = charts.categoryDist
+  const data = (dashboard.value.categoryOutputDist || []).map(d => ({
+    name: d.name, value: Number(d.value)
+  }))
+  const colors = ["#1890ff", "#52c41a", "#faad14", "#f759ab", "#722ed1", "#13c2c2", "#909399", "#fa8c16"]
+
+  chart.setOption({
+    backgroundColor: "transparent",
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "#fff",
+      borderColor: "#e8eaed",
+      textStyle: { color: "#303133" },
+      formatter: "{b}: ¥{c} ({d}%)"
+    },
+    legend: {
+      orient: "vertical", right: 10, top: "center",
+      icon: "roundRect", itemWidth: 10, itemHeight: 10,
+      textStyle: { color: "#909399", fontSize: 12 },
+      formatter: name => {
+        const item = data.find(d => d.name === name)
+        const pct = item && data.reduce((s, d) => s + d.value, 0) > 0
+          ? Math.round(item.value / data.reduce((s, d) => s + d.value, 0) * 100) + "%"
+          : "0%"
+        return `${name}  ${pct}`
+      }
+    },
+    series: [{
+      type: "pie", radius: ["50%", "75%"], center: ["35%", "50%"],
+      avoidLabelOverlap: false,
+      label: {
+        show: true, position: "center",
+        formatter: () => `{a|${totalProjects.value}}\n{b|项目}`,
+        rich: { a: { fontSize: 28, fontWeight: "bold", color: "#303133", lineHeight: 36 }, b: { fontSize: 12, color: "#909399" } }
+      },
+      emphasis: { label: { show: true, fontSize: 14, fontWeight: "bold" }, itemStyle: { shadowBlur: 10, shadowColor: "rgba(0,0,0,0.12)" } },
+      labelLine: { show: false },
+      data: data.length ? data.map((d, i) => ({ ...d, itemStyle: { color: colors[i % colors.length] } })) : [{ name: "暂无数据", value: 0, itemStyle: { color: "#e8eaed" } }]
+    }]
+  }, true)
+}
+
+// 图表3：产值累计趋势（面积折线图）
+function renderCumulativeChart() {
+  const el = cumulativeRef.value
+  if (!el) return
+  if (!charts.cumulative) charts.cumulative = echarts.init(el)
+  const chart = charts.cumulative
+  const data = dashboard.value.outputCumulativeTrend || []
+  const labels = data.map(d => d.label)
+  const cumulative = data.map(d => Number(d.cumulative) || 0)
+
+  chart.setOption({
+    backgroundColor: "transparent",
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: "#fff",
+      borderColor: "#e8eaed",
+      textStyle: { color: "#303133" },
+      formatter: (p) => {
+        let h = `<b>${p[0].axisValue}</b><br/>`
+        p.forEach(v => { h += `${v.marker} ${v.seriesName}: ¥${formatMoney(v.value)}<br/>` })
+        return h
+      }
+    },
+    grid: { top: 16, left: 8, right: 48, bottom: 20, containLabel: true },
+    xAxis: {
+      type: "category", data: labels, boundaryGap: false,
+      axisLine: { lineStyle: { color: "#e8eaed" } },
       axisLabel: { color: "#909399", fontSize: 11 },
       axisTick: { show: false }
     },
     yAxis: {
       type: "value",
-      axisLine: { show: false },
-      axisTick: { show: false },
       splitLine: { lineStyle: { color: "#f0f0f0", type: "dashed" } },
-      axisLabel: {
-        color: "#909399",
-        fontSize: 11,
-        formatter: (v) => v >= 10000 ? (v / 10000).toFixed(1) + "万" : v
-      }
-    },
-    series: [
-      {
-        name: "产值",
-        type: "line",
-        data: values,
-        smooth: true,
-        symbol: "circle",
-        symbolSize: 5,
-        lineStyle: { width: 2, color: "#409eff" },
-        itemStyle: { color: "#409eff" },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: "rgba(64,158,255,0.25)" },
-            { offset: 1, color: "rgba(64,158,255,0.01)" }
-          ])
-        }
-      }
-    ]
-  })
-}
-
-// ===== 项目状态分布环形图 =====
-function renderStatusChart() {
-  if (!statusChartRef.value) return
-  if (!statusChart) {
-    statusChart = echarts.init(statusChartRef.value)
-  }
-  const dist = dashboard.value.projectStatusDist || []
-  const colorMap = {
-    "pending": "#909399",
-    "ongoing": "#409eff",
-    "paused": "#e6a23c",
-    "completed": "#67c23a",
-    "closed": "#13ce66",
-    "archived": "#909399",
-    "cancelled": "#f56c6c"
-  }
-  const data = dist.map(d => ({
-    name: d.name,
-    value: Number(d.value),
-    itemStyle: { color: colorMap[d.name] || "#409eff" }
-  }))
-  const total = data.reduce((s, d) => s + d.value, 0)
-
-  statusChart.setOption({
-    tooltip: {
-      trigger: "item",
-      formatter: "{b}: {c}个 ({d}%)"
-    },
-    legend: {
-      bottom: 0,
-      icon: "circle",
-      itemWidth: 8,
-      itemHeight: 8,
-      textStyle: { fontSize: 12 }
+      axisLabel: { color: "#909399", fontSize: 11, formatter: v => v >= 10000 ? (v / 10000).toFixed(1) + "万" : v }
     },
     series: [{
-      type: "pie",
-      radius: ["45%", "70%"],
-      center: ["50%", "42%"],
-      avoidLabelOverlap: false,
-      label: {
+      name: "累计产值", type: "line", data: cumulative,
+      smooth: true, symbol: "circle", symbolSize: 6,
+      lineStyle: { width: 3, color: "#52c41a" },
+      itemStyle: { color: "#52c41a", borderWidth: 2, borderColor: "#fff" },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: "rgba(82,196,26,0.3)" },
+          { offset: 1, color: "rgba(82,196,26,0.02)" }
+        ])
+      },
+      endLabel: {
         show: true,
-        position: "center",
-        formatter: () => `{a|${total}}\n{b|项目总数}`,
-        rich: {
-          a: { fontSize: 28, fontWeight: "bold", color: "#303133", lineHeight: 36 },
-          b: { fontSize: 12, color: "#909399" }
-        }
-      },
-      emphasis: {
-        label: { show: true, fontSize: 14, fontWeight: "bold" },
-        itemStyle: { shadowBlur: 10, shadowColor: "rgba(0,0,0,0.15)" }
-      },
-      labelLine: { show: false },
-      data: data.length ? data : [{ name: "暂无数据", value: 0, itemStyle: { color: "#e0e0e0" } }]
+        formatter: p => `¥${formatMoney(p.value)}`,
+        color: "#52c41a",
+        fontSize: 11,
+        offset: [10, 0]
+      }
     }]
-  })
+  }, true)
+}
+
+// 图表4：项目动态（分组柱状图）
+function renderDynamicChart() {
+  const el = dynamicRef.value
+  if (!el) return
+  if (!charts.dynamic) charts.dynamic = echarts.init(el)
+  const chart = charts.dynamic
+  const data = dashboard.value.projectDynamicTrend || []
+  const labels = data.map(d => d.label)
+  const newP = data.map(d => Number(d.newProjects) || 0)
+  const completedP = data.map(d => Number(d.completedProjects) || 0)
+
+  chart.setOption({
+    backgroundColor: "transparent",
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      backgroundColor: "#fff",
+      borderColor: "#e8eaed",
+      textStyle: { color: "#303133" },
+      formatter: (p) => {
+        let h = `<b>${p[0].axisValue}</b><br/>`
+        p.forEach(v => { h += `${v.marker} ${v.seriesName}: ${v.value} 个<br/>` })
+        return h
+      }
+    },
+    legend: { data: ["新增", "办结"], bottom: 0, icon: "rect", itemWidth: 10, itemHeight: 10, textStyle: { color: "#909399", fontSize: 12 } },
+    grid: { top: 16, left: 8, right: 16, bottom: 36, containLabel: true },
+    xAxis: {
+      type: "category", data: labels,
+      axisLine: { lineStyle: { color: "#e8eaed" } },
+      axisLabel: { color: "#909399", fontSize: 11, rotate: labels.length > 8 ? 30 : 0 },
+      axisTick: { show: false }
+    },
+    yAxis: {
+      type: "value",
+      splitLine: { lineStyle: { color: "#f0f0f0", type: "dashed" } },
+      axisLabel: { color: "#909399", fontSize: 11 },
+      minInterval: 1
+    },
+    series: [
+      { name: "新增", type: "bar", data: newP, barWidth: "35%", itemStyle: { color: "#1890ff", borderRadius: [3, 3, 0, 0] } },
+      { name: "办结", type: "bar", data: completedP, barWidth: "35%", itemStyle: { color: "#52c41a", borderRadius: [3, 3, 0, 0] } }
+    ]
+  }, true)
 }
 
 // ===== 导航 =====
-function goPage(path) {
-  router.push(path)
-}
-function goProjectDetail(id) {
-  router.push({ path: "/project/list", query: { id } })
-}
-function goTaskDetail(id) {
-  router.push({ path: "/project/task" })
-}
-function goMaterial(status) {
-  router.push({ path: "/material" })
-}
-function goContractDetail(id) {
-  router.push({ path: "/contract/list", query: { id } })
-}
+function goPage(path) { router.push(path) }
+function goProjectDetail(id) { router.push({ path: "/project/list", query: { id } }) }
+function goTaskDetail() { router.push({ path: "/project/task" }) }
+function goMaterial() { router.push({ path: "/material" }) }
+function goContractDetail(id) { router.push({ path: "/contract/list", query: { id } }) }
 
 // ===== 窗口缩放 =====
 function handleResize() {
-  outputChart?.resize()
-  statusChart?.resize()
+  Object.values(charts).forEach(c => c?.resize())
 }
 
 // ===== 生命周期 =====
 onMounted(() => {
+  initDateRange()
   fetchData()
   window.addEventListener("resize", handleResize)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", handleResize)
-  outputChart?.dispose()
-  statusChart?.dispose()
+  Object.values(charts).forEach(c => c?.dispose())
 })
 </script>
 
 <style scoped lang="scss">
+/* ===== 亮色主题设计令牌 ===== */
+$bg-page: #f5f7fa;
+$bg-card: #ffffff;
+$border-card: #e8eaed;
+$text-primary: #303133;
+$text-secondary: #909399;
+$text-muted: #c0c4cc;
+$accent-blue: #1890ff;
+$accent-green: #52c41a;
+$accent-cyan: #36cfc9;
+$accent-orange: #faad14;
+$accent-red: #ff4d4f;
+$accent-purple: #722ed1;
+
 .dashboard-container {
   padding: 16px;
-  background: #f5f7fa;
+  background: $bg-page;
   min-height: calc(100vh - 84px);
 }
 
-/* ===== 顶部标题 ===== */
+/* ===== 顶部日期栏 ===== */
 .dash-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
+  padding: 10px 16px;
+  background: $bg-card;
+  border-radius: 10px;
+  border: 1px solid $border-card;
+  flex-wrap: wrap;
+  gap: 10px;
 
-  .header-title {
+  .header-left {
     display: flex;
     align-items: center;
     gap: 10px;
-
-    .title-bar {
-      width: 4px;
-      height: 20px;
-      border-radius: 2px;
-      background: linear-gradient(180deg, #409eff, #36cfc9);
-    }
-
-    h2 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-      color: #303133;
-    }
-  }
-
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-}
-
-/* ===== KPI 卡片区 ===== */
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-@media (max-width: 1400px) {
-  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
-}
-@media (max-width: 768px) {
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-}
-
-.kpi-card {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px;
-  border-radius: 10px;
-  background: #fff;
-  border: 1px solid #ebeef5;
-  transition: all 0.25s ease;
-  overflow: hidden;
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
-  }
-
-  .kpi-icon-wrap {
-    flex-shrink: 0;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-  }
-
-  .kpi-body {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .kpi-value {
-    display: flex;
-    align-items: baseline;
-    gap: 3px;
-
-    .num {
-      font-size: 22px;
-      font-weight: 700;
-      color: #303133;
-      line-height: 1.2;
-    }
-
-    .unit {
-      font-size: 12px;
-      color: #909399;
-    }
-  }
-
-  .kpi-label {
-    font-size: 13px;
-    color: #606266;
-    margin-top: 2px;
-  }
-
-  .kpi-trend {
-    font-size: 11px;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    margin-top: 4px;
-
-    &.up { color: #67c23a; }
-    &.down { color: #f56c6c; }
-  }
-
-  .kpi-sub {
-    font-size: 11px;
-    color: #c0c4cc;
-    margin-top: 2px;
-  }
-
-  /* 卡片配色 */
-  &.card-blue .kpi-icon-wrap { background: linear-gradient(135deg, #409eff, #66b1ff); }
-  &.card-cyan .kpi-icon-wrap { background: linear-gradient(135deg, #36cfc9, #5cdbd3); }
-  &.card-green .kpi-icon-wrap { background: linear-gradient(135deg, #67c23a, #85ce61); }
-  &.card-purple .kpi-icon-wrap { background: linear-gradient(135deg, #722ed1, #9254de); }
-  &.card-red .kpi-icon-wrap { background: linear-gradient(135deg, #f56c6c, #f89898); }
-  &.card-amber .kpi-icon-wrap { background: linear-gradient(135deg, #e6a23c, #f0c78a); }
-
-  /* 预警脉冲 */
-  .kpi-pulse {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #e6a23c;
-    margin: 12px;
-    animation: pulse-ring 1.5s ease-out infinite;
-  }
-}
-
-@keyframes pulse-ring {
-  0% { box-shadow: 0 0 0 0 rgba(230, 162, 60, 0.5); }
-  100% { box-shadow: 0 0 0 10px rgba(230, 162, 60, 0); }
-}
-
-/* ===== 图表区 ===== */
-.chart-row {
-  margin-bottom: 16px;
-}
-
-.dash-card {
-  border-radius: 10px;
-  border: 1px solid #ebeef5;
-
-  :deep(.el-card__header) {
-    padding: 12px 16px;
-    border-bottom: 1px solid #f0f0f0;
-  }
-
-  :deep(.el-card__body) {
-    padding: 16px;
-  }
-
-  .card-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: #303133;
-  }
-
-  .card-header-flex {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-}
-
-.chart-canvas {
-  height: 300px;
-}
-
-/* ===== 三栏看板 ===== */
-.panel-row {
-  margin-bottom: 16px;
-}
-
-/* 项目进度 */
-.progress-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-height: 200px;
-}
-
-.progress-item {
-  display: flex;
-  gap: 10px;
-  cursor: pointer;
-  padding: 4px 0;
-  transition: opacity 0.2s;
-
-  &:hover { opacity: 0.75; }
-
-  .progress-rank {
-    flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    font-weight: 700;
-    color: #fff;
-    background: #c0c4cc;
-
-    &.rank-1 { background: linear-gradient(135deg, #ff4d4f, #ff7875); }
-    &.rank-2 { background: linear-gradient(135deg, #fa8c16, #ffa940); }
-    &.rank-3 { background: linear-gradient(135deg, #faad14, #ffc53d); }
-  }
-
-  .progress-main {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .progress-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px;
-
-    .progress-name {
-      font-size: 13px;
-      color: #303133;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      max-width: 180px;
-    }
-
-    .progress-pct {
-      font-size: 13px;
-      font-weight: 600;
-      color: #409eff;
-    }
-  }
-
-  .progress-meta {
-    font-size: 11px;
-    color: #c0c4cc;
-    margin-top: 3px;
-  }
-}
-
-/* 任务预警 */
-.alert-badge {
-  margin-left: 6px;
-}
-
-.alert-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 200px;
-}
-
-.alert-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #fafafa;
-  cursor: pointer;
-  transition: all 0.2s;
-
-  &:hover {
-    background: #f0f7ff;
-  }
-
-  .alert-dot {
-    flex-shrink: 0;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-
-    &.severe { background: #f56c6c; box-shadow: 0 0 4px rgba(245, 108, 108, 0.5); }
-    &.warning { background: #e6a23c; }
-  }
-
-  .alert-body {
-    flex: 1;
-    min-width: 0;
-
-    .alert-title {
-      font-size: 13px;
-      color: #303133;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .alert-meta {
-      font-size: 11px;
-      color: #909399;
-      margin-top: 2px;
-    }
-  }
-
-  .alert-days {
-    display: flex;
-    align-items: baseline;
-    gap: 2px;
-
-    .days-num {
-      font-size: 16px;
-      font-weight: 700;
-
-      &.severe { color: #f56c6c; }
-      &.warning { color: #e6a23c; }
-    }
-
-    .days-label {
-      font-size: 11px;
-      color: #909399;
-    }
-  }
-}
-
-/* 资料流转 */
-.material-stats {
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  min-height: 200px;
-  padding: 10px 0;
-}
-
-.material-stat-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: transform 0.2s;
-
-  &:hover { transform: scale(1.08); }
-
-  .stat-circle {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 3px solid transparent;
-
-    .stat-num {
-      font-size: 22px;
-      font-weight: 700;
-    }
-
-    &.stat-pending {
-      background: #fff7e6;
-      border-color: #ffd591;
-      .stat-num { color: #fa8c16; }
-    }
-
-    &.stat-active {
-      background: #e6f7ff;
-      border-color: #91d5ff;
-      .stat-num { color: #1890ff; }
-    }
-
-    &.stat-done {
-      background: #f6ffed;
-      border-color: #b7eb8f;
-      .stat-num { color: #52c41a; }
-    }
+    flex-wrap: wrap;
   }
 
   .stat-label {
-    font-size: 12px;
-    color: #606266;
+    font-size: 14px;
+    font-weight: 600;
+    color: $text-primary;
   }
 }
 
-/* ===== 合同收款 + 快捷入口 ===== */
-.bottom-row {
+/* ===== 第一行：KPI 卡片 ===== */
+.kpi-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 12px;
   margin-bottom: 16px;
 }
 
-.payment-section {
-  .payment-summary {
+@media (max-width: 1200px) {
+  .kpi-row { grid-template-columns: 1fr 1fr; }
+  .kpi-wide { grid-column: span 2; }
+}
+@media (max-width: 768px) {
+  .kpi-row { grid-template-columns: 1fr; }
+  .kpi-wide { grid-column: span 1; }
+}
+
+.kpi-card {
+  background: $bg-card;
+  border: 1px solid $border-card;
+  border-radius: 10px;
+  padding: 16px;
+  transition: box-shadow 0.25s ease;
+  &:hover { box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06); }
+}
+
+/* 项目动态宽卡 */
+.kpi-dynamic-inner {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 0 16px;
+  align-items: center;
+  height: 100%;
+
+  .dyn-left, .dyn-right {
+    text-align: center;
+    .dyn-label { font-size: 12px; color: $text-secondary; margin-bottom: 4px; }
+    .dyn-value { font-size: 32px; font-weight: 700; color: $text-primary; line-height: 1.1; }
+    .dyn-unit { font-size: 12px; color: $text-muted; margin-top: 4px; }
+  }
+
+  .dyn-divider {
     display: flex;
-    gap: 32px;
-    margin-bottom: 16px;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    height: 100%;
+    justify-content: center;
 
-    .pay-item {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-
-      .pay-label {
-        font-size: 12px;
-        color: #909399;
-      }
-
-      .pay-value {
-        font-size: 20px;
-        font-weight: 700;
-        color: #303133;
-
-        &.green { color: #67c23a; }
-        &.red { color: #f56c6c; }
-      }
+    .dyn-divider-line { width: 1px; flex: 1; background: $border-card; min-height: 20px; }
+    .dyn-divider-text {
+      font-size: 11px;
+      color: $text-muted;
+      writing-mode: vertical-rl;
+      letter-spacing: 2px;
+      white-space: nowrap;
     }
   }
 
-  .payment-bar-wrap {
+  .dyn-progress {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid $border-card;
+
+    :deep(.el-progress) { flex: 1; }
     :deep(.el-progress-bar__outer) {
-      border-radius: 12px;
+      background: #f0f0f0;
+      border-radius: 3px;
     }
-    :deep(.el-progress-bar__inner) {
-      border-radius: 12px;
-      transition: width 0.8s ease;
+    .dyn-progress-text {
+      font-size: 12px;
+      font-weight: 600;
+      color: $accent-cyan;
+      white-space: nowrap;
     }
+  }
+}
+
+/* 简易KPI卡 */
+.kpi-simple {
+  .kpi-simple-label { font-size: 12px; color: $text-secondary; margin-bottom: 6px; }
+  .kpi-simple-value { font-size: 28px; font-weight: 700; color: $text-primary; line-height: 1.1; }
+  .kpi-simple-sub { font-size: 12px; color: $text-muted; margin-top: 6px; }
+}
+
+/* ===== 第二行：财务卡片 ===== */
+.finance-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 1200px) { .finance-row { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 768px) { .finance-row { grid-template-columns: 1fr; } }
+
+.finance-card {
+  background: $bg-card;
+  border: 1px solid $border-card;
+  border-radius: 10px;
+  padding: 14px 16px;
+  transition: box-shadow 0.25s ease;
+  &:hover { box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06); }
+
+  .finance-label { font-size: 12px; color: $text-secondary; margin-bottom: 6px; }
+  .finance-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: $text-primary;
+    line-height: 1.2;
+    &.red { color: $accent-red; }
+  }
+  .finance-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 11px;
+    color: $text-muted;
+    .finance-pct { color: $accent-cyan; font-weight: 600; }
+  }
+}
+
+/* ===== 图表行 ===== */
+.chart-row {
+  display: grid;
+  grid-template-columns: 14fr 10fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 1200px) { .chart-row { grid-template-columns: 1fr; } }
+
+.chart-card {
+  background: $bg-card;
+  border: 1px solid $border-card;
+  border-radius: 10px;
+  padding: 14px 16px 16px;
+}
+
+.chart-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+
+  .chart-title { font-size: 14px; font-weight: 600; color: $text-primary; }
+  .chart-subtitle { font-size: 12px; color: $text-muted; }
+}
+
+.chart-canvas { height: 260px; }
+
+/* ===== 底部行：合同收款 + 快捷入口 ===== */
+.bottom-row {
+  display: grid;
+  grid-template-columns: 14fr 10fr;
+  gap: 12px;
+}
+
+@media (max-width: 1200px) { .bottom-row { grid-template-columns: 1fr; } }
+
+.bottom-card {
+  background: $bg-card;
+  border: 1px solid $border-card;
+  border-radius: 10px;
+  padding: 14px 16px 16px;
+}
+
+/* 合同收款进度 */
+.contract-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 160px;
+}
+
+.contract-item {
+  display: grid;
+  grid-template-columns: 110px 1fr 50px auto;
+  align-items: center;
+  gap: 12px;
+
+  .contract-code {
+    font-size: 13px;
+    font-weight: 600;
+    color: $text-primary;
+    font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+    white-space: nowrap;
+  }
+
+  .contract-progress {
+    :deep(.el-progress-bar__outer) { background: #f0f0f0; border-radius: 4px; }
+  }
+
+  .contract-pct {
+    font-size: 13px;
+    font-weight: 600;
+    text-align: right;
+  }
+
+  .contract-amount {
+    font-size: 12px;
+    color: $text-secondary;
+    white-space: nowrap;
+    text-align: right;
   }
 }
 
 /* 快捷入口 */
-.quick-actions {
+.quick-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
-.action-btn {
+.quick-btn {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 16px 8px;
-  border-radius: 10px;
+  justify-content: center;
+  padding: 14px;
   background: #f5f7fa;
+  border: 1px solid $border-card;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.25s ease;
-  color: #606266;
-  position: relative;
+  color: $text-secondary;
+  font-size: 13px;
 
   &:hover {
-    background: #ecf5ff;
-    color: #409eff;
-    transform: translateY(-2px);
-  }
-
-  span {
-    font-size: 12px;
-  }
-
-  &.todo-btn {
-    background: linear-gradient(135deg, #fff7e6, #fffbe6);
-
-    &:hover {
-      background: linear-gradient(135deg, #fff1d6, #fff5cc);
-      color: #e6a23c;
-    }
-  }
-
-  .todo-badge {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-  }
-}
-
-/* ===== 弹窗 ===== */
-.overdue-text {
-  color: #f56c6c;
-  font-weight: 600;
-}
-
-:deep(.el-table__row) {
-  cursor: pointer;
-}
-
-/* ===== 合同超时预警 ===== */
-.timeout-alert-card {
-  :deep(.el-card__header) {
-    background: linear-gradient(135deg, #fff2f0, #fff1f0);
-    border-bottom: 1px solid #ffccc7;
-  }
-}
-
-.timeout-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.timeout-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  background: #fffaf0;
-  border: 1px solid #ffe58f;
-  transition: all 0.2s;
-
-  &:hover {
-    background: #fff7e6;
-    border-color: #ffd591;
-  }
-
-  .timeout-contract {
-    font-weight: 600;
-    color: #303133;
-    min-width: 0;
-  }
-
-  .timeout-desc {
-    flex: 1;
-    font-size: 13px;
-    color: #909399;
-  }
-}
-
-/* ===== 响应式 ===== */
-@media (max-width: 992px) {
-  .quick-actions {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-@media (max-width: 768px) {
-  .quick-actions {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .payment-summary {
-    flex-wrap: wrap;
-    gap: 16px !important;
+    background: rgba(24, 144, 255, 0.06);
+    border-color: rgba(24, 144, 255, 0.3);
+    color: $accent-blue;
+    transform: translateY(-1px);
   }
 }
 </style>

@@ -601,7 +601,6 @@ const data = reactive({
   },
   rules: {
     projectCode: [{ required: true, message: "工程编号不能为空", trigger: "blur" }],
-    projectName: [{ required: true, message: "项目名称不能为空", trigger: "blur" }],
     projectCategoryId: [{ required: true, message: "请选择项目类别", trigger: "change" }]
   }
 })
