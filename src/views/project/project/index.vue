@@ -36,26 +36,14 @@
       <div class="advanced-toggle" v-show="showSearch" @click="advancedVisible = !advancedVisible">
          <span class="toggle-arrow" :class="{ 'is-open': advancedVisible }">▼</span>
          <span class="toggle-label">高级筛选</span>
-         <span class="toggle-hint">（项目类别、负责人、合同、时间范围等）</span>
+         <span class="toggle-hint">（负责人、合同、时间范围等）</span>
       </div>
 
       <!-- 第四行：高级筛选面板 -->
       <el-collapse-transition>
          <div v-show="advancedVisible" class="advanced-filter-panel">
             <div class="filter-grid">
-               <div class="filter-item">
-                  <div class="filter-item-label">项目类别</div>
-                  <el-tree-select
-                     v-model="queryParams.projectCategoryId"
-                     :data="categoryOptions"
-                     :props="{ value: 'id', label: 'label', children: 'children' }"
-                     value-key="id"
-                     placeholder="全部类别"
-                     check-strictly
-                     clearable
-                     style="width: 100%"
-                  />
-               </div>
+               <!-- 项目类别已移除：类别属于工作量维度，不属于项目维度 -->
                <div class="filter-item">
                   <div class="filter-item-label">负责人</div>
                   <el-select v-model="queryParams.leaderId" filterable clearable placeholder="全部负责人" style="width: 100%">
@@ -209,28 +197,14 @@
       <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
          <el-form ref="projectRef" :model="form" :rules="rules" label-width="90px">
             <el-row :gutter="20">
-               <el-col :span="8">
+               <el-col :span="12">
                   <el-form-item label="工程编号" prop="projectCode">
                      <el-input v-model="form.projectCode" placeholder="请输入工程编号" maxlength="50" />
                   </el-form-item>
                </el-col>
-               <el-col :span="8">
+               <el-col :span="12">
                   <el-form-item label="项目名称" prop="projectName">
                      <el-input v-model="form.projectName" placeholder="请输入项目名称" maxlength="200" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="项目类别" prop="projectCategoryId">
-                     <el-tree-select
-                        v-model="form.projectCategoryId"
-                        :data="categoryOptions"
-                        :props="{ value: 'id', label: 'label', children: 'children' }"
-                        value-key="id"
-                        placeholder="请选择项目类别（小类）"
-                        check-strictly
-                        :filter-node-method="filterCategoryNode"
-                        style="width: 100%"
-                     />
                   </el-form-item>
                </el-col>
             </el-row>
@@ -242,7 +216,9 @@
                </el-col>
                <el-col :span="8">
                   <el-form-item label="委托单位" prop="clientUnit">
-                     <el-input v-model="form.clientUnit" placeholder="请输入委托单位" maxlength="200" />
+                     <el-select v-model="form.clientUnit" filterable clearable allow-create placeholder="请选择或输入委托单位" style="width: 100%">
+                        <el-option v-for="item in clientUnitOptions" :key="item" :label="item" :value="item" />
+                     </el-select>
                   </el-form-item>
                </el-col>
                <el-col :span="8">
@@ -302,6 +278,23 @@
                <el-col :span="8">
                   <el-form-item label="状态" v-if="form.id">
                      <dict-tag :options="proj_project_status" :value="form.status" />
+                  </el-form-item>
+               </el-col>
+            </el-row>
+            <el-row :gutter="20">
+               <el-col :span="8">
+                  <el-form-item label="安排日期" prop="assignDate">
+                     <el-date-picker v-model="form.assignDate" value-format="YYYY-MM-DD" type="date" placeholder="选择日期" clearable style="width: 100%" />
+                  </el-form-item>
+               </el-col>
+               <el-col :span="8">
+                  <el-form-item label="工期要求" prop="durationRequire">
+                     <el-input-number v-model="form.durationRequire" :min="0" placeholder="天" controls-position="right" style="width: 100%" />
+                  </el-form-item>
+               </el-col>
+               <el-col :span="8">
+                  <el-form-item label="总时长" prop="totalDuration">
+                     <el-input-number v-model="form.totalDuration" :min="0" placeholder="天" controls-position="right" style="width: 100%" />
                   </el-form-item>
                </el-col>
             </el-row>
@@ -423,7 +416,7 @@
             v-model="pasteText"
             type="textarea"
             :rows="6"
-            placeholder="工程编号(Tab)项目名称(Tab)工程项目(Tab)项目类别(Tab)委托单位(Tab)联系人(Tab)联系电话(Tab)工程地点(Tab)负责人(Tab)备注&#10;从 Excel 复制后粘贴到此处..."
+            placeholder="工程编号(Tab)项目名称(Tab)工程项目(Tab)委托单位(Tab)联系人(Tab)联系电话(Tab)工程地点(Tab)负责人(Tab)备注&#10;从 Excel 复制后粘贴到此处..."
          />
          <div style="margin-top: 10px; text-align: right;">
             <el-button type="primary" @click="parsePasteData">解析数据</el-button>
@@ -558,7 +551,6 @@ const fieldOptions = [
    { label: "工程编号", value: "projectCode" },
    { label: "项目名称", value: "projectName" },
    { label: "工程项目", value: "engineeringProject" },
-   { label: "项目类别", value: "categoryName" },
    { label: "委托单位", value: "clientUnit" },
    { label: "联系人", value: "contactName" },
    { label: "联系电话", value: "contactPhone" },
@@ -600,8 +592,7 @@ const data = reactive({
     assignDateEnd: undefined
   },
   rules: {
-    projectCode: [{ required: true, message: "工程编号不能为空", trigger: "blur" }],
-    projectCategoryId: [{ required: true, message: "请选择项目类别", trigger: "change" }]
+    projectCode: [{ required: true, message: "工程编号不能为空", trigger: "blur" }]
   }
 })
 
@@ -797,7 +788,6 @@ function reset() {
     projectCode: undefined,
     projectName: undefined,
     engineeringProject: undefined,
-    projectCategoryId: undefined,
     clientUnit: undefined,
     contactName: undefined,
     contactPhone: undefined,
@@ -805,6 +795,9 @@ function reset() {
     contractId: undefined,
     status: "ongoing",
     leaderIds: [],
+    assignDate: undefined,
+    durationRequire: undefined,
+    totalDuration: undefined,
     remark: undefined
   }
   proxy.resetForm("projectRef")
@@ -858,7 +851,6 @@ function toggleRow(row) {
 /** 新增按钮操作 */
 function handleAdd() {
   reset()
-  loadCategoryTree()
   loadUserList()
   open.value = true
   title.value = "新增项目"
@@ -867,7 +859,6 @@ function handleAdd() {
 /** 修改按钮操作 */
 function handleUpdate(row) {
   reset()
-  loadCategoryTree()
   loadUserList()
   const id = row.id || ids.value[0]
   getProject(id).then(response => {
@@ -955,7 +946,7 @@ function parsePasteData() {
       return
    }
    const rows = lines.map(line => line.split(/\t/))
-   const headerKeywords = ["工程编号", "项目名称", "工程项目", "项目类别", "委托单位", "联系人", "联系电话", "工程地点", "负责人", "备注"]
+   const headerKeywords = ["工程编号", "项目名称", "工程项目", "委托单位", "联系人", "联系电话", "工程地点", "负责人", "备注"]
    const firstRowIsHeader = rows[0].some(cell => headerKeywords.some(kw => cell.includes(kw)))
    const dataRows = firstRowIsHeader ? rows.slice(1) : rows
    pasteRows.value = dataRows

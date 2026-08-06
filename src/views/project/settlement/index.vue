@@ -125,7 +125,7 @@
                <span v-if="scope.row.prepayAmount != null">{{ formatMoney(scope.row.prepayAmount) }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="时间" align="center" prop="prepayDate" width="110">
+         <el-table-column label="预付款时间" align="center" prop="prepayDate" width="120">
             <template #default="scope">
                <span v-if="scope.row.prepayDate">{{ scope.row.prepayDate }}</span>
             </template>
@@ -137,7 +137,7 @@
                <span v-if="scope.row.tailAmount != null">{{ formatMoney(scope.row.tailAmount) }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="时间" align="center" prop="tailDate" width="110">
+         <el-table-column label="尾款时间" align="center" prop="tailDate" width="120">
             <template #default="scope">
                <span v-if="scope.row.tailDate">{{ scope.row.tailDate }}</span>
             </template>
@@ -280,7 +280,7 @@
                <el-table-column label="负责人" align="center" min-width="110">
                   <template #default="scope">
                      <el-select v-model="scope.row.userId" filterable placeholder="选择负责人" style="width:100%">
-                        <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
+                        <el-option v-for="u in leaderOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
                      </el-select>
                   </template>
                </el-table-column>
@@ -292,7 +292,7 @@
                         :props="{ value: 'id', label: 'name', children: 'children' }"
                         value-key="id"
                         placeholder="类别（小类）"
-                        check-strictly
+                        :check-strictly="false"
                         style="width:100%"
                         @change="(val) => onCategoryChange(val, scope.row)"
                      />
@@ -366,6 +366,7 @@ const editClientUnit = ref("")
 const editProjectLocation = ref("")
 const editProjectId = ref(null)
 const userOptions = ref([])
+const leaderOptions = ref([])   // 当前项目负责人（编辑弹窗里用）
 const categoryOptions = ref([])
 const contractPriceMap = ref({})
 const clientUnitOptions = ref([])
@@ -561,6 +562,9 @@ function handleEdit(row) {
     .then(([catRes, userRes, detailRes]) => {
       categoryOptions.value = catRes.data
       userOptions.value = userRes.rows || []
+      // 根据项目负责人ID过滤：编辑弹窗中工作量明细的负责人下拉只显示该项目负责人
+      const leaderIds = detailRes.data.leaderIds || []
+      leaderOptions.value = userOptions.value.filter(u => leaderIds.includes(u.userId))
 
       const detail = detailRes.data
       const payments = detail.payments || []
@@ -632,7 +636,13 @@ function submitSettlement() {
   saveLoading.value = true
   const payload = {
     projectId: editProjectId.value,
-    prepay: {
+    remark: editForm.value.remark,
+    workloads: editForm.value.workloads
+  }
+
+  // 只有金额或日期有值时才提交预付款
+  if (editForm.value.prepayAmount != null || editForm.value.prepayDate) {
+    payload.prepay = {
       amount: editForm.value.prepayAmount,
       payTime: editForm.value.prepayDate,
       payUnit: editForm.value.payUnit,
@@ -641,15 +651,17 @@ function submitSettlement() {
       invoiceNo: editForm.value.invoiceNo,
       invoiceDate: editForm.value.invoiceDate,
       invoiceAmount: editForm.value.invoiceAmount
-    },
-    tail: {
+    }
+  }
+
+  // 只有金额或日期有值时才提交尾款
+  if (editForm.value.tailAmount != null || editForm.value.tailDate) {
+    payload.tail = {
       amount: editForm.value.tailAmount,
       payTime: editForm.value.tailDate,
       payUnit: editForm.value.payUnit,
       payMethod: editForm.value.payMethod
-    },
-    remark: editForm.value.remark,
-    workloads: editForm.value.workloads
+    }
   }
 
   saveSettlement(payload).then(() => {

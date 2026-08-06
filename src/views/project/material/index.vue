@@ -95,7 +95,7 @@
          <el-table-column label="项目名称" align="center" prop="projectName" min-width="170" :show-overflow-tooltip="false" />
          <el-table-column label="提交时间" align="center" prop="submitTime" min-width="155">
             <template #default="scope">
-               <span v-if="scope.row.submitTime">{{ parseTime(scope.row.submitTime, '{y}-{m}-{d} {h}:{i}:{s}') }}</span>
+               <span v-if="scope.row.submitTime">{{ parseTime(scope.row.submitTime, '{y}-{m}-{d}') }}</span>
             </template>
          </el-table-column>
          <el-table-column label="联系人" align="center" prop="contactName" min-width="100" :show-overflow-tooltip="false" />

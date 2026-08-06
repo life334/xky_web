@@ -54,6 +54,9 @@
                <el-descriptions-item label="联系人">{{ projectInfo.contactName || '-' }}</el-descriptions-item>
                <el-descriptions-item label="联系电话">{{ projectInfo.contactPhone || '-' }}</el-descriptions-item>
                <el-descriptions-item label="合同">{{ projectInfo.contractName || '-' }}</el-descriptions-item>
+               <el-descriptions-item label="安排日期">{{ projectInfo.assignDate ? parseTime(projectInfo.assignDate, '{y}-{m}-{d}') : '-' }}</el-descriptions-item>
+               <el-descriptions-item label="工期要求">{{ projectInfo.durationRequire != null ? projectInfo.durationRequire + ' 天' : '-' }}</el-descriptions-item>
+               <el-descriptions-item label="总时长">{{ projectInfo.totalDuration != null ? projectInfo.totalDuration + ' 天' : '-' }}</el-descriptions-item>
                <el-descriptions-item label="负责人">{{ projectInfo.leaderNames || '-' }}</el-descriptions-item>
                <el-descriptions-item label="状态">
                   <dict-tag v-if="projectInfo.status" :options="proj_project_status" :value="projectInfo.status" />
@@ -80,21 +83,21 @@
                <el-table-column label="实际完成" align="center" prop="actualFinishDate" width="110">
                   <template #default="scope">
                      <span v-if="scope.row.actualFinishDate">{{ parseTime(scope.row.actualFinishDate, '{y}-{m}-{d}') }}</span>
-                     <span v-else style="color: #c0c4cc">—</span>
                   </template>
                </el-table-column>
                <el-table-column label="工期要求" align="center" prop="durationRequire" min-width="100" />
                <el-table-column label="总时长(天)" align="center" prop="totalDuration" width="90" />
                <el-table-column label="状态" align="center" prop="status" width="90">
                   <template #default="scope">
-                     <el-tag :type="getTaskStatusType(scope.row.status)">{{ scope.row.status || '—' }}</el-tag>
+                     <dict-tag v-if="scope.row.status" :options="proj_task_status" :value="scope.row.status" />
+                     <span v-else style="color: #c0c4cc">—</span>
                   </template>
                </el-table-column>
             </el-table>
          </el-tab-pane>
 
          <!-- 工作量录入（只读） -->
-         <el-tab-pane label="工作量录入" name="workload">
+         <el-tab-pane label="工作量" name="workload">
             <el-table v-loading="workloadLoading" :data="workloadList" stripe border style="margin-top: 8px">
                <el-table-column label="执行人" align="center" prop="userName" min-width="90" />
                <el-table-column label="项目类别" align="center" prop="categoryName" min-width="120" />
@@ -137,7 +140,7 @@
          <el-tab-pane label="资料管理" name="material">
             <el-table v-loading="materialLoading" :data="materialList" stripe border style="margin-top: 8px">
                <el-table-column label="提交时间" align="center" prop="submitTime" min-width="160">
-                  <template #default="scope"><span v-if="scope.row.submitTime">{{ parseTime(scope.row.submitTime) }}</span></template>
+                  <template #default="scope"><span v-if="scope.row.submitTime">{{ parseTime(scope.row.submitTime, '{y}-{m}-{d}') }}</span></template>
                </el-table-column>
                <el-table-column label="联系人" align="center" prop="contactName" min-width="90" />
                <el-table-column label="联系电话" align="center" prop="contactPhone" min-width="110" />
@@ -225,9 +228,9 @@
                <el-col :span="12">
                   <el-form-item label="付款类型" prop="paymentType">
                      <el-select v-model="paymentForm.paymentType" placeholder="请选择" style="width: 100%">
-                        <el-option label="预付款" value="预付款" />
-                        <el-option label="进度款" value="进度款" />
-                        <el-option label="尾款" value="尾款" />
+                        <el-option label="预付款" value="advance" />
+                        <el-option label="进度款" value="progress" />
+                        <el-option label="尾款" value="final" />
                      </el-select>
                   </el-form-item>
                </el-col>
@@ -272,7 +275,7 @@ import { listCategory, categoryTreeselect } from "@/api/project/category"
 import { listUser } from "@/api/system/user"
 
 const { proxy } = getCurrentInstance()
-const { proj_payment_type, proj_project_status, proj_material_result_type, proj_material_status } = useDict('proj_payment_type', 'proj_project_status', 'proj_material_result_type', 'proj_material_status')
+const { proj_payment_type, proj_project_status, proj_material_result_type, proj_material_status, proj_task_status } = useDict('proj_payment_type', 'proj_project_status', 'proj_material_result_type', 'proj_material_status', 'proj_task_status')
 const route = useRoute()
 
 const projectId = route.params.projectId
@@ -334,16 +337,6 @@ const totalExternalOutput = computed(() => {
 function formatMoney(val) {
    if (val == null || val === "") return "-"
    return Number(val).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " 元"
-}
-
-/** 状态标签类型 */
-function getStatusTagType(status) {
-   const map = { "ongoing": "primary", "closed": "success", "archived": "" }
-   return map[status] || "info"
-}
-function getTaskStatusType(status) {
-   const map = { "pending": "info", "ongoing": "primary", "completed": "success", "paused": "warning" }
-   return map[status] || "info"
 }
 
 /** 返回列表 */
@@ -412,11 +405,18 @@ function loadMaterials() {
    }).catch(() => { materialLoading.value = false })
 }
 
-/** 加载用户列表 */
+/** 加载用户列表（仅项目分配的负责人） */
 function loadUsers() {
    if (userOptions.value.length > 0) return
+   const leaderIds = projectInfo.value.leaderIds || []
+   if (leaderIds.length === 0) {
+      userOptions.value = []
+      return
+   }
    listUser({ pageNum: 1, pageSize: 1000 }).then(response => {
-      userOptions.value = response.rows || []
+      const allUsers = response.rows || []
+      const idSet = new Set(leaderIds.map(id => Number(id)))
+      userOptions.value = allUsers.filter(u => idSet.has(u.userId))
    })
 }
 
