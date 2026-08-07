@@ -65,13 +65,11 @@
          <el-table-column prop="internalPrice" label="内部单价" width="150" align="center">
             <template #default="scope">
                <span v-if="scope.row.level === 2 && scope.row.internalPrice != null">{{ scope.row.internalPrice }}</span>
-               <span v-else>—</span>
             </template>
          </el-table-column>
          <el-table-column prop="externalPrice" label="外部单价" width="150" align="center">
             <template #default="scope">
                <span v-if="scope.row.level === 2 && scope.row.externalPrice != null">{{ scope.row.externalPrice }}</span>
-               <span v-else>—</span>
             </template>
          </el-table-column>
          <el-table-column prop="sortOrder" label="排序" width="100" align="center"></el-table-column>

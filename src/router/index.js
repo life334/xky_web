@@ -196,7 +196,7 @@ export const dynamicRoutes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.VITE_APP_ENV === 'production' ? '/zj-land/' : '/'),
+  history: createWebHistory(import.meta.env.VITE_APP_ENV === 'production' ? '/xky-project/' : '/'),
   routes: constantRoutes,
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) {
