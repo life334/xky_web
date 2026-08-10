@@ -157,6 +157,36 @@
                </el-button>
             </template>
          </el-table-column>
+         <el-table-column label="附件" align="center" min-width="100">
+            <template #default="scope">
+               <el-popover
+                  v-if="scope.row.attachmentCount > 0"
+                  placement="bottom"
+                  :width="320"
+                  trigger="hover"
+                  :show-after="300"
+               >
+                  <template #reference>
+                     <el-button link type="primary" @click.stop="openSidePanel(scope.row)">
+                        <el-icon size="14"><Paperclip /></el-icon>
+                        {{ scope.row.attachmentCount }} 个附件 ▸
+                     </el-button>
+                  </template>
+                  <div class="attachment-popover">
+                     <div style="font-weight:600;margin-bottom:8px;font-size:13px">合同附件预览</div>
+                     <div v-for="att in scope.row._attachments" :key="att.id" class="popover-att-item">
+                        <el-icon size="14" :color="getFileIconColor(att.fileType)"><Document /></el-icon>
+                        <span style="flex:1;font-size:13px">{{ att.fileName }}</span>
+                        <el-tag v-if="att.isFinal==='1'" size="small" type="success">盖章版</el-tag>
+                     </div>
+                     <div v-if="scope.row.attachmentCount > 5" style="margin-top:8px;text-align:center;color:#909399;font-size:12px">
+                        还有 {{ scope.row.attachmentCount - 5 }} 个附件...
+                     </div>
+                  </div>
+               </el-popover>
+               <span v-else style="color:#c0c4cc;font-size:13px">无附件</span>
+            </template>
+         </el-table-column>
          <el-table-column label="创建时间" align="center" prop="createTime" width="170">
             <template #default="scope">
                <span>{{ parseTime(scope.row.createTime) }}</span>
@@ -355,6 +385,95 @@
                   </el-table-column>
                </el-table>
             </el-tab-pane>
+
+            <!-- 附件管理 Tab -->
+            <el-tab-pane label="附件资料" name="attachment">
+               <div class="attachment-manager">
+                  <div
+                     class="attachment-dropzone"
+                     :class="{ 'is-dragover': dragOver }"
+                     @dragover.prevent="dragOver = true"
+                     @dragleave.prevent="dragOver = false"
+                     @drop.prevent="onFileDrop($event)"
+                  >
+                     <div class="dz-content">
+                        <el-icon :size="32" color="#909399"><UploadFilled /></el-icon>
+                        <p>拖拽文件到此处上传，或 Ctrl+V 粘贴截图</p>
+                        <p class="dz-hint">支持 PDF / Word / Excel / 图片（≤50MB）</p>
+                        <div class="upload-row">
+                           <span class="upload-label">上传为：</span>
+                           <el-select v-model="uploadCategory" size="small" style="width:130px">
+                              <el-option v-for="c in fileCategoryDict" :key="c.value" :label="c.label" :value="c.value" />
+                           </el-select>
+                           <el-switch v-model="uploadIsFinal" size="small" active-text="盖章版" inactive-text="普通" />
+                           <input type="file" ref="hiddenFileInput" style="display:none"
+                                  accept=".pdf,.jpg,.jpeg,.png,.gif,.bmp,.doc,.docx,.xls,.xlsx"
+                                  @change="onFileSelected" />
+                           <el-button size="small" type="primary" @click="triggerFileInput">选择文件</el-button>
+                        </div>
+                     </div>
+                  </div>
+
+                  <div v-if="attachmentList.length > 0" style="margin-top:16px">
+                     <div v-for="att in attachmentList" :key="att.id" class="attachment-slot">
+                        <div class="slot-header">
+                           <div class="slot-title">
+                              <el-icon size="16"><Folder /></el-icon>
+                              <span>{{ getCategoryLabel(att.fileCategory) }}</span>
+                              <el-tag size="small" type="success" v-if="att.isFinal === '1'">盖章版</el-tag>
+                              <span class="version-badge">v{{ att.version }}</span>
+                           </div>
+                           <div class="slot-actions">
+                              <el-button link type="primary" size="small" @click="handleReplaceAttachment(att)">上传新版本</el-button>
+                              <el-button link type="primary" size="small" @click="previewAttachment(att)">预览</el-button>
+                              <el-button link type="danger" size="small" @click="handleDeleteAttachment(att)">删除</el-button>
+                           </div>
+                        </div>
+                        <div class="slot-file-row">
+                           <div class="file-info">
+                              <el-icon :size="20" :color="getFileIconColor(att.fileType)"><Document /></el-icon>
+                              <span class="file-name">{{ att.fileName }}</span>
+                              <span class="file-meta">{{ formatFileSize(att.fileSize) }} · {{ att.fileType }}</span>
+                           </div>
+                           <el-button link type="info" size="small" @click="toggleHistory(att)">
+                              📜 历史版本 ({{ att.version }})
+                           </el-button>
+                        </div>
+                        <div v-if="historyMap[att.id] !== undefined" class="history-panel">
+                           <el-table :data="historyMap[att.id]" border size="small" max-height="200">
+                              <el-table-column label="版本" width="70" align="center">
+                                 <template #default="scope">
+                                    <el-tag :type="scope.row.version === att.version ? '' : 'info'" size="small">
+                                       v{{ scope.row.version }}
+                                       <span v-if="scope.row.version === att.version"> (当前)</span>
+                                    </el-tag>
+                                 </template>
+                              </el-table-column>
+                              <el-table-column label="文件名" prop="fileName" min-width="140" show-overflow-tooltip />
+                              <el-table-column label="操作类型" width="80" align="center">
+                                 <template #default="scope">
+                                    <el-tag size="small" :type="actionTagType(scope.row.action)">{{ actionLabel(scope.row.action) }}</el-tag>
+                                 </template>
+                              </el-table-column>
+                              <el-table-column label="操作时间" width="140" align="center">
+                                 <template #default="scope">{{ parseTime(scope.row.operateTime) }}</template>
+                              </el-table-column>
+                              <el-table-column label="大小" width="80" align="right">
+                                 <template #default="scope">{{ formatFileSize(scope.row.fileSize) }}</template>
+                              </el-table-column>
+                              <el-table-column label="操作" width="140" align="center">
+                                 <template #default="scope">
+                                    <el-button link type="primary" size="small" @click="previewAttachmentHistory(att, scope.row)">预览</el-button>
+                                    <el-button v-if="scope.row.version !== att.version" link type="warning" size="small" @click="handleRestore(att, scope.row)">恢复</el-button>
+                                 </template>
+                              </el-table-column>
+                           </el-table>
+                        </div>
+                     </div>
+                  </div>
+                  <el-empty v-else description="暂无附件，拖拽文件到上方区域上传" />
+               </div>
+            </el-tab-pane>
          </el-tabs>
          <template #footer>
             <div class="dialog-footer">
@@ -410,6 +529,44 @@
                </div>
                <el-empty v-else description="暂无合同单价数据" />
             </el-tab-pane>
+
+            <el-tab-pane label="附件资料" name="attachment">
+               <div v-if="detailAttachmentList.length > 0">
+                  <el-table :data="detailAttachmentList" border size="small" max-height="400">
+                     <el-table-column label="文件" align="left" min-width="200">
+                        <template #default="scope">
+                           <div style="display:flex;align-items:center;gap:8px">
+                              <el-icon :size="20" :color="getFileIconColor(scope.row.fileType)"><Document /></el-icon>
+                              <span>{{ scope.row.fileName }}</span>
+                           </div>
+                        </template>
+                     </el-table-column>
+                     <el-table-column label="分类" align="center" prop="fileCategory" min-width="100">
+                        <template #default="scope">
+                           {{ getCategoryLabel(scope.row.fileCategory) }}
+                        </template>
+                     </el-table-column>
+                     <el-table-column label="标记" align="center" min-width="80">
+                        <template #default="scope">
+                           <el-tag v-if="scope.row.isFinal === '1'" size="small" type="success">盖章版</el-tag>
+                        </template>
+                     </el-table-column>
+                     <el-table-column label="版本" align="center" min-width="60" prop="version">
+                        <template #default="scope">v{{ scope.row.version }}</template>
+                     </el-table-column>
+                     <el-table-column label="大小" align="right" min-width="80">
+                        <template #default="scope">{{ formatFileSize(scope.row.fileSize) }}</template>
+                     </el-table-column>
+                     <el-table-column label="操作" align="center" min-width="120">
+                        <template #default="scope">
+                           <el-button link type="primary" size="small" @click="previewAttachment(scope.row)">预览</el-button>
+                           <el-button link type="primary" size="small" @click="downloadAttachment(scope.row)">下载</el-button>
+                        </template>
+                     </el-table-column>
+                  </el-table>
+               </div>
+               <el-empty v-else description="暂无附件" />
+            </el-tab-pane>
          </el-tabs>
          <template #footer>
             <div class="dialog-footer">
@@ -464,6 +621,64 @@
             </div>
          </template>
       </el-dialog>
+
+      <!-- 附件侧滑预览面板 -->
+      <el-drawer
+         v-model="attachmentPreviewVisible"
+         :title="attachmentPreviewTitle"
+         direction="rtl"
+         size="45%"
+         :before-close="closeSidePanel"
+      >
+         <div v-if="attachmentPreviewList.length > 0" class="side-panel-body">
+            <div v-for="att in attachmentPreviewList" :key="att.id" class="side-att-card">
+               <div class="side-att-header">
+                  <div class="side-att-title">
+                     <el-icon size="18" :color="getFileIconColor(att.fileType)">
+                        <Document />
+                     </el-icon>
+                     <span>{{ getCategoryLabel(att.fileCategory) }}</span>
+                     <el-tag v-if="att.isFinal === '1'" size="small" type="success">盖章版</el-tag>
+                     <span style="color:#909399;font-size:12px">v{{ att.version }}</span>
+                  </div>
+                  <div class="side-att-actions">
+                     <el-button link type="primary" size="small" @click="previewAttachment(att)">预览</el-button>
+                     <el-button link type="primary" size="small" @click="downloadAttachment(att)">下载</el-button>
+                     <el-button link type="info" size="small" @click="toggleSideHistory(att)">
+                        🕐 历史
+                     </el-button>
+                  </div>
+               </div>
+               <div class="side-att-file">
+                  <span class="file-name">{{ att.fileName }}</span>
+                  <span class="file-meta">{{ formatFileSize(att.fileSize) }} · {{ att.fileType }}</span>
+               </div>
+               <!-- 历史版本列表 -->
+               <div v-if="sideHistoryMap[att.id] !== undefined" class="side-history-panel">
+                  <el-table :data="sideHistoryMap[att.id]" border size="small" max-height="200">
+                     <el-table-column label="版本" width="70" align="center">
+                        <template #default="scope">
+                           <el-tag size="small" :type="scope.row.version === att.version ? '' : 'info'">
+                              v{{ scope.row.version }}
+                           </el-tag>
+                        </template>
+                     </el-table-column>
+                     <el-table-column label="文件名" prop="fileName" min-width="120" show-overflow-tooltip />
+                     <el-table-column label="操作时间" width="130" align="center">
+                        <template #default="scope">{{ parseTime(scope.row.operateTime) }}</template>
+                     </el-table-column>
+                     <el-table-column label="操作" width="120" align="center">
+                        <template #default="scope">
+                           <el-button link type="primary" size="small" @click="previewAttachmentHistory(att, scope.row)">查看</el-button>
+                           <el-button v-if="scope.row.version !== att.version" link type="warning" size="small" @click="handleRestore(att, scope.row)">恢复</el-button>
+                        </template>
+                     </el-table-column>
+                  </el-table>
+               </div>
+            </div>
+         </div>
+         <el-empty v-else description="暂无附件" />
+      </el-drawer>
    </div>
 </template>
 
@@ -472,12 +687,15 @@ import { listContract, getContract, addContract, updateContract, delContract, ch
 import { listContractPrice, saveContractPrice } from "@/api/project/contractPrice"
 import { getConfigKey } from "@/api/system/config"
 import { getDistinctValues } from "@/api/project/project"
+import { listAttachments, uploadAttachment, deleteAttachment, getAttachmentHistory, restoreVersion } from "@/api/project/contractAttachment"
+import { UploadFilled, Folder, Document, Paperclip, Search } from '@element-plus/icons-vue'
+import request from '@/utils/request'
 
 const { proxy } = getCurrentInstance()
 
 // 字典
-const dicts = useDict("proj_contract_status", "proj_project_status", "proj_contract_type")
-const { proj_contract_type } = dicts
+const dicts = useDict("proj_contract_status", "proj_project_status", "proj_contract_type", "proj_attachment_category")
+const { proj_contract_type, proj_attachment_category } = dicts
 
 /** 安全获取字典选项 */
 function d(key) {
@@ -524,6 +742,26 @@ const activeTab = ref("info")
 const priceTableData = ref([])
 const priceLoading = ref(false)
 const priceSaving = ref(false)
+
+// ===== 附件管理相关 =====
+const attachmentList = ref([])           // 当前活跃附件
+const attachmentLoading = ref(false)     // 附件上传中
+const attachmentPreviewVisible = ref(false)  // 侧滑预览面板
+const attachmentPreviewList = ref([])    // 预览面板附件列表
+const attachmentPreviewTitle = ref("")   // 预览面板标题
+const historyMap = ref({})              // attachmentId → [{历史记录}]
+const historyLoading = ref({})          // attachmentId → loading状态
+const uploadingFiles = ref([])          // 正在上传的文件
+
+// 文件分类（从后端字典动态获取，取不到时空数组兜底）
+const fileCategoryDict = computed(() => proj_attachment_category.value || [])
+
+const dragOver = ref(false)
+const uploadCategory = ref('contract')
+const uploadIsFinal = ref(false)
+const detailAttachmentList = ref([])    // 详情弹窗附件列表
+const sideHistoryMap = ref({})          // 侧滑面板历史版本
+const replaceTarget = ref(null)         // 替换版本时的目标附件
 
 /** 合同状态流转规则 */
 const STATUS_TRANSITIONS = {
@@ -584,6 +822,19 @@ function getList() {
     contractList.value = response.rows || []
     total.value = response.total
     loading.value = false
+    // 加载附件计数
+    contractList.value.forEach(row => {
+      if (row.id) {
+        listAttachments(row.id).then(res => {
+          const atts = res.data || []
+          row.attachmentCount = atts.length
+          row._attachments = atts.slice(0, 5)
+        }).catch(() => {
+          row.attachmentCount = 0
+          row._attachments = []
+        })
+      }
+    })
   })
 }
 
@@ -898,10 +1149,11 @@ function handleSelectionChange(selection) {
 function handleAdd() {
   reset()
   priceTableData.value = []
+  attachmentList.value = []
+  historyMap.value = {}
   activeTab.value = "info"
   open.value = true
   title.value = "新增合同"
-  // 新增时用 contractId=0 加载纯类别树（无已填单价），让用户能预填
   loadCategoryTreeForNew()
 }
 
@@ -930,7 +1182,9 @@ function handleUpdate(row) {
     open.value = true
     title.value = "修改合同"
     activeTab.value = "info"
+    historyMap.value = {}
     loadContractPrice(id)
+    loadAttachments(id)
   })
 }
 
@@ -954,6 +1208,12 @@ function handleView(row) {
         }))
     }).catch(() => {
       detailPriceList.value = []
+    })
+    // 加载附件
+    listAttachments(row.id).then(res => {
+      detailAttachmentList.value = res.data || []
+    }).catch(() => {
+      detailAttachmentList.value = []
     })
   })
 }
@@ -1083,6 +1343,270 @@ function parseDate(val) {
   return val
 }
 
+// ===== 附件管理方法 =====
+
+/** 获取分类中文标签 */
+function getCategoryLabel(cat) {
+  const found = fileCategoryDict.value.find(c => c.value === cat)
+  return found ? found.label : cat
+}
+
+/** 格式化文件大小 */
+function formatFileSize(bytes) {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  let size = Number(bytes)
+  while (size >= 1024 && i < units.length - 1) { size /= 1024; i++ }
+  return size.toFixed(i > 0 ? 1 : 0) + ' ' + units[i]
+}
+
+/** 文件图标颜色 */
+function getFileIconColor(ext) {
+  const map = { pdf: '#f56c6c', doc: '#409eff', docx: '#409eff', xls: '#67c23a', xlsx: '#67c23a', jpg: '#e6a23c', jpeg: '#e6a23c', png: '#e6a23c', gif: '#e6a23c' }
+  return map[ext?.toLowerCase()] || '#909399'
+}
+
+/** 操作类型标签 */
+function actionLabel(action) {
+  const map = { upload: '上传', replace: '替换', delete: '删除', restore: '恢复' }
+  return map[action] || action
+}
+
+function actionTagType(action) {
+  const map = { upload: 'success', replace: 'warning', delete: 'danger', restore: 'primary' }
+  return map[action] || 'info'
+}
+
+/** 加载附件列表 */
+function loadAttachments(contractId) {
+  if (!contractId) return
+  listAttachments(contractId).then(res => {
+    attachmentList.value = res.data || []
+  }).catch(() => {
+    attachmentList.value = []
+  })
+}
+
+/** 触发文件选择 */
+const hiddenFileInput = ref(null)
+function triggerFileInput() {
+  hiddenFileInput.value?.click()
+}
+
+/** 文件选择回调 */
+function onFileSelected(event) {
+  const files = event.target?.files || event.raw
+  if (files && files.length > 0) {
+    const file = files[0]
+    if (replaceTarget.value) {
+      // 替换模式
+      doUpload(file)
+      replaceTarget.value = null
+    } else {
+      doUpload(file)
+    }
+  }
+  // Reset input for re-selection
+  if (event.target) event.target.value = ''
+}
+
+/** 拖拽文件回调 */
+function onFileDrop(event) {
+  dragOver.value = false
+  if (!form.value.id) {
+    proxy.$modal.msgWarning('请先保存合同后再上传附件')
+    return
+  }
+  const files = event.dataTransfer.files
+  if (files.length > 0) doUpload(files[0])
+}
+
+/** 剪贴板粘贴上传 */
+function onPasteUpload(event) {
+  if (!form.value.id) return
+  const items = event.clipboardData?.items
+  if (!items) return
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.startsWith('image/')) {
+      const file = items[i].getAsFile()
+      if (file) doUpload(file)
+      break
+    }
+  }
+}
+
+/** 执行上传 */
+function doUpload(file) {
+  if (file.size > 50 * 1024 * 1024) {
+    proxy.$modal.msgError('文件大小不能超过 50MB')
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('fileCategory', uploadCategory.value)
+  formData.append('isFinal', uploadIsFinal.value ? '1' : '0')
+
+  attachmentLoading.value = true
+  uploadAttachment(form.value.id, formData).then(res => {
+    proxy.$modal.msgSuccess('上传成功')
+    attachmentLoading.value = false
+    loadAttachments(form.value.id)
+  }).catch(() => {
+    attachmentLoading.value = false
+  })
+}
+
+/** 替换附件（打开上传框） */
+function handleReplaceAttachment(att) {
+  uploadCategory.value = att.fileCategory
+  replaceTarget.value = att
+  triggerFileInput()
+}
+
+/** 删除附件 */
+function handleDeleteAttachment(att) {
+  proxy.$modal.confirm('确定要删除附件 "' + att.fileName + '" 吗？删除后可查看历史版本。').then(() => {
+    deleteAttachment(att.id).then(() => {
+      proxy.$modal.msgSuccess('删除成功')
+      loadAttachments(form.value.id)
+    })
+  }).catch(() => {})
+}
+
+/** 切换历史版本展开 */
+function toggleHistory(att) {
+  if (historyMap.value[att.id] !== undefined) {
+    delete historyMap.value[att.id]
+    return
+  }
+  if (historyLoading.value[att.id]) return
+  historyLoading.value[att.id] = true
+  getAttachmentHistory(att.id).then(res => {
+    historyMap.value[att.id] = res.data || []
+    historyLoading.value[att.id] = false
+  }).catch(() => {
+    historyLoading.value[att.id] = false
+  })
+}
+
+/** 侧滑面板展开历史 */
+function toggleSideHistory(att) {
+  if (sideHistoryMap.value[att.id] !== undefined) {
+    delete sideHistoryMap.value[att.id]
+    return
+  }
+  getAttachmentHistory(att.id).then(res => {
+    sideHistoryMap.value[att.id] = res.data || []
+  }).catch(() => {})
+}
+
+/** 恢复历史版本 */
+function handleRestore(att, logRow) {
+  proxy.$modal.confirm('确定恢复 v' + logRow.version + ' 版本为当前版本吗？').then(() => {
+    restoreVersion(att.id, logRow.id).then(() => {
+      proxy.$modal.msgSuccess('版本恢复成功')
+      loadAttachments(form.value.id || detail.value?.id || 0)
+      // 同时刷新侧滑面板
+      if (attachmentPreviewVisible.value) {
+        const contractId = form.value.id || detail.value?.id
+        if (contractId) {
+          listAttachments(contractId).then(res => {
+            attachmentPreviewList.value = res.data || []
+          })
+        }
+      }
+    })
+  }).catch(() => {})
+}
+
+/** 预览附件（Axios blob + JSON 错误检测） */
+async function previewAttachment(att, version) {
+  try {
+    const params = {}
+    if (version) params.version = version
+    const data = await request({
+      url: '/project/contract/attachment/' + att.id + '/preview',
+      method: 'get',
+      params,
+      responseType: 'blob'
+    })
+
+    // Axios 拦截器对 blob 不检查错误码，需手动检测 JSON 401/500
+    if (data instanceof Blob && data.type === 'application/json') {
+      const text = await data.text()
+      try { const err = JSON.parse(text); proxy.$modal.msgError(err.msg || '预览失败') }
+      catch (_) { proxy.$modal.msgError('预览失败') }
+      return
+    }
+
+    const url = URL.createObjectURL(data)
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write('<!DOCTYPE html><html><head><title>' + (att.fileName || '文件预览') + '</title></head><body style="margin:0;overflow:hidden"><iframe src="' + url + '" style="width:100vw;height:100vh;border:none;position:fixed;top:0;left:0"></iframe></body></html>')
+    w.document.close()
+  } catch (e) {
+    console.error('预览失败', e)
+  }
+}
+
+/** 下载附件（Axios blob + JSON 错误检测） */
+async function downloadAttachment(att, version) {
+  try {
+    const params = {}
+    if (version) params.version = version
+    const data = await request({
+      url: '/project/contract/attachment/' + att.id + '/preview',
+      method: 'get',
+      params,
+      responseType: 'blob'
+    })
+
+    // JSON 错误检测
+    if (data instanceof Blob && data.type === 'application/json') {
+      const text = await data.text()
+      try { const err = JSON.parse(text); proxy.$modal.msgError(err.msg || '下载失败') }
+      catch (_) { proxy.$modal.msgError('下载失败') }
+      return
+    }
+
+    const url = URL.createObjectURL(data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = att.fileName || 'file'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    console.error('下载失败', e)
+  }
+}
+
+function previewAttachmentHistory(att, logRow) {
+  previewAttachment(att, logRow.version)
+}
+
+/** 打开侧滑面板（从列表进入） */
+function openSidePanel(row) {
+  attachmentPreviewTitle.value = '合同附件 — ' + (row.contractNo || '')
+  const contractId = row.id
+  listAttachments(contractId).then(res => {
+    attachmentPreviewList.value = res.data || []
+    attachmentPreviewVisible.value = true
+    sideHistoryMap.value = {}
+  }).catch(() => {
+    attachmentPreviewList.value = []
+    attachmentPreviewVisible.value = true
+  })
+}
+
+function closeSidePanel() {
+  attachmentPreviewVisible.value = false
+  sideHistoryMap.value = {}
+}
+
 getList()
 loadStatusCounts()
 loadSavedSchemes()
@@ -1193,4 +1717,119 @@ getConfigKey("contract.no.prefix").then(res => {
   user-select: none;
 }
 .collapse-link:hover { color: #409eff; }
+
+/* ===== 附件管理 ===== */
+.attachment-manager { min-height: 200px; }
+.attachment-dropzone {
+  border: 2px dashed #d9d9d9;
+  border-radius: 10px;
+  padding: 24px;
+  text-align: center;
+  transition: all 0.3s;
+  background: #fafafa;
+  cursor: pointer;
+}
+.attachment-dropzone:hover,
+.attachment-dropzone.is-dragover {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+.dz-content p { margin: 8px 0 4px; color: #606266; font-size: 14px; }
+.dz-hint { color: #909399 !important; font-size: 12px !important; }
+.upload-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.upload-label { font-size: 13px; color: #606266; }
+
+.attachment-slot {
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  background: #fff;
+  transition: box-shadow 0.2s;
+}
+.attachment-slot:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.slot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.slot-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.slot-actions { display: flex; gap: 4px; }
+.version-badge {
+  font-size: 11px;
+  background: #ecf5ff;
+  color: #409eff;
+  padding: 0 6px;
+  border-radius: 8px;
+}
+.slot-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0 6px 28px;
+}
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.file-name { font-size: 13px; color: #303133; font-weight: 500; }
+.file-meta { font-size: 12px; color: #909399; }
+
+.history-panel {
+  margin-top: 10px;
+  padding: 8px 0 0 28px;
+  border-top: 1px solid #f0f0f0;
+}
+
+/* ===== Popover 附件预览 ===== */
+.attachment-popover .popover-att-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+/* ===== 侧滑面板 ===== */
+.side-panel-body { padding: 0; }
+.side-att-card {
+  border-bottom: 1px solid #eee;
+  padding: 14px 0;
+}
+.side-att-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.side-att-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.side-att-actions { display: flex; gap: 4px; }
+.side-att-file {
+  padding-left: 26px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.side-history-panel {
+  margin-top: 10px;
+  padding-left: 26px;
+}
 </style>
