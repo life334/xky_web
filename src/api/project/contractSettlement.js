@@ -16,6 +16,14 @@ export function getPriceDetail(contractId) {
   })
 }
 
+// 查询指定合同的到账明细（按项目聚合）
+export function getReceivedDetail(contractId) {
+  return request({
+    url: '/project/contractSettlement/receivedDetail/' + contractId,
+    method: 'get'
+  })
+}
+
 // 保存合同结算
 export function saveContractSettlement(data) {
   return request({

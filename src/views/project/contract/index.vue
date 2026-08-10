@@ -115,9 +115,9 @@
 
       <el-table v-loading="loading" :data="contractList" stripe border @selection-change="handleSelectionChange">
          <el-table-column type="selection" width="50" align="center" />
-         <el-table-column label="合同编号" align="center" prop="contractNo" :show-overflow-tooltip="true" min-width="140" />
-         <el-table-column label="合同名称" align="center" prop="contractName" :show-overflow-tooltip="true" min-width="180" />
-         <el-table-column label="委托单位" align="center" prop="clientUnit" :show-overflow-tooltip="true" min-width="160" />
+         <el-table-column label="合同编号" align="center" prop="contractNo" :show-overflow-tooltip="false" min-width="140" />
+         <el-table-column label="合同名称" align="center" prop="contractName" :show-overflow-tooltip="false" min-width="180" />
+         <el-table-column label="委托单位" align="center" prop="clientUnit" :show-overflow-tooltip="false" min-width="160" />
          <el-table-column label="合同类型" align="center" prop="contractType" min-width="100">
             <template #default="scope">
                <dict-tag :options="proj_contract_type" :value="scope.row.contractType" />
@@ -129,22 +129,25 @@
                <span v-else style="color: #c0c4cc">草稿</span>
             </template>
          </el-table-column>
-         <el-table-column label="合同金额" align="center" prop="contractAmount" min-width="130">
+         <el-table-column align="center" min-width="130">
+            <template #header>
+               合同金额
+               <el-button link type="primary" size="small" @click="amountUnit = amountUnit === 'wan' ? 'yuan' : 'wan'" style="margin-left:2px">
+                  {{ amountUnit === 'wan' ? '万元' : '元' }}
+               </el-button>
+            </template>
             <template #default="scope">
-               <span v-if="scope.row.contractAmount != null">{{ formatAmount(scope.row.contractAmount) }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
+               <span v-if="scope.row.contractAmount != null">{{ formatAmount(scope.row.contractAmount, amountUnit) }}</span>
             </template>
          </el-table-column>
          <el-table-column label="签署日期" align="center" prop="signDate" min-width="120">
             <template #default="scope">
                <span v-if="scope.row.signDate">{{ parseDate(scope.row.signDate) }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
          <el-table-column label="联系人" align="center" prop="contactName" min-width="100">
             <template #default="scope">
                <span v-if="scope.row.contactName">{{ scope.row.contactName }}</span>
-               <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
          <el-table-column label="关联项目" align="center" min-width="110">
@@ -159,7 +162,7 @@
                <span>{{ parseTime(scope.row.createTime) }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="操作" align="center" width="140" class-name="small-padding fixed-width">
+         <el-table-column label="操作" align="center" min-width="140" fixed="right" class-name="small-padding fixed-width">
             <template #default="scope">
                <el-button link type="primary" @click="handleView(scope.row)">详情</el-button>
                <el-button link type="primary" @click="handleUpdate(scope.row)" v-hasPermi="['project:contract:edit']">修改</el-button>
@@ -182,11 +185,15 @@
 
       <!-- 添加或修改合同对话框 -->
       <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
+         <el-tabs v-model="activeTab">
+            <el-tab-pane label="基本信息" name="info">
          <el-form ref="contractRef" :model="form" :rules="rules" label-width="90px">
             <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="合同编号" prop="contractNo">
-                     <el-input v-model="form.contractNo" placeholder="请输入合同编号" maxlength="50" />
+                     <el-input v-model="form.contractNo" placeholder="请输入编号（不含前缀）" maxlength="50">
+                        <template #prepend>{{ contractPrefix }}</template>
+                     </el-input>
                   </el-form-item>
                </el-col>
                <el-col :span="8">
@@ -210,7 +217,9 @@
                </el-col>
                <el-col :span="8">
                   <el-form-item label="委托单位" prop="clientUnit">
-                     <el-input v-model="form.clientUnit" placeholder="请输入委托单位" maxlength="200" />
+                     <el-select v-model="form.clientUnit" filterable clearable allow-create placeholder="请选择或输入委托单位" style="width: 100%">
+                        <el-option v-for="item in clientUnitOptions" :key="item" :label="item" :value="item" />
+                     </el-select>
                   </el-form-item>
                </el-col>
                <el-col :span="8">
@@ -265,8 +274,8 @@
                   </el-form-item>
                </el-col>
                <el-col :span="8">
-                  <el-form-item label="归档目录" prop="archivePath">
-                     <el-input v-model="form.archivePath" placeholder="请输入归档目录路径" maxlength="500" />
+                  <el-form-item label="存储目录" prop="archivePath">
+                     <el-input v-model="form.archivePath" placeholder="请输入存储目录路径" maxlength="500" />
                   </el-form-item>
                </el-col>
             </el-row>
@@ -292,43 +301,116 @@
                </el-col>
             </el-row>
          </el-form>
+            </el-tab-pane>
+
+            <!-- 合同单价 Tab -->
+            <el-tab-pane label="合同单价" name="price">
+               <div style="margin-bottom: 8px; color: #909399; font-size: 13px;">
+                  仅小类（二级）需要填写单价，单价保存随合同一起提交
+               </div>
+               <el-table
+                  v-loading="priceLoading"
+                  :data="priceTableData"
+                  row-key="categoryId"
+                  :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
+                  border
+                  stripe
+                  size="default"
+                  default-expand-all
+                  max-height="500"
+               >
+                  <el-table-column prop="categoryName" label="项目类别" min-width="200" />
+                  <el-table-column prop="categoryLevel" label="层级" width="70" align="center">
+                     <template #default="scope">
+                        <el-tag :type="scope.row.categoryLevel === 1 ? '' : 'info'" size="small" disable-transitions>
+                           {{ scope.row.categoryLevel === 1 ? '大类' : '小类' }}
+                        </el-tag>
+                     </template>
+                  </el-table-column>
+                  <el-table-column prop="dictInternalPrice" label="字典内部单价" width="130" align="right">
+                     <template #default="scope">
+                        <span v-if="scope.row.categoryLevel === 2">{{ scope.row.dictInternalPrice }}</span>
+                     </template>
+                  </el-table-column>
+                  <el-table-column prop="dictExternalPrice" label="字典外部单价" width="130" align="right">
+                     <template #default="scope">
+                        <span v-if="scope.row.categoryLevel === 2">{{ scope.row.dictExternalPrice }}</span>
+                     </template>
+                  </el-table-column>
+                  <el-table-column label="合同单价" width="180" align="center">
+                     <template #default="scope">
+                        <template v-if="scope.row.categoryLevel === 2">
+                           <el-input-number
+                              v-model="scope.row.price"
+                              :min="0"
+                              :precision="2"
+                              :step="10"
+                              size="small"
+                              style="width: 150px"
+                              placeholder="请输入单价"
+                              controls-position="right"
+                           />
+                        </template>
+                     </template>
+                  </el-table-column>
+               </el-table>
+            </el-tab-pane>
+         </el-tabs>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" @click="submitForm">确 定</el-button>
+               <el-button type="primary" :loading="priceSaving" @click="submitForm">确 定</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
          </template>
       </el-dialog>
 
       <!-- 合同详情对话框 -->
-      <el-dialog :title="'合同详情 — ' + detail.contractNo" :model-value="detailOpen" @update:model-value="detailOpen = $event" width="800px" append-to-body>
-         <el-descriptions :column="2" border>
-            <el-descriptions-item label="合同编号" :span="1">{{ detail.contractNo }}</el-descriptions-item>
-            <el-descriptions-item label="合同名称" :span="1">{{ detail.contractName }}</el-descriptions-item>
-            <el-descriptions-item label="合同类型"><dict-tag :options="proj_contract_type" :value="detail.contractType" /></el-descriptions-item>
-            <el-descriptions-item label="合同状态">
-               <dict-tag v-if="detail.status" :options="d('proj_contract_status')" :value="detail.status" />
-               <span v-else>草稿</span>
-            </el-descriptions-item>
-            <el-descriptions-item label="合同金额">{{ detail.contractAmount != null ? formatAmount(detail.contractAmount) : '—' }}</el-descriptions-item>
-            <el-descriptions-item label="委托单位">{{ detail.clientUnit || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="合同期限">{{ detail.contractPeriod || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="联系人">{{ detail.contactName || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="联系电话">{{ detail.contactPhone || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="签署日期">{{ parseDate(detail.signDate) }}</el-descriptions-item>
-            <el-descriptions-item label="登记时间">{{ parseDate(detail.entrustDate) }}</el-descriptions-item>
-            <el-descriptions-item label="审核日期">{{ parseDate(detail.auditDate) }}</el-descriptions-item>
-            <el-descriptions-item label="返回日期">{{ parseDate(detail.returnDate) }}</el-descriptions-item>
-            <el-descriptions-item label="完成日期">{{ parseDate(detail.finishDate) }}</el-descriptions-item>
-            <el-descriptions-item label="归档日期">{{ parseDate(detail.archiveDate) }}</el-descriptions-item>
-            <el-descriptions-item label="归档目录" :span="2">{{ detail.archivePath || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="支付条件" :span="2">{{ detail.paymentTerms || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="备注" :span="2">{{ detail.remark || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="创建者">{{ detail.createBy || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ parseTime(detail.createTime) }}</el-descriptions-item>
-            <el-descriptions-item label="修改者">{{ detail.updateBy || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="修改时间">{{ parseTime(detail.updateTime) }}</el-descriptions-item>
-         </el-descriptions>
+      <el-dialog :title="'合同详情 — ' + detail.contractNo" :model-value="detailOpen" @update:model-value="detailOpen = $event" width="80%" append-to-body>
+         <el-tabs v-model="detailActiveTab">
+            <el-tab-pane label="基本信息" name="info">
+               <el-descriptions :column="2" border>
+                  <el-descriptions-item label="合同编号" :span="1">{{ detail.contractNo }}</el-descriptions-item>
+                  <el-descriptions-item label="合同名称" :span="1">{{ detail.contractName }}</el-descriptions-item>
+                  <el-descriptions-item label="合同类型"><dict-tag :options="proj_contract_type" :value="detail.contractType" /></el-descriptions-item>
+                  <el-descriptions-item label="合同状态">
+                     <dict-tag v-if="detail.status" :options="d('proj_contract_status')" :value="detail.status" />
+                     <span v-else>草稿</span>
+                  </el-descriptions-item>
+                  <el-descriptions-item label="合同金额">{{ detail.contractAmount != null ? formatAmount(detail.contractAmount, amountUnit) : '' }}</el-descriptions-item>
+                  <el-descriptions-item label="委托单位">{{ detail.clientUnit }}</el-descriptions-item>
+                  <el-descriptions-item label="合同期限">{{ detail.contractPeriod }}</el-descriptions-item>
+                  <el-descriptions-item label="联系人">{{ detail.contactName }}</el-descriptions-item>
+                  <el-descriptions-item label="联系电话">{{ detail.contactPhone }}</el-descriptions-item>
+                  <el-descriptions-item label="签署日期">{{ parseDate(detail.signDate) }}</el-descriptions-item>
+                  <el-descriptions-item label="登记时间">{{ parseDate(detail.entrustDate) }}</el-descriptions-item>
+                  <el-descriptions-item label="审核日期">{{ parseDate(detail.auditDate) }}</el-descriptions-item>
+                  <el-descriptions-item label="返回日期">{{ parseDate(detail.returnDate) }}</el-descriptions-item>
+                  <el-descriptions-item label="完成日期">{{ parseDate(detail.finishDate) }}</el-descriptions-item>
+                  <el-descriptions-item label="归档日期">{{ parseDate(detail.archiveDate) }}</el-descriptions-item>
+                  <el-descriptions-item label="存储目录" :span="2">{{ detail.archivePath }}</el-descriptions-item>
+                  <el-descriptions-item label="支付条件" :span="2">{{ detail.paymentTerms }}</el-descriptions-item>
+                  <el-descriptions-item label="备注" :span="2">{{ detail.remark }}</el-descriptions-item>
+                  <el-descriptions-item label="创建者">{{ detail.createBy }}</el-descriptions-item>
+                  <el-descriptions-item label="创建时间">{{ parseTime(detail.createTime) }}</el-descriptions-item>
+                  <el-descriptions-item label="修改者">{{ detail.updateBy }}</el-descriptions-item>
+                  <el-descriptions-item label="修改时间">{{ parseTime(detail.updateTime) }}</el-descriptions-item>
+               </el-descriptions>
+            </el-tab-pane>
+            <el-tab-pane label="合同单价" name="price">
+               <div v-if="detailPriceList.length > 0">
+                  <el-table :data="detailPriceList" border size="small" max-height="400">
+                     <el-table-column label="大类" align="center" prop="parentName" min-width="120" :show-overflow-tooltip="true" />
+                     <el-table-column label="项目类别" align="center" prop="categoryName" min-width="140" :show-overflow-tooltip="true" />
+                     <el-table-column label="合同单价" align="center" min-width="120">
+                        <template #default="scope">
+                           <span style="font-weight: 600; color: #409EFF;">¥{{ Number(scope.row.price).toFixed(2) }}</span>
+                        </template>
+                     </el-table-column>
+                  </el-table>
+               </div>
+               <el-empty v-else description="暂无合同单价数据" />
+            </el-tab-pane>
+         </el-tabs>
          <template #footer>
             <div class="dialog-footer">
                <el-button @click="detailOpen = false">关 闭</el-button>
@@ -362,23 +444,17 @@
       </el-dialog>
 
       <!-- 关联项目弹窗 -->
-      <el-dialog :title="'关联项目 — ' + currentContractName" :model-value="projectsOpen" @update:model-value="projectsOpen = $event" width="1000px" append-to-body>
+      <el-dialog :title="'关联项目 — ' + currentContractName" :model-value="projectsOpen" @update:model-value="projectsOpen = $event" width="80%" append-to-body>
          <el-table :data="projectList" stripe border max-height="450">
-            <el-table-column label="工程编号" align="center" prop="project_code" min-width="140" :show-overflow-tooltip="true" />
-            <el-table-column label="项目名称" align="center" prop="project_name" min-width="180" :show-overflow-tooltip="true" />
-            <el-table-column label="项目类别" align="center" prop="category_name" min-width="120" />
-            <el-table-column label="工程地点" align="center" prop="project_location" min-width="140" :show-overflow-tooltip="true" />
-            <el-table-column label="委托单位" align="center" prop="client_unit" min-width="140" :show-overflow-tooltip="true" />
+            <el-table-column label="工程编号" align="center" prop="project_code" min-width="140" :show-overflow-tooltip="false" />
+            <el-table-column label="委托单位" align="center" prop="client_unit" min-width="160" :show-overflow-tooltip="false" />
+            <el-table-column label="联系人" align="center" prop="contact_name" min-width="100" :show-overflow-tooltip="false" />
+            <el-table-column label="联系电话" align="center" prop="contact_phone" min-width="130" :show-overflow-tooltip="false" />
+            <el-table-column label="工程项目" align="center" prop="engineering_project" min-width="180" :show-overflow-tooltip="false" />
+            <el-table-column label="工程地点" align="center" prop="project_location" min-width="160" :show-overflow-tooltip="false" />
             <el-table-column label="状态" align="center" prop="status" min-width="90">
                <template #default="scope">
                   <dict-tag v-if="scope.row.status" :options="d('proj_project_status')" :value="scope.row.status" />
-                  <span v-else style="color: #c0c4cc">—</span>
-               </template>
-            </el-table-column>
-            <el-table-column label="合同单价" align="center" prop="contract_price" min-width="110">
-               <template #default="scope">
-                  <span v-if="scope.row.contract_price != null">{{ formatAmount(scope.row.contract_price) }}</span>
-                  <span v-else style="color: #c0c4cc">—</span>
                </template>
             </el-table-column>
          </el-table>
@@ -392,7 +468,10 @@
 </template>
 
 <script setup name="Contract">
-import { listContract, getContract, addContract, updateContract, delContract, changeContractStatus, getContractProjects, getContractStatusCounts, getContractDistinctValues } from "@/api/project/contract"
+import { listContract, getContract, addContract, updateContract, delContract, changeContractStatus, getContractProjects, getContractStatusCounts } from "@/api/project/contract"
+import { listContractPrice, saveContractPrice } from "@/api/project/contractPrice"
+import { getConfigKey } from "@/api/system/config"
+import { getDistinctValues } from "@/api/project/project"
 
 const { proxy } = getCurrentInstance()
 
@@ -418,6 +497,8 @@ const total = ref(0)
 const single = ref(true)
 const multiple = ref(true)
 const detail = ref({})
+const detailActiveTab = ref("info")
+const detailPriceList = ref([])  // 合同单价明细
 const ids = ref([])
 const statusSubmitting = ref(false)
 const currentContractName = ref("")
@@ -435,6 +516,14 @@ const saveSchemeVisible = ref(false)
 const schemeName = ref("")
 const currentSchemeName = ref("")
 const clientUnitOptions = ref([])
+const contractPrefix = ref("")
+const amountUnit = ref("wan")  // 'wan'=万元 | 'yuan'=元
+
+// ===== 合同单价 Tab 相关 =====
+const activeTab = ref("info")
+const priceTableData = ref([])
+const priceLoading = ref(false)
+const priceSaving = ref(false)
 
 /** 合同状态流转规则 */
 const STATUS_TRANSITIONS = {
@@ -642,11 +731,61 @@ function onFinishDateChange(val) {
   handleQuery()
 }
 
-/** 加载委托单位去重值 */
+/** 加载委托单位去重值（统一数据源：项目表+合同表 UNION） */
 function loadClientUnits() {
-  getContractDistinctValues('clientUnit').then(response => {
-    clientUnitOptions.value = response.data || []
+  getDistinctValues('client_unit').then(response => {
+    clientUnitOptions.value = (response.data || []).filter(Boolean)
   }).catch(() => {})
+}
+
+/** 加载合同单价树 */
+function loadContractPrice(contractId) {
+  if (!contractId) {
+    priceTableData.value = []
+    return
+  }
+  priceLoading.value = true
+  listContractPrice(contractId).then(res => {
+    const flatList = res.data || []
+    priceTableData.value = buildPriceTree(flatList)
+    priceLoading.value = false
+  }).catch(() => {
+    priceLoading.value = false
+  })
+}
+
+/** 扁平列表 → 树形结构（大类包小类） */
+function buildPriceTree(list) {
+  const map = {}
+  const roots = []
+  list.forEach(item => {
+    map[item.categoryId] = { ...item, children: [] }
+  })
+  list.forEach(item => {
+    const node = map[item.categoryId]
+    if (item.parentId && map[item.parentId]) {
+      map[item.parentId].children.push(node)
+    } else {
+      roots.push(node)
+    }
+  })
+  return roots
+}
+
+/** 收集单价列表（只取小类行） */
+function collectPriceList(contractId) {
+  const priceList = []
+  priceTableData.value.forEach(group => {
+    ;(group.children || []).forEach(child => {
+      priceList.push({
+        id: child.id || null,
+        contractId: contractId,
+        categoryId: child.categoryId,
+        price: child.price
+      })
+    })
+  })
+  return priceList
 }
 
 /** 快捷日期 */
@@ -758,8 +897,24 @@ function handleSelectionChange(selection) {
 /** 新增 */
 function handleAdd() {
   reset()
+  priceTableData.value = []
+  activeTab.value = "info"
   open.value = true
   title.value = "新增合同"
+  // 新增时用 contractId=0 加载纯类别树（无已填单价），让用户能预填
+  loadCategoryTreeForNew()
+}
+
+/** 新增合同时加载纯类别树（contractId=0 查全树无单价） */
+function loadCategoryTreeForNew() {
+  priceLoading.value = true
+  listContractPrice(0).then(res => {
+    const flatList = res.data || []
+    priceTableData.value = buildPriceTree(flatList)
+    priceLoading.value = false
+  }).catch(() => {
+    priceLoading.value = false
+  })
 }
 
 /** 修改 */
@@ -768,8 +923,14 @@ function handleUpdate(row) {
   const id = row.id || ids.value[0]
   getContract(id).then(response => {
     form.value = response.data
+    // 拆出后缀：如果编号以配置前缀开头则去掉前缀，否则原样展示
+    if (form.value.contractNo && contractPrefix.value && form.value.contractNo.startsWith(contractPrefix.value)) {
+      form.value.contractNo = form.value.contractNo.substring(contractPrefix.value.length)
+    }
     open.value = true
     title.value = "修改合同"
+    activeTab.value = "info"
+    loadContractPrice(id)
   })
 }
 
@@ -778,26 +939,59 @@ function handleView(row) {
   getContract(row.id).then(response => {
     detail.value = response.data
     detailOpen.value = true
+    // 加载合同单价
+    listContractPrice(row.id).then(res => {
+      const all = res.data || []
+      // 按 categoryId 建索引，方便查大类名
+      const catMap = {}
+      all.forEach(item => { catMap[item.categoryId] = item })
+      // 只保留有合同单价的记录（小类），并附上大类名
+      detailPriceList.value = all
+        .filter(item => item.price != null)
+        .map(item => ({
+          ...item,
+          parentName: catMap[item.parentId]?.categoryName || ''
+        }))
+    }).catch(() => {
+      detailPriceList.value = []
+    })
   })
 }
 
-/** 提交 */
+/** 提交（先保存合同基本信息，拿到ID后再保存合同单价） */
 function submitForm() {
   proxy.$refs["contractRef"].validate(valid => {
     if (valid) {
-      if (form.value.id != undefined) {
-        updateContract(form.value).then(response => {
-          proxy.$modal.msgSuccess("修改成功")
+      const isAdd = form.value.id == undefined
+      // 提交前拼接前缀 + 用户输入的后缀
+      const suffix = form.value.contractNo || ""
+      form.value.contractNo = contractPrefix.value + suffix
+
+      const saveContract = isAdd ? addContract(form.value) : updateContract(form.value)
+
+      saveContract.then(response => {
+        // 新增时后端返回合同ID，修改时用已有ID
+        const contractId = isAdd ? response.data : form.value.id
+        // 收集单价列表
+        const priceList = collectPriceList(contractId)
+        // 如果没有小类数据（比如类别树为空），直接关闭
+        if (priceList.length === 0) {
+          proxy.$modal.msgSuccess(isAdd ? "新增成功" : "修改成功")
           open.value = false
           getList()
-        })
-      } else {
-        addContract(form.value).then(response => {
-          proxy.$modal.msgSuccess("新增成功")
+          return
+        }
+        // 保存单价
+        priceSaving.value = true
+        saveContractPrice(priceList).then(() => {
+          proxy.$modal.msgSuccess(isAdd ? "新增成功" : "修改成功")
+          priceSaving.value = false
           open.value = false
           getList()
+        }).catch(() => {
+          priceSaving.value = false
         })
-      }
+      })
     }
   })
 }
@@ -873,15 +1067,19 @@ function handleExport() {
   }, `contract_${new Date().getTime()}.xlsx`)
 }
 
-/** 金额格式化 */
-function formatAmount(val) {
-  if (val == null) return '—'
-  return Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+/** 金额格式化（unit: 'wan'=万元 | 'yuan'=元） */
+function formatAmount(val, unit = 'wan') {
+  if (val == null) return ''
+  const num = Number(val)
+  if (unit === 'wan') {
+    return (num / 10000).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' 万'
+  }
+  return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 /** 日期解析 */
 function parseDate(val) {
-  if (!val) return '—'
+  if (!val) return ''
   return val
 }
 
@@ -889,6 +1087,9 @@ getList()
 loadStatusCounts()
 loadSavedSchemes()
 loadClientUnits()
+getConfigKey("contract.no.prefix").then(res => {
+  contractPrefix.value = res.msg || ""
+})
 </script>
 
 <style scoped>
