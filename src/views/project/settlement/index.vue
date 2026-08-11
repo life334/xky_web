@@ -174,7 +174,7 @@
       <!-- 编辑结算弹窗 -->
       <el-dialog :title="'费用结算 — ' + editProjectCode" :model-value="editOpen" @update:model-value="editOpen = $event" width="80%" append-to-body destroy-on-close>
          <el-form ref="settlementRef" :model="editForm" label-width="100px">
-            <!-- 工程信息（只读） -->
+            <!-- ① 工程信息（只读） -->
             <el-divider content-position="left">工程信息</el-divider>
             <el-row :gutter="20">
                <el-col :span="8">
@@ -194,85 +194,7 @@
                </el-col>
             </el-row>
 
-            <!-- 付款信息 -->
-            <el-divider content-position="left">付款信息</el-divider>
-            <el-row :gutter="20">
-               <el-col :span="6">
-                  <el-form-item label="预付款">
-                     <el-input-number v-model="editForm.prepayAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="预付款金额" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="6">
-                  <el-form-item label="付款时间">
-                     <el-date-picker v-model="editForm.prepayDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="6">
-                  <el-form-item label="付款单位">
-                     <el-select v-model="editForm.payUnit" filterable clearable allow-create placeholder="请选择或输入付款单位" style="width: 100%">
-                        <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
-                     </el-select>
-                  </el-form-item>
-               </el-col>
-               <el-col :span="6">
-                  <el-form-item label="付款方式">
-                     <el-select v-model="editForm.payMethod" placeholder="付款方式" style="width:100%">
-                        <el-option label="转账" value="转账" />
-                        <el-option label="现金" value="现金" />
-                        <el-option label="支票" value="支票" />
-                        <el-option label="其他" value="其他" />
-                     </el-select>
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <el-row :gutter="20">
-               <el-col :span="6">
-                  <el-form-item label="尾款">
-                     <el-input-number v-model="editForm.tailAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="尾款金额" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="6">
-                  <el-form-item label="尾款时间">
-                     <el-date-picker v-model="editForm.tailDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="12">
-                  <el-form-item label="备注">
-                     <el-input v-model="editForm.remark" placeholder="备注" maxlength="500" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-
-            <!-- 开票信息 -->
-            <el-divider content-position="left">开票信息</el-divider>
-            <el-row :gutter="20">
-               <el-col :span="6">
-                  <el-form-item label="开票状态">
-                     <el-select v-model="editForm.invoiceStatus" placeholder="开票状态" clearable style="width:100%">
-                        <el-option label="未开" value="未开" />
-                        <el-option label="已开" value="已开" />
-                        <el-option label="已作废" value="已作废" />
-                     </el-select>
-                  </el-form-item>
-               </el-col>
-               <el-col :span="6">
-                  <el-form-item label="发票号码">
-                     <el-input v-model="editForm.invoiceNo" placeholder="发票号码" maxlength="100" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="6">
-                  <el-form-item label="开票日期">
-                     <el-date-picker v-model="editForm.invoiceDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="6">
-                  <el-form-item label="开票金额">
-                     <el-input-number v-model="editForm.invoiceAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="开票金额" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-
-            <!-- 工作量明细 -->
+            <!-- ② 工作量明细（先算产值） -->
             <el-divider content-position="left">
                工作量明细
                <el-button type="primary" link icon="Plus" @click="addWorkloadRow" style="margin-left:10px">添加行</el-button>
@@ -331,12 +253,199 @@
                </el-table-column>
             </el-table>
 
-            <!-- 产值合计 -->
-            <el-row style="margin-top:12px">
-               <el-col :span="24" style="text-align:right;font-weight:bold;color:#409eff">
-                  产值合计：{{ formatMoney(totalOutput) }}
-               </el-col>
-            </el-row>
+            <!-- 产值统计条（内部/外部各计，无总产值） -->
+            <div class="output-summary-bar">
+               <span class="sum-item">
+                  <span class="sum-label">内部产值合计</span>
+                  <span class="sum-value">{{ formatMoney(internalOutputTotal) }}</span>
+               </span>
+               <span class="sum-item">
+                  <span class="sum-label">外部产值合计</span>
+                  <span class="sum-value">{{ formatMoney(externalOutputTotal) }}</span>
+               </span>
+            </div>
+
+            <!-- ③ 付款信息 -->
+            <el-divider content-position="left">付款信息</el-divider>
+            <div class="settle-panel">
+               <!-- 付款单位（预付款与尾款共用，与下方三列对齐） -->
+               <el-row :gutter="20">
+                  <el-col :span="8">
+                     <el-form-item label="付款单位">
+                        <el-select v-model="editForm.payUnit" filterable clearable allow-create placeholder="请选择或输入付款单位" style="width: 100%">
+                           <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                        </el-select>
+                     </el-form-item>
+                  </el-col>
+               </el-row>
+               <!-- 预付款（①） -->
+               <div class="pay-row">
+                  <el-row :gutter="20">
+                     <el-col :span="8">
+                        <el-form-item>
+                           <template #label><span class="pay-label pay-label-advance">① 预付款</span></template>
+                           <el-input-number v-model="editForm.prepayAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="金额" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="付款时间">
+                           <el-date-picker v-model="editForm.prepayDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="付款方式">
+                           <el-select v-model="editForm.prepayMethod" clearable placeholder="选择" style="width:100%">
+                              <el-option v-for="m in payMethodOptions" :key="m" :label="m" :value="m" />
+                           </el-select>
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+               </div>
+               <!-- 尾款（②） -->
+               <div class="pay-row">
+                  <el-row :gutter="20">
+                     <el-col :span="8">
+                        <el-form-item>
+                           <template #label><span class="pay-label pay-label-tail">② 尾款</span></template>
+                           <el-input-number v-model="editForm.tailAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="金额" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="尾款时间">
+                           <el-date-picker v-model="editForm.tailDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="付款方式">
+                           <el-select v-model="editForm.tailMethod" clearable placeholder="选择" style="width:100%">
+                              <el-option v-for="m in payMethodOptions" :key="m" :label="m" :value="m" />
+                           </el-select>
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+               </div>
+               <!-- 备注 -->
+               <el-form-item label="备注">
+                  <el-input v-model="editForm.remark" placeholder="备注" maxlength="500" />
+               </el-form-item>
+            </div>
+
+            <!-- ④ 结算金额核对区（结算总额=外部产值，只读自动） -->
+            <el-divider content-position="left">结算金额</el-divider>
+            <div class="settle-check-row">
+               <div class="settle-cell">
+                  <span class="settle-label">结算总额</span>
+                  <span class="settle-value">{{ formatMoney(externalOutputTotal) }}</span>
+                  <span class="settle-hint">（自动 = 外部产值合计，不可改）</span>
+               </div>
+               <div class="settle-divider" />
+               <div class="settle-cell">
+                  <span class="settle-label">已收</span>
+                  <span class="settle-value">{{ formatMoney(receivedAmount) }}</span>
+                  <span class="settle-hint">（预付款 + 尾款，自动汇总）</span>
+               </div>
+               <div class="settle-divider" />
+               <div class="settle-cell">
+                  <span class="settle-label">待收差额</span>
+                  <span class="settle-value" :class="balanceTextClass">{{ settleStatus === 'settled' ? '¥0.00' : formatMoney(Math.abs(balanceAmount)) }}</span>
+                  <el-tag :type="settleTagType" size="small" effect="light" style="margin-left:8px">{{ settleTagText }}</el-tag>
+               </div>
+            </div>
+
+            <!-- ⑤ 开票信息 -->
+            <el-divider content-position="left">开票信息</el-divider>
+            <div class="settle-panel">
+               <!-- 开票方式 -->
+               <div class="invoice-mode-row">
+                  <span class="pay-options-label">开票方式：</span>
+                  <el-radio-group v-model="editForm.invoiceMode">
+                     <el-radio-button value="unified">统一开票</el-radio-button>
+                     <el-radio-button value="split">分笔开票</el-radio-button>
+                  </el-radio-group>
+               </div>
+               <!-- 统一开票：一组发票 -->
+               <el-row v-if="editForm.invoiceMode === 'unified'" :gutter="20">
+                  <el-col :span="6">
+                     <el-form-item label="开票状态">
+                        <el-select v-model="editForm.invoiceStatus" placeholder="开票状态" clearable style="width:100%">
+                           <el-option v-for="s in invoiceStatusOptions" :key="s" :label="s" :value="s" />
+                        </el-select>
+                     </el-form-item>
+                  </el-col>
+                  <el-col :span="6">
+                     <el-form-item label="发票号码">
+                        <el-input v-model="editForm.invoiceNo" placeholder="发票号码" maxlength="100" />
+                     </el-form-item>
+                  </el-col>
+                  <el-col :span="6">
+                     <el-form-item label="开票日期">
+                        <el-date-picker v-model="editForm.invoiceDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                     </el-form-item>
+                  </el-col>
+                  <el-col :span="6">
+                     <el-form-item label="开票金额">
+                        <el-input-number v-model="editForm.invoiceAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="开票金额" />
+                     </el-form-item>
+                  </el-col>
+               </el-row>
+               <!-- 分笔开票：预付款发票 + 尾款发票 -->
+               <template v-else>
+                  <div class="invoice-group">
+                     <div class="invoice-group-title">预付款发票</div>
+                     <el-row :gutter="20">
+                        <el-col :span="6">
+                           <el-form-item label="开票状态">
+                              <el-select v-model="editForm.invoiceStatus" placeholder="开票状态" clearable style="width:100%">
+                                 <el-option v-for="s in invoiceStatusOptions" :key="s" :label="s" :value="s" />
+                              </el-select>
+                           </el-form-item>
+                        </el-col>
+                        <el-col :span="6">
+                           <el-form-item label="发票号码">
+                              <el-input v-model="editForm.invoiceNo" placeholder="发票号码" maxlength="100" />
+                           </el-form-item>
+                        </el-col>
+                        <el-col :span="6">
+                           <el-form-item label="开票日期">
+                              <el-date-picker v-model="editForm.invoiceDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                           </el-form-item>
+                        </el-col>
+                        <el-col :span="6">
+                           <el-form-item label="开票金额">
+                              <el-input-number v-model="editForm.invoiceAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="开票金额" />
+                           </el-form-item>
+                        </el-col>
+                     </el-row>
+                  </div>
+                  <div class="invoice-group">
+                     <div class="invoice-group-title">尾款发票</div>
+                     <el-row :gutter="20">
+                        <el-col :span="6">
+                           <el-form-item label="开票状态">
+                              <el-select v-model="editForm.tailInvoiceStatus" placeholder="开票状态" clearable style="width:100%">
+                                 <el-option v-for="s in invoiceStatusOptions" :key="s" :label="s" :value="s" />
+                              </el-select>
+                           </el-form-item>
+                        </el-col>
+                        <el-col :span="6">
+                           <el-form-item label="发票号码">
+                              <el-input v-model="editForm.tailInvoiceNo" placeholder="发票号码" maxlength="100" />
+                           </el-form-item>
+                        </el-col>
+                        <el-col :span="6">
+                           <el-form-item label="开票日期">
+                              <el-date-picker v-model="editForm.tailInvoiceDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                           </el-form-item>
+                        </el-col>
+                        <el-col :span="6">
+                           <el-form-item label="开票金额">
+                              <el-input-number v-model="editForm.tailInvoiceAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="开票金额" />
+                           </el-form-item>
+                        </el-col>
+                     </el-row>
+                  </div>
+               </template>
+            </div>
          </el-form>
          <template #footer>
             <div class="dialog-footer">
@@ -349,6 +458,7 @@
 </template>
 
 <script setup name="Settlement">
+import { ElMessageBox } from 'element-plus'
 import { treeListSettlement, getSettlementDetail, saveSettlement } from "@/api/project/settlement"
 import { categoryTreeselectFull } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
@@ -394,29 +504,68 @@ const data = reactive({
     prepayAmount: null,
     prepayDate: null,
     payUnit: null,
-    payMethod: null,
+    prepayMethod: null,
+    tailMethod: null,
     tailAmount: null,
     tailDate: null,
     remark: null,
+    invoiceMode: 'unified',
     invoiceStatus: null,
     invoiceNo: null,
     invoiceDate: null,
     invoiceAmount: null,
+    tailInvoiceStatus: null,
+    tailInvoiceNo: null,
+    tailInvoiceDate: null,
+    tailInvoiceAmount: null,
     workloads: []
   }
 })
 
 const { queryParams, editForm } = toRefs(data)
 
-// 计算产值合计
-const totalOutput = computed(() => {
+// 内部产值合计
+const internalOutputTotal = computed(() => {
   let sum = 0
   editForm.value.workloads.forEach(row => {
     if (row.internalOutput) sum += Number(row.internalOutput)
+  })
+  return sum
+})
+
+// 外部产值合计（= 结算总额）
+const externalOutputTotal = computed(() => {
+  let sum = 0
+  editForm.value.workloads.forEach(row => {
     if (row.externalOutput) sum += Number(row.externalOutput)
   })
   return sum
 })
+
+// 已收 = 预付款 + 尾款（实时联动）
+const receivedAmount = computed(() => {
+  const a = Number(editForm.value.prepayAmount) || 0
+  const b = Number(editForm.value.tailAmount) || 0
+  return a + b
+})
+
+// 待收差额 = 结算总额 - 已收
+const balanceAmount = computed(() => externalOutputTotal.value - receivedAmount.value)
+
+// 结算状态：settled 已结清 / unsettled 未结清 / overpaid 超额
+const settleStatus = computed(() => {
+  const b = balanceAmount.value
+  if (Math.abs(b) < 0.01) return 'settled'
+  return b > 0 ? 'unsettled' : 'overpaid'
+})
+
+const settleTagText = computed(() => settleStatus.value === 'settled' ? '已结清' : (settleStatus.value === 'unsettled' ? '未结清' : '超额'))
+const settleTagType = computed(() => settleStatus.value === 'settled' ? 'success' : (settleStatus.value === 'unsettled' ? 'warning' : 'danger'))
+const balanceTextClass = computed(() => settleStatus.value === 'settled' ? 'text-success' : (settleStatus.value === 'unsettled' ? 'text-warning' : 'text-danger'))
+
+// 付款方式 / 开票状态选项
+const payMethodOptions = ['转账', '现金', '支票', '其他']
+const invoiceStatusOptions = ['未开', '已开', '已作废']
 
 /** 金额格式化 */
 function formatMoney(val) {
@@ -564,9 +713,6 @@ function handleEdit(row) {
     .then(([catRes, userRes, detailRes]) => {
       categoryOptions.value = catRes.data
       userOptions.value = userRes.rows || []
-      // 根据项目负责人ID过滤：编辑弹窗中工作量明细的负责人下拉只显示该项目负责人
-      const leaderIds = detailRes.data.leaderIds || []
-      leaderOptions.value = userOptions.value.filter(u => leaderIds.includes(u.userId))
 
       const detail = detailRes.data
       const payments = detail.payments || []
@@ -586,17 +732,25 @@ function handleEdit(row) {
       editForm.value.prepayAmount = prepay ? prepay.amount : null
       editForm.value.prepayDate = prepay ? prepay.payTime : null
       editForm.value.payUnit = prepay ? prepay.payUnit : (tail ? tail.payUnit : null)
-      editForm.value.payMethod = prepay ? prepay.payMethod : (tail ? tail.payMethod : null)
+      editForm.value.prepayMethod = prepay ? prepay.payMethod : null
+      editForm.value.tailMethod = tail ? tail.payMethod : null
       editForm.value.tailAmount = tail ? tail.amount : null
       editForm.value.tailDate = tail ? tail.payTime : null
       editForm.value.remark = prepay ? prepay.remark : (tail ? tail.remark : null)
 
-      // 填充开票信息（预付款优先）
+      // 开票信息：尾款存在发票数据 → 分笔开票；否则统一开票（发票挂预付款，无预付款取尾款）
+      const tailHasInvoice = tail && (tail.invoiceStatus || tail.invoiceNo || tail.invoiceDate || tail.invoiceAmount != null)
+      editForm.value.invoiceMode = tailHasInvoice ? 'split' : 'unified'
       const invSrc = prepay || tail
       editForm.value.invoiceStatus = invSrc ? invSrc.invoiceStatus : null
       editForm.value.invoiceNo = invSrc ? invSrc.invoiceNo : null
       editForm.value.invoiceDate = invSrc ? invSrc.invoiceDate : null
       editForm.value.invoiceAmount = invSrc ? invSrc.invoiceAmount : null
+      // 尾款发票（仅分笔开票时使用）
+      editForm.value.tailInvoiceStatus = tail ? tail.invoiceStatus : null
+      editForm.value.tailInvoiceNo = tail ? tail.invoiceNo : null
+      editForm.value.tailInvoiceDate = tail ? tail.invoiceDate : null
+      editForm.value.tailInvoiceAmount = tail ? tail.invoiceAmount : null
 
       // 填充工作量
       editForm.value.workloads = workloads.map(w => ({
@@ -609,6 +763,13 @@ function handleEdit(row) {
         internalOutput: w.internalOutput,
         externalOutput: w.externalOutput
       }))
+
+      // 负责人下拉：项目负责人 + 已有工作量行的负责人（Number 归一化，防 Long/字符串 类型失配）
+      const leaderIdSet = new Set((detailRes.data.leaderIds || []).map(id => Number(id)))
+      editForm.value.workloads.forEach(w => { if (w.userId != null) leaderIdSet.add(Number(w.userId)) })
+      let filtered = userOptions.value.filter(u => leaderIdSet.has(Number(u.userId)))
+      // 兜底：项目未关联负责人时回退显示全部用户，保证下拉可用
+      leaderOptions.value = filtered.length > 0 ? filtered : userOptions.value
 
       editOpen.value = true
     })
@@ -633,14 +794,42 @@ function removeWorkloadRow(index) {
   editForm.value.workloads.splice(index, 1)
 }
 
-/** 提交结算 */
+/** 提交结算：已收 ≠ 结算总额时先弹确认 */
 function submitSettlement() {
+  const received = receivedAmount.value
+  const total = externalOutputTotal.value
+  if (Math.abs(received - total) > 0.01) {
+    const balance = total - received
+    const over = balance < 0
+    const diff = Math.abs(balance)
+    const title = over ? "超额收款提示" : "未结清提示"
+    // 三要素齐全：应收金额 / 已收金额 / 差额（未收 or 超出），差额红色强调
+    const msg =
+      `应收金额：<b>${formatMoney(total)}</b><br/>` +
+      `已收金额：<b>${formatMoney(received)}</b><br/>` +
+      `${over ? "超出金额" : "未收金额"}：<b style="color:#f56c6c">${formatMoney(diff)}</b>`
+    ElMessageBox.confirm(msg, title, {
+      confirmButtonText: "仍要保存",
+      cancelButtonText: "返回修改",
+      type: "warning",
+      dangerouslyUseHTMLString: true
+    }).then(() => {
+      doSaveSettlement()
+    }).catch(() => {})
+  } else {
+    doSaveSettlement()
+  }
+}
+
+/** 实际保存 */
+function doSaveSettlement() {
   saveLoading.value = true
   const payload = {
     projectId: editProjectId.value,
     remark: editForm.value.remark,
     workloads: editForm.value.workloads
   }
+  const invoiceMode = editForm.value.invoiceMode
 
   // 只有金额或日期有值时才提交预付款
   if (editForm.value.prepayAmount != null || editForm.value.prepayDate) {
@@ -648,7 +837,7 @@ function submitSettlement() {
       amount: editForm.value.prepayAmount,
       payTime: editForm.value.prepayDate,
       payUnit: editForm.value.payUnit,
-      payMethod: editForm.value.payMethod,
+      payMethod: editForm.value.prepayMethod,
       invoiceStatus: editForm.value.invoiceStatus,
       invoiceNo: editForm.value.invoiceNo,
       invoiceDate: editForm.value.invoiceDate,
@@ -658,12 +847,20 @@ function submitSettlement() {
 
   // 只有金额或日期有值时才提交尾款
   if (editForm.value.tailAmount != null || editForm.value.tailDate) {
-    payload.tail = {
+    const tail = {
       amount: editForm.value.tailAmount,
       payTime: editForm.value.tailDate,
       payUnit: editForm.value.payUnit,
-      payMethod: editForm.value.payMethod
+      payMethod: editForm.value.tailMethod
     }
+    // 分笔开票：尾款独立发票
+    if (invoiceMode === 'split') {
+      tail.invoiceStatus = editForm.value.tailInvoiceStatus
+      tail.invoiceNo = editForm.value.tailInvoiceNo
+      tail.invoiceDate = editForm.value.tailInvoiceDate
+      tail.invoiceAmount = editForm.value.tailInvoiceAmount
+    }
+    payload.tail = tail
   }
 
   saveSettlement(payload).then(() => {
@@ -782,4 +979,74 @@ loadDistinctValues()
   user-select: none;
 }
 .collapse-link:hover { color: #409eff; }
+
+/* ===== 编辑弹窗：产值统计条 ===== */
+.output-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 40px;
+  margin-top: 12px;
+  padding: 8px 20px;
+  background: #ecf5ff;
+  border-radius: 6px;
+  border: 1px solid #d9ecff;
+}
+.sum-item { display: inline-flex; align-items: baseline; gap: 8px; }
+.sum-label { font-size: 13px; color: #606266; }
+.sum-value { font-size: 14px; font-weight: bold; color: #409eff; font-family: "JetBrains Mono", Consolas, monospace; }
+
+/* ===== 编辑弹窗：结算金额核对区 ===== */
+.settle-check-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  background: #f8fafc;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  gap: 20px;
+}
+.settle-cell { display: inline-flex; align-items: baseline; gap: 8px; flex: 1; }
+.settle-label { font-size: 13px; color: #909399; }
+.settle-value { font-size: 16px; font-weight: bold; color: #303133; font-family: "JetBrains Mono", Consolas, monospace; }
+.settle-hint { font-size: 12px; color: #a8abb2; }
+.settle-divider { width: 1px; height: 24px; background: #e4e7ed; }
+.text-success { color: #67c23a; }
+.text-warning { color: #e6a23c; }
+.text-danger { color: #f56c6c; }
+
+/* ===== 编辑弹窗：付款信息 / 开票信息（上下分栏） ===== */
+.settle-panel {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  background: #fafbfc;
+  padding: 12px 16px 4px;
+}
+.invoice-mode-row {
+  display: flex;
+  align-items: center;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px dashed #e4e7ed;
+}
+.pay-options-label { font-size: 13px; color: #606266; margin-right: 6px; }
+.pay-row { margin-bottom: 0; }
+.pay-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+}
+.pay-label-advance { color: #409eff; }
+.pay-label-tail { color: #67c23a; }
+.invoice-group {
+  margin-bottom: 12px;
+}
+.invoice-group-title {
+  font-size: 12px;
+  color: #909399;
+  line-height: 14px;
+  margin-bottom: 6px;
+  padding-left: 8px;
+  border-left: 2px solid #c0c4cc;
+}
 </style>
