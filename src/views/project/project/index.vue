@@ -197,12 +197,12 @@
       <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
          <el-form ref="projectRef" :model="form" :rules="rules" label-width="90px">
             <el-row :gutter="20">
-               <el-col :span="12">
+               <el-col :span="8">
                   <el-form-item label="工程编号" prop="projectCode">
                      <el-input v-model="form.projectCode" placeholder="请输入工程编号" maxlength="50" />
                   </el-form-item>
                </el-col>
-               <el-col :span="12">
+               <el-col :span="16">
                   <el-form-item label="项目名称" prop="projectName">
                      <el-input v-model="form.projectName" placeholder="请输入项目名称" maxlength="200" />
                   </el-form-item>
@@ -242,7 +242,7 @@
                   <el-form-item label="负责人" prop="leaderIds">
                      <el-select v-model="form.leaderIds" multiple filterable placeholder="请选择项目负责人" style="width: 100%">
                         <el-option
-                           v-for="user in userOptions"
+                           v-for="user in leaderOptions"
                            :key="user.userId"
                            :label="user.nickName"
                            :value="user.userId"
@@ -305,6 +305,51 @@
                   </el-form-item>
                </el-col>
             </el-row>
+
+            <!-- 首笔付款（可折叠） -->
+            <el-divider />
+            <div class="first-payment-header" @click="firstPaymentExpanded = !firstPaymentExpanded" style="cursor:pointer;display:flex;align-items:center;margin-bottom:12px;user-select:none">
+               <el-icon :size="18" style="margin-right:8px;transition:transform .3s" :style="{ transform: firstPaymentExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }">
+                  <ArrowRight />
+               </el-icon>
+               <span style="font-weight:600;font-size:14px">预付款</span>
+               <el-tag v-if="firstPaymentAdvice" size="small" :type="firstPaymentAdvice.type" style="margin-left:12px">{{ firstPaymentAdvice.text }}</el-tag>
+               <span v-if="selectedContractClientUnit" style="margin-left:auto;font-size:12px;color:#909399">💡 付款单位自动带入委托单位「{{ selectedContractClientUnit }}」</span>
+            </div>
+            <el-collapse-transition>
+               <div v-show="firstPaymentExpanded" class="first-payment-panel">
+                  <el-row :gutter="20">
+                     <el-col :span="6">
+                        <el-form-item label="付款金额" prop="firstPaymentAmount">
+                           <el-input-number v-model="form.firstPaymentAmount" :min="0" :precision="2" placeholder="金额" controls-position="right" style="width: 100%" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="6">
+                        <el-form-item label="付款时间" prop="firstPaymentTime">
+                           <el-date-picker v-model="form.firstPaymentTime" value-format="YYYY-MM-DD" type="date" placeholder="选择日期" clearable style="width: 100%" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="6">
+                     <el-form-item label="付款单位" prop="firstPaymentUnit">
+                        <el-select v-model="form.firstPaymentUnit" filterable clearable allow-create placeholder="请选择或输入付款单位" style="width: 100%">
+                           <el-option v-for="item in clientUnitOptions" :key="item" :label="item" :value="item" />
+                        </el-select>
+                     </el-form-item>
+                     </el-col>
+                     <el-col :span="6">
+                        <el-form-item label="付款方式" prop="firstPaymentMethod">
+                           <el-select v-model="form.firstPaymentMethod" clearable placeholder="请选择" style="width:100%">
+                              <el-option label="银行转账" value="银行转账" />
+                              <el-option label="现金" value="现金" />
+                              <el-option label="支票" value="支票" />
+                              <el-option label="电汇" value="电汇" />
+                           </el-select>
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+               </div>
+            </el-collapse-transition>
+            <el-divider />
          </el-form>
          <template #footer>
             <div class="dialog-footer">
@@ -464,10 +509,11 @@
 <script setup name="Project">
 import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues } from "@/api/project/project"
 import { categoryTreeselect } from "@/api/project/category"
-import { listUser } from "@/api/system/user"
+import { listUserOptions } from "@/api/system/user"
 import { listTask } from "@/api/project/task"
 import { listContract } from "@/api/project/contract"
 import ExcelImportDialog from "@/components/ExcelImportDialog"
+import { ArrowRight } from '@element-plus/icons-vue'
 /** 格式化日期 YYYY-MM-DD */
 function fmt(d) { return d.toISOString().slice(0, 10) }
 
@@ -486,6 +532,7 @@ const multiple = ref(true)
 const tableRef = ref(null)
 const categoryOptions = ref([])
 const userOptions = ref([])
+const leaderOptions = ref([])
 const contractOptions = ref([])
 const contractLoading = ref(false)
 const detail = ref({})
@@ -509,6 +556,11 @@ const currentProjectName = ref("")
 const statusOpen = ref(false)
 const currentRow = ref({})
 const targetStatus = ref("")
+
+// 首笔付款
+const firstPaymentExpanded = ref(true)
+const selectedContractClientUnit = ref("")
+
 const STATUS_FLOW = {
    "ongoing": ["closed"],
    "closed": ["archived"],
@@ -597,6 +649,32 @@ const data = reactive({
 })
 
 const { queryParams, form, rules } = toRefs(data)
+
+/** 首笔付款智能建议：根据合同金额给出提醒 */
+const firstPaymentAdvice = computed(() => {
+  const amt = form.value.firstPaymentAmount
+  if (!amt || amt <= 0) return null
+  const contract = contractOptions.value.find(c => c.id === form.value.contractId)
+  if (!contract || !contract.contractAmount) return null
+  const pct = (amt / contract.contractAmount * 100).toFixed(1)
+  if (pct < 30) return { type: 'warning', text: '⚠ 首付占比 ' + pct + '%，偏低（建议≥30%）' }
+  if (pct > 90) return { type: 'warning', text: '⚠ 首付占比 ' + pct + '%，偏高' }
+  return { type: 'success', text: '✓ 首付占比 ' + pct + '%，合理' }
+})
+
+/** 选择合同时自动带出委托单位作为付款单位 */
+watch(() => form.value.contractId, (newVal) => {
+  if (newVal) {
+    const contract = contractOptions.value.find(c => c.id === newVal)
+    selectedContractClientUnit.value = contract ? (contract.clientUnit || '') : ''
+    // 仅在新增模式且未手动填写付款单位时自动填充
+    if (!form.value.id && (!form.value.firstPaymentUnit || form.value.firstPaymentUnit === '')) {
+      form.value.firstPaymentUnit = contract ? (contract.clientUnit || '') : ''
+    }
+  } else {
+    selectedContractClientUnit.value = ''
+  }
+})
 
 /** 模糊搜索合同 */
 function searchContracts(query) {
@@ -762,10 +840,17 @@ function loadCategoryTree() {
   })
 }
 
-/** 加载用户列表 */
+/** 加载用户列表（搜索栏用，全量） */
 function loadUserList() {
-  listUser({ pageNum: 1, pageSize: 1000 }).then(response => {
+  listUserOptions({ pageNum: 1, pageSize: 1000 }).then(response => {
     userOptions.value = response.rows || []
+  })
+}
+
+/** 加载项目负责人列表（仅"项目经理"岗位） */
+function loadLeaderList() {
+  listUserOptions({ pageNum: 1, pageSize: 1000, params: { postName: '项目经理' } }).then(response => {
+    leaderOptions.value = response.rows || []
   })
 }
 
@@ -798,9 +883,16 @@ function reset() {
     assignDate: undefined,
     durationRequire: undefined,
     totalDuration: undefined,
-    remark: undefined
+    remark: undefined,
+    // 首笔付款
+    firstPaymentAmount: undefined,
+    firstPaymentTime: undefined,
+    firstPaymentUnit: undefined,
+    firstPaymentMethod: undefined
   }
   proxy.resetForm("projectRef")
+  firstPaymentExpanded.value = true
+  selectedContractClientUnit.value = ""
 }
 
 /** 搜索按钮操作 */
@@ -852,6 +944,7 @@ function toggleRow(row) {
 function handleAdd() {
   reset()
   loadUserList()
+  loadLeaderList()
   open.value = true
   title.value = "新增项目"
 }
@@ -860,6 +953,7 @@ function handleAdd() {
 function handleUpdate(row) {
   reset()
   loadUserList()
+  loadLeaderList()
   const id = row.id || ids.value[0]
   getProject(id).then(response => {
     form.value = response.data

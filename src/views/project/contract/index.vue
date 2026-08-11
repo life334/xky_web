@@ -118,17 +118,7 @@
          <el-table-column label="合同编号" align="center" prop="contractNo" :show-overflow-tooltip="false" min-width="140" />
          <el-table-column label="合同名称" align="center" prop="contractName" :show-overflow-tooltip="false" min-width="180" />
          <el-table-column label="委托单位" align="center" prop="clientUnit" :show-overflow-tooltip="false" min-width="160" />
-         <el-table-column label="合同类型" align="center" prop="contractType" min-width="100">
-            <template #default="scope">
-               <dict-tag :options="proj_contract_type" :value="scope.row.contractType" />
-            </template>
-         </el-table-column>
-         <el-table-column label="状态" align="center" prop="status" min-width="90">
-            <template #default="scope">
-               <dict-tag v-if="scope.row.status" :options="d('proj_contract_status')" :value="scope.row.status" />
-               <span v-else style="color: #c0c4cc">草稿</span>
-            </template>
-         </el-table-column>
+        
          <el-table-column align="center" min-width="130">
             <template #header>
                合同金额
@@ -140,21 +130,43 @@
                <span v-if="scope.row.contractAmount != null">{{ formatAmount(scope.row.contractAmount, amountUnit) }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="签署日期" align="center" prop="signDate" min-width="120">
-            <template #default="scope">
-               <span v-if="scope.row.signDate">{{ parseDate(scope.row.signDate) }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="联系人" align="center" prop="contactName" min-width="100">
-            <template #default="scope">
-               <span v-if="scope.row.contactName">{{ scope.row.contactName }}</span>
-            </template>
-         </el-table-column>
+         
          <el-table-column label="关联项目" align="center" min-width="110">
             <template #default="scope">
                <el-button link type="primary" @click="handleShowProjects(scope.row)">
                   {{ scope.row.projectCount || 0 }} 个项目 ▸
                </el-button>
+            </template>
+         </el-table-column>
+         <el-table-column label="付款进度" align="center" min-width="150">
+            <template #default="scope">
+               <template v-if="scope.row.projectCount > 0 && scope.row.paidCount > 0">
+                  <el-popover placement="bottom" :width="500" trigger="hover" :show-after="200" popper-class="payment-popover">
+                     <template #reference>
+                        <div class="payment-progress-cell" style="cursor:pointer" @click="openContractSettlement(scope.row)">
+                           <div class="payment-bar-wrap">
+                              <div class="payment-bar" :style="{ width: paymentPercent(scope.row) + '%' }"></div>
+                           </div>
+                           <span class="payment-summary">{{ scope.row.paidCount }}笔 / ¥{{ fmtWan(scope.row.paidTotal) }}</span>
+                        </div>
+                     </template>
+                     <div class="popover-payment-detail">
+                        <div class="popover-title">付款明细</div>
+                        <div v-for="(pay, idx) in (scope.row.paidList || [])" :key="pay.paymentId" class="pay-item">
+                           <span class="pay-index">{{ idx + 1 }}</span>
+                           <span class="pay-time">{{ parseDate(pay.payTime) }}</span>
+                           <el-tag size="small" :type="paymentTypeTag(pay.paymentType)">{{ paymentTypeLabel(pay.paymentType) }}</el-tag>
+                           <span class="pay-amount">¥{{ fmtWan(pay.amount) }}</span>
+                           <span class="pay-unit">{{ pay.payUnit }}</span>
+                           <span class="pay-project">{{ pay.projectCode || '-' }}</span>
+                        </div>
+                        <div class="popover-summary" v-if="scope.row.contractAmount">
+                           合计 ¥{{ fmtWan(scope.row.paidTotal) }} / 合同总额 ¥{{ fmtWan(scope.row.contractAmount) }}（{{ paymentPercent(scope.row) }}%）
+                        </div>
+                     </div>
+                  </el-popover>
+               </template>
+               <span v-else style="color:#c0c4cc;font-size:13px">—</span>
             </template>
          </el-table-column>
          <el-table-column label="附件" align="center" min-width="100">
@@ -185,6 +197,27 @@
                   </div>
                </el-popover>
                <span v-else style="color:#c0c4cc;font-size:13px">无附件</span>
+            </template>
+         </el-table-column>
+         <el-table-column label="合同类型" align="center" prop="contractType" min-width="100">
+            <template #default="scope">
+               <dict-tag :options="proj_contract_type" :value="scope.row.contractType" />
+            </template>
+         </el-table-column>
+         <el-table-column label="状态" align="center" prop="status" min-width="90">
+            <template #default="scope">
+               <dict-tag v-if="scope.row.status" :options="d('proj_contract_status')" :value="scope.row.status" />
+               <span v-else style="color: #c0c4cc">草稿</span>
+            </template>
+         </el-table-column>
+         <el-table-column label="签署日期" align="center" prop="signDate" min-width="120">
+            <template #default="scope">
+               <span v-if="scope.row.signDate">{{ parseDate(scope.row.signDate) }}</span>
+            </template>
+         </el-table-column>
+         <el-table-column label="联系人" align="center" prop="contactName" min-width="100">
+            <template #default="scope">
+               <span v-if="scope.row.contactName">{{ scope.row.contactName }}</span>
             </template>
          </el-table-column>
          <el-table-column label="创建时间" align="center" prop="createTime" width="170">
@@ -679,6 +712,56 @@
          </div>
          <el-empty v-else description="暂无附件" />
       </el-drawer>
+      <!-- 付款结算详情弹窗 -->
+      <el-dialog
+         :model-value="paymentDialogVisible"
+         @update:model-value="paymentDialogVisible = $event"
+         :title="paymentDialogTitle"
+         width="80%"
+         destroy-on-close
+      >
+         <div v-if="paymentDialogRow">
+            <!-- 合同基本信息 -->
+            <div style="background:#f5f7fa;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:32px;flex-wrap:wrap">
+               <span><span style="color:#909399">合同：</span><strong>{{ paymentDialogRow.contractName || '-' }}</strong></span>
+               <span><span style="color:#909399">编号：</span>{{ paymentDialogRow.contractNo || '-' }}</span>
+               <span><span style="color:#909399">金额：</span><strong>¥{{ formatAmount(paymentDialogRow.contractAmount) }}</strong></span>
+               <span><span style="color:#909399">已付：</span><strong style="color:#e6a23c">{{ paymentDialogRow.paidCount || 0 }}笔 / ¥{{ formatAmount(paymentDialogRow.paidTotal) }}</strong>（{{ paymentPercent(paymentDialogRow) }}%）</span>
+            </div>
+            <!-- 付款明细列表 -->
+            <el-table :data="paymentDialogRow.paidList || []" border stripe size="small" max-height="400" style="width:100%">
+               <el-table-column label="#" width="45" align="center" type="index" fixed="left" />
+               <el-table-column label="工程编号" prop="projectCode" min-width="120" />
+               <el-table-column label="委托单位" prop="clientUnit" min-width="130" />
+               <el-table-column label="联系人" prop="contactName" min-width="80" />
+               <el-table-column label="联系电话" prop="contactPhone" min-width="120" />
+               <el-table-column label="工程项目" min-width="130">
+                  <template #default="scope">
+                     {{ scope.row.engineeringProject || scope.row.projectName || '-' }}
+                  </template>
+               </el-table-column>
+               <el-table-column label="工程地点" prop="projectLocation" min-width="130" />
+               <el-table-column label="付款类型" min-width="90" align="center">
+                  <template #default="scope">
+                     <el-tag size="small" :type="paymentTypeTag(scope.row.paymentType)">{{ paymentTypeLabel(scope.row.paymentType) }}</el-tag>
+                  </template>
+               </el-table-column>
+               <el-table-column label="付款金额" min-width="110" align="right">
+                  <template #default="scope">
+                     <span style="font-weight:600;color:#e6a23c">¥{{ formatAmount(scope.row.amount) }}</span>
+                  </template>
+               </el-table-column>
+               <el-table-column label="付款单位" prop="payUnit" min-width="130" />
+               <el-table-column label="付款时间" width="110" align="center">
+                  <template #default="scope">{{ parseDate(scope.row.payTime) }}</template>
+               </el-table-column>
+            </el-table>
+            <div v-if="!paymentDialogRow.paidList || paymentDialogRow.paidList.length === 0" style="text-align:center;padding:40px 0;color:#909399">暂无付款记录</div>
+         </div>
+         <template #footer>
+            <el-button @click="paymentDialogVisible = false">关闭</el-button>
+         </template>
+      </el-dialog>
    </div>
 </template>
 
@@ -721,6 +804,13 @@ const ids = ref([])
 const statusSubmitting = ref(false)
 const currentContractName = ref("")
 const projectList = ref([])
+
+// 付款结算详情弹窗
+const paymentDialogVisible = ref(false)
+const paymentDialogRow = ref(null)
+const paymentDialogTitle = computed(() => {
+  return paymentDialogRow.value ? '合同结算 — ' + paymentDialogRow.value.contractName : '合同结算'
+})
 
 // 新增：智能查询面板
 const signDateRange = ref([])
@@ -1351,6 +1441,38 @@ function getCategoryLabel(cat) {
   return found ? found.label : cat
 }
 
+/** 付款进度百分比 */
+function paymentPercent(row) {
+  if (!row.contractAmount || row.contractAmount === 0) return 0
+  const paid = row.paidTotal || 0
+  return Math.min(100, Math.round(paid / row.contractAmount * 100))
+}
+
+/** 万元格式化 */
+function fmtWan(val) {
+  if (val == null) return '0'
+  const n = Number(val)
+  return (n / 10000).toFixed(2) + '万'
+}
+
+/** 打开合同付款结算弹窗 */
+function openContractSettlement(row) {
+  paymentDialogRow.value = row
+  paymentDialogVisible.value = true
+}
+
+/** 付款类型 → 标签颜色 */
+function paymentTypeTag(type) {
+  const map = { advance: '', progress: 'warning', final: 'success' }
+  return map[type] || 'info'
+}
+
+/** 付款类型 → 中文 */
+function paymentTypeLabel(type) {
+  const map = { advance: '预付款', progress: '进度款', final: '尾款' }
+  return map[type] || type
+}
+
 /** 格式化文件大小 */
 function formatFileSize(bytes) {
   if (!bytes) return '0 B'
@@ -1831,5 +1953,104 @@ getConfigKey("contract.no.prefix").then(res => {
 .side-history-panel {
   margin-top: 10px;
   padding-left: 26px;
+}
+
+/* ===== 付款进度列 ===== */
+.payment-progress-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.payment-bar-wrap {
+  width: 100%;
+  height: 6px;
+  background: #ebeef5;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.payment-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #67c23a, #409eff);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.payment-summary {
+  font-size: 12px;
+  color: #606266;
+  font-weight: 500;
+}
+</style>
+
+<style>
+/* 付款明细 Popover（非 scoped，因渲染在 body 层级） */
+.payment-popover {
+  padding: 4px 0 !important;
+}
+.popover-payment-detail {
+  font-size: 13px;
+  padding: 8px 8px 4px 8px;
+}
+.popover-payment-detail .popover-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #ebeef5;
+}
+.popover-payment-detail .pay-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed #f0f0f0;
+}
+.popover-payment-detail .pay-item:last-child {
+  border-bottom: none;
+}
+.popover-payment-detail .pay-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #409eff;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.popover-payment-detail .pay-time {
+  color: #909399;
+  font-size: 12px;
+  min-width: 70px;
+}
+.popover-payment-detail .pay-amount {
+  font-weight: 600;
+  color: #e6a23c;
+  min-width: 70px;
+  text-align: right;
+}
+.popover-payment-detail .pay-unit {
+  color: #606266;
+  font-size: 12px;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.popover-payment-detail .pay-project {
+  color: #909399;
+  font-size: 11px;
+  flex: 1;
+}
+.popover-payment-detail .popover-summary {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #ebeef5;
+  font-size: 12px;
+  color: #909399;
+  text-align: center;
 }
 </style>

@@ -579,8 +579,8 @@ function handleEdit(row) {
       contractPriceMap.value = cpMap
 
       // 填充付款信息
-      const prepay = payments.find(p => p.paymentType === "预付款")
-      const tail = payments.find(p => p.paymentType === "尾款")
+      const prepay = payments.find(p => p.paymentType === "advance")
+      const tail = payments.find(p => p.paymentType === "final")
       editForm.value.prepayAmount = prepay ? prepay.amount : null
       editForm.value.prepayDate = prepay ? prepay.payTime : null
       editForm.value.payUnit = prepay ? prepay.payUnit : (tail ? tail.payUnit : null)

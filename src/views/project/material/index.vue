@@ -236,7 +236,7 @@
 <script setup name="Material">
 import { listMaterial, getMaterial, updateMaterial, delMaterial, borrowMaterial, returnMaterial, getFlowList, getMaterialStatusCounts } from "@/api/project/material"
 import { listProject } from "@/api/project/project"
-import { listUser } from "@/api/system/user"
+
 
 const { proxy } = getCurrentInstance()
 
@@ -295,7 +295,6 @@ const { queryParams, form, rules } = toRefs(data)
 /** 加载下拉选项 */
 function loadOptions() {
   listProject({ pageNum: 1, pageSize: 999 }).then(r => { projectOptions.value = r.rows || [] })
-  listUser({ pageNum: 1, pageSize: 999 }).then(r => { userOptions.value = r.rows || [] })
 }
 
 /** 查询 */

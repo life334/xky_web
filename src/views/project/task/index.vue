@@ -225,7 +225,7 @@
 <script setup name="Task">
 import { listTask, getTask, addTask, updateTask, delTask } from "@/api/project/task"
 import { listProject } from "@/api/project/project"
-import { listUser } from "@/api/system/user"
+import { listUserOptions } from "@/api/system/user"
 
 const { proxy } = getCurrentInstance()
 const { proj_task_status } = useDict("proj_task_status")
@@ -325,7 +325,7 @@ function loadProjectList() {
 
 /** 加载用户列表 */
 function loadUserList() {
-  listUser({ pageNum: 1, pageSize: 1000 }).then(response => {
+  listUserOptions({ pageNum: 1, pageSize: 1000 }).then(response => {
     userOptions.value = response.rows || []
   })
 }

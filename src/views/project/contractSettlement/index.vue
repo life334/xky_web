@@ -171,7 +171,7 @@
     <!-- ==================== 弹窗区 ==================== -->
 
     <!-- 编辑弹窗 -->
-    <el-dialog :title="'合同结算「' + editForm.contractName + '」'" :model-value="dialogVisible" @update:model-value="dialogVisible = $event" width="700px" destroy-on-close>
+    <el-dialog :title="'合同结算「' + editForm.contractName + '」'" :model-value="dialogVisible" @update:model-value="dialogVisible = $event" width="80%" destroy-on-close>
       <el-form ref="formRef" :model="editForm" :rules="rules" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
@@ -212,7 +212,7 @@
     </el-dialog>
 
     <!-- 合同单价卡片墙弹窗（按大类分组） -->
-    <el-dialog :title="'合同单价 — ' + priceDialogTitle" :model-value="priceCardVisible" @update:model-value="priceCardVisible = $event" width="680px" destroy-on-close>
+    <el-dialog :title="'合同单价 — ' + priceDialogTitle" :model-value="priceCardVisible" @update:model-value="priceCardVisible = $event" width="80%" destroy-on-close>
       <div v-if="priceCardGroups && priceCardGroups.length" class="price-card-container">
         <div v-for="(group, gIdx) in priceCardGroups" :key="gIdx" class="price-group-section">
           <!-- 大类标题 -->
@@ -243,7 +243,7 @@
     </el-dialog>
 
     <!-- 到账明细弹窗 -->
-    <el-dialog :title="'到账明细 — ' + receivedDialogTitle" :model-value="receivedDialogVisible" @update:model-value="receivedDialogVisible = $event" width="780px" destroy-on-close>
+    <el-dialog :title="'到账明细 — ' + receivedDialogTitle" :model-value="receivedDialogVisible" @update:model-value="receivedDialogVisible = $event" width="80%" destroy-on-close>
       <div v-loading="receivedLoading">
         <!-- 汇总横幅 -->
         <div class="received-summary" v-if="receivedSummary">

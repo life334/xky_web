@@ -1,7 +1,16 @@
 import request from '@/utils/request'
 import { parseStrEmpty } from "@/utils/land";
 
-// 查询用户列表
+// 查询用户选项列表（下拉框专用，无需权限）
+export function listUserOptions(query) {
+  return request({
+    url: '/system/user/options',
+    method: 'get',
+    params: query
+  })
+}
+
+// 查询用户列表（用户管理页面专用，需 system:user:list 权限）
 export function listUser(query) {
   return request({
     url: '/system/user/list',

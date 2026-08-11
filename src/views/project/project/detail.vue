@@ -272,7 +272,7 @@ import { listWorkload, addWorkload, updateWorkload, delWorkload } from "@/api/pr
 import { listPayment, addPayment, updatePayment, delPayment } from "@/api/project/payment"
 import { listMaterial } from "@/api/project/material"
 import { listCategory, categoryTreeselect } from "@/api/project/category"
-import { listUser } from "@/api/system/user"
+import { listUserOptions } from "@/api/system/user"
 
 const { proxy } = getCurrentInstance()
 const { proj_payment_type, proj_project_status, proj_material_result_type, proj_material_status, proj_task_status } = useDict('proj_payment_type', 'proj_project_status', 'proj_material_result_type', 'proj_material_status', 'proj_task_status')
@@ -413,7 +413,7 @@ function loadUsers() {
       userOptions.value = []
       return
    }
-   listUser({ pageNum: 1, pageSize: 1000 }).then(response => {
+   listUserOptions({ pageNum: 1, pageSize: 1000 }).then(response => {
       const allUsers = response.rows || []
       const idSet = new Set(leaderIds.map(id => Number(id)))
       userOptions.value = allUsers.filter(u => idSet.has(u.userId))
