@@ -160,13 +160,12 @@
             </template>
          </el-table-column>
          <el-table-column label="备注" align="center" prop="payRemark" min-width="140" :show-overflow-tooltip="true" />
-         <el-table-column label="操作" align="center" width="80" fixed="right">
+         <el-table-column v-if="checkPermi(['project:settlement:edit'])" label="操作" align="center" width="80" fixed="right">
             <template #default="scope">
                <el-button
                   v-if="scope.row.projectId"
                   link type="primary"
                   @click="handleEdit(scope.row)"
-                  v-hasPermi="['project:settlement:edit']"
                >编辑</el-button>
             </template>
          </el-table-column>
@@ -210,7 +209,9 @@
                </el-col>
                <el-col :span="6">
                   <el-form-item label="付款单位">
-                     <el-input v-model="editForm.payUnit" placeholder="付款单位" maxlength="200" />
+                     <el-select v-model="editForm.payUnit" filterable clearable allow-create placeholder="请选择或输入付款单位" style="width: 100%">
+                        <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                     </el-select>
                   </el-form-item>
                </el-col>
                <el-col :span="6">
@@ -318,7 +319,7 @@
                      <span>{{ formatMoney(scope.row.internalOutput) }}</span>
                   </template>
                </el-table-column>
-               <el-table-column label="外��产值" align="center" width="120">
+               <el-table-column label="外部产值" align="center" width="120">
                   <template #default="scope">
                      <span>{{ formatMoney(scope.row.externalOutput) }}</span>
                   </template>
@@ -350,8 +351,9 @@
 <script setup name="Settlement">
 import { treeListSettlement, getSettlementDetail, saveSettlement } from "@/api/project/settlement"
 import { categoryTreeselectFull } from "@/api/project/category"
-import { listUser } from "@/api/system/user"
+import { listUserOptions } from "@/api/system/user"
 import { getDistinctValues } from "@/api/project/project"
+import { checkPermi } from "@/utils/permission"
 
 const { proxy } = getCurrentInstance()
 
@@ -558,7 +560,7 @@ function handleEdit(row) {
   editProjectLocation.value = row.projectLocation || ""
 
   // 加载基础数据
-  Promise.all([categoryTreeselectFull(), listUser({ pageNum: 1, pageSize: 1000 }), getSettlementDetail(row.projectId)])
+  Promise.all([categoryTreeselectFull(), listUserOptions({ pageNum: 1, pageSize: 1000 }), getSettlementDetail(row.projectId)])
     .then(([catRes, userRes, detailRes]) => {
       categoryOptions.value = catRes.data
       userOptions.value = userRes.rows || []

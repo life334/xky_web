@@ -130,7 +130,7 @@ const { queryParams } = toRefs(data)
 /** 加载下拉选项 */
 function loadOptions() {
   listProject({ pageNum: 1, pageSize: 999 }).then(r => { projectOptions.value = r.rows || [] })
-  listUser({ pageNum: 1, pageSize: 999 }).then(r => { userOptions.value = r.rows || [] })
+  listUserOptions({ pageNum: 1, pageSize: 999 }).then(r => { userOptions.value = r.rows || [] })
   categoryTreeselect().then(r => { categoryOptions.value = r.data || [] })
 }
 

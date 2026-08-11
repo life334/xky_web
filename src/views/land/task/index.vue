@@ -244,7 +244,7 @@
 
 <script setup name="Task">
 import { listTask, getTask, addTask, updateTask, delTask, assignTask } from "@/api/land/task"
-import { listUser } from "@/api/system/user"
+import { listUserOptions } from "@/api/system/user"
 
 const router = useRouter()
 const { proxy } = getCurrentInstance()
@@ -404,7 +404,7 @@ function reset() {
 
 /** 获取外业人员列表 */
 function getFieldUserList() {
-  listUser({ roleKey: 'field' }).then(res => {
+  listUserOptions({ roleKey: 'field' }).then(res => {
     fieldUserList.value = res.rows || []
   })
 }

@@ -12,9 +12,9 @@
       </div>
 
       <!-- Row 2: 状态胶囊 -->
-      <!-- <div class="status-capsule-row">
+      <div class="status-capsule-row">
          <span v-for="sc in statusCapsules" :key="sc.value ?? '__all__'" class="status-capsule" :class="{ active: queryParams.status === sc.value }" @click="handleStatusClick(sc.value)">{{ sc.label }}<span class="capsule-count">{{ sc.count }}</span></span>
-      </div> -->
+      </div>
 
       <!-- Row 3: 高级筛选 -->
       <div class="advanced-toggle-row" @click="advancedVisible = !advancedVisible">
@@ -106,19 +106,19 @@
             </template>
          </el-table-column>
          <el-table-column label="目录" align="center" prop="archiveDir" min-width="160" :show-overflow-tooltip="false" />
-         <!-- <el-table-column label="状态" align="center" prop="status" width="90">
+         <el-table-column label="资料状态" align="center" prop="status" min-width="95">
             <template #default="scope">
-               <dict-tag :options="proj_material_status" :value="scope.row.status" />
+               <dict-tag v-if="scope.row.status" :options="proj_material_status" :value="scope.row.status" />
+               <span v-else style="color: #c0c4cc">—</span>
             </template>
-         </el-table-column> -->
+         </el-table-column>
          <el-table-column label="备注" align="center" prop="remark" min-width="160" :show-overflow-tooltip="false" />
-         <el-table-column label="操作" align="center" min-width="100" class-name="small-padding fixed-width" fixed="right">
+         <el-table-column label="操作" align="center" min-width="160" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
-               <!-- <el-button v-if="scope.row.status === 'pending' || scope.row.status === 'returned'" link type="warning" @click="handleBorrow(scope.row)" v-hasPermi="['project:material:borrow']" v-text="scope.row.status === 'returned' ? '再次领取' : '领取'" /> -->
-               <!-- <el-button v-if="scope.row.status === 'received'" link type="success" @click="handleReturn(scope.row)" v-hasPermi="['project:material:return']">归还</el-button> -->
+               <el-button v-if="scope.row.status === 'pending' || scope.row.status === 'returned'" link type="warning" @click="handleBorrow(scope.row)" v-hasPermi="['project:material:borrow']" v-text="scope.row.status === 'returned' ? '再次领取' : '领取'" />
+               <el-button v-if="scope.row.status === 'received'" link type="success" @click="handleReturn(scope.row)" v-hasPermi="['project:material:return']">归还</el-button>
                <el-button link type="primary" @click="handleUpdate(scope.row)" v-hasPermi="['project:material:edit']">修改</el-button>
-               <!-- <el-button link type="primary" @click="handleFlow(scope.row)">流转</el-button> -->
-               <!-- <el-button link type="danger" @click="handleDelete(scope.row)" v-hasPermi="['project:material:remove']">删除</el-button> -->
+               <el-button link type="primary" @click="handleFlow(scope.row)">流转</el-button>
             </template>
          </el-table-column>
       </el-table>
@@ -193,8 +193,11 @@
       <!-- 领取/归还对话框 -->
       <el-dialog :title="borrowTitle" :model-value="borrowOpen" @update:model-value="borrowOpen = $event" width="500px" append-to-body>
          <el-form ref="borrowRef" :model="borrowForm" label-width="80px">
-            <el-form-item v-if="borrowForm.flowType === '领取'" label="担保人" prop="guarantorId" :rules="[{ required: true, message: '请选择担保人', trigger: 'change' }]">
-               <el-select v-model="borrowForm.guarantorId" filterable placeholder="请选择担保人" style="width: 100%">
+            <el-form-item v-if="borrowForm.flowType === '领取'" label="是否担保">
+               <el-checkbox v-model="borrowForm.guarantorFlag">需要担保人</el-checkbox>
+            </el-form-item>
+            <el-form-item v-if="borrowForm.flowType === '领取' && borrowForm.guarantorFlag" label="担保人" prop="guarantorId" :rules="[{ required: true, message: '请选择担保人', trigger: 'change' }]">
+               <el-select v-model="borrowForm.guarantorId" filterable clearable placeholder="请选择担保人" style="width: 100%">
                   <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
                </el-select>
             </el-form-item>
@@ -236,6 +239,7 @@
 <script setup name="Material">
 import { listMaterial, getMaterial, updateMaterial, delMaterial, borrowMaterial, returnMaterial, getFlowList, getMaterialStatusCounts } from "@/api/project/material"
 import { listProject } from "@/api/project/project"
+import { listUserOptions } from "@/api/system/user"
 
 
 const { proxy } = getCurrentInstance()
@@ -263,7 +267,7 @@ const advancedVisible = ref(false)
 // 领取/归还
 const borrowOpen = ref(false)
 const borrowTitle = ref("")
-const borrowForm = ref({ flowType: "", guarantorId: undefined, remark: "" })
+const borrowForm = ref({ flowType: "", guarantorFlag: false, guarantorId: undefined, remark: "" })
 const currentMaterial = ref({})
 
 // 流转记录
@@ -295,6 +299,7 @@ const { queryParams, form, rules } = toRefs(data)
 /** 加载下拉选项 */
 function loadOptions() {
   listProject({ pageNum: 1, pageSize: 999 }).then(r => { projectOptions.value = r.rows || [] })
+  listUserOptions({ pageNum: 1, pageSize: 1000 }).then(r => { userOptions.value = r.rows || [] })
 }
 
 /** 查询 */
@@ -439,7 +444,7 @@ function submitForm() {
 /** 领取/再次领取 */
 function handleBorrow(row) {
   currentMaterial.value = row
-  borrowForm.value = { flowType: "领取", guarantorId: undefined, remark: "" }
+  borrowForm.value = { flowType: "领取", guarantorFlag: false, guarantorId: undefined, remark: "" }
   borrowTitle.value = row.status === "returned" ? "再次领取" : "领取资料"
   borrowOpen.value = true
 }
@@ -447,7 +452,7 @@ function handleBorrow(row) {
 /** 归还 */
 function handleReturn(row) {
   currentMaterial.value = row
-  borrowForm.value = { flowType: "归还", guarantorId: undefined, remark: "" }
+  borrowForm.value = { flowType: "归还", guarantorFlag: false, guarantorId: undefined, remark: "" }
   borrowTitle.value = "归还资料"
   borrowOpen.value = true
 }
@@ -457,11 +462,13 @@ function submitBorrow() {
   const id = currentMaterial.value.id
   const data = { remark: borrowForm.value.remark }
   if (borrowForm.value.flowType === "领取") {
-    if (!borrowForm.value.guarantorId) {
-      proxy.$modal.msgWarning("请选择担保人")
-      return
+    if (borrowForm.value.guarantorFlag) {
+      if (!borrowForm.value.guarantorId) {
+        proxy.$modal.msgWarning("请选择担保人")
+        return
+      }
+      data.guarantorId = borrowForm.value.guarantorId
     }
-    data.guarantorId = borrowForm.value.guarantorId
     borrowMaterial(id, data).then(() => {
       proxy.$modal.msgSuccess("领取成功")
       borrowOpen.value = false
