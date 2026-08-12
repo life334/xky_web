@@ -172,7 +172,15 @@
       </el-table>
 
       <!-- 编辑结算弹窗 -->
-      <el-dialog :title="'费用结算 — ' + editProjectCode" :model-value="editOpen" @update:model-value="editOpen = $event" width="80%" append-to-body destroy-on-close>
+      <el-dialog 
+         :title="'费用结算 — ' + editProjectCode" 
+         :model-value="editOpen" 
+         @update:model-value="editOpen = $event" 
+         width="80%" 
+         append-to-body 
+         destroy-on-close
+         :close-on-click-modal="false"
+      >
          <el-form ref="settlementRef" :model="editForm" label-width="100px">
             <!-- ① 工程信息（只读） -->
             <el-divider content-position="left">工程信息</el-divider>

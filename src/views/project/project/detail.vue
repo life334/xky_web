@@ -14,32 +14,6 @@
          <el-button icon="Back" @click="goBack">返回列表</el-button>
       </div>
 
-      <!-- KPI 小卡片 -->
-      <el-row :gutter="12" style="margin-bottom: 16px;">
-         <el-col :span="8">
-            <div class="kpi-card">
-               <div class="kpi-label">合同金额</div>
-               <div class="kpi-value">{{ formatMoney(contractAmount) }}</div>
-            </div>
-         </el-col>
-         <el-col :span="8">
-            <div class="kpi-card kpi-green">
-               <div class="kpi-label">已收款</div>
-               <div class="kpi-value">{{ formatMoney(receivedAmount) }}</div>
-            </div>
-         </el-col>
-         <el-col :span="8">
-            <div class="kpi-card">
-               <div class="kpi-label">未收款</div>
-               <div class="kpi-value">{{ formatMoney(unpaidAmount) }}</div>
-               <div v-if="contractAmount > 0" class="kpi-progress">
-                  <el-progress :percentage="paymentProgress" :stroke-width="6" :show-text="false" />
-                  <span style="font-size: 12px; color: #909399; margin-left: 6px;">{{ paymentProgress }}%</span>
-               </div>
-            </div>
-         </el-col>
-      </el-row>
-
       <!-- Tab 区 -->
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
          <!-- 基本信息 -->
@@ -56,7 +30,16 @@
                <el-descriptions-item label="合同">{{ projectInfo.contractName || '-' }}</el-descriptions-item>
                <el-descriptions-item label="安排日期">{{ projectInfo.assignDate ? parseTime(projectInfo.assignDate, '{y}-{m}-{d}') : '-' }}</el-descriptions-item>
                <el-descriptions-item label="工期要求">{{ projectInfo.durationRequire != null ? projectInfo.durationRequire + ' 天' : '-' }}</el-descriptions-item>
-               <el-descriptions-item label="总时长">{{ projectInfo.totalDuration != null ? projectInfo.totalDuration + ' 天' : '-' }}</el-descriptions-item>
+               <el-descriptions-item label="总时长">
+                  <template v-if="projectInfo.status === 'closed' || projectInfo.status === 'archived'">
+                     {{ projectInfo.totalDuration != null ? projectInfo.totalDuration + ' 天（已固定）' : '-' }}
+                  </template>
+                  <template v-else>
+                     <span v-if="detailDuration != null">{{ detailDuration }} 天</span>
+                     <span v-else-if="projectInfo.assignDate" style="color:#a8abb2">计算中...</span>
+                     <span v-else>-</span>
+                  </template>
+               </el-descriptions-item>
                <el-descriptions-item label="负责人">{{ projectInfo.leaderNames || '-' }}</el-descriptions-item>
                <el-descriptions-item label="状态">
                   <dict-tag v-if="projectInfo.status" :options="proj_project_status" :value="projectInfo.status" />
@@ -131,8 +114,25 @@
                <el-table-column label="付款时间" align="center" prop="payTime" min-width="110">
                   <template #default="scope"><span v-if="scope.row.payTime">{{ parseTime(scope.row.payTime, '{y}-{m}-{d}') }}</span></template>
                </el-table-column>
-               <el-table-column label="付款单位" align="center" prop="payUnit" min-width="160" :show-overflow-tooltip="true" />
+               <el-table-column label="付款单位" align="center" prop="payUnit" min-width="150" :show-overflow-tooltip="true" />
                <el-table-column label="付款方式" align="center" prop="payMethod" min-width="100" />
+               <el-table-column label="发票号" align="center" prop="invoiceNo" min-width="140" :show-overflow-tooltip="true">
+                  <template #default="scope"><span v-if="scope.row.invoiceNo">{{ scope.row.invoiceNo }}</span><span v-else style="color: #c0c4cc">—</span></template>
+               </el-table-column>
+               <el-table-column label="开票日期" align="center" prop="invoiceDate" min-width="110">
+                  <template #default="scope"><span v-if="scope.row.invoiceDate">{{ parseTime(scope.row.invoiceDate, '{y}-{m}-{d}') }}</span><span v-else style="color: #c0c4cc">—</span></template>
+               </el-table-column>
+               <el-table-column label="开票金额" align="center" prop="invoiceAmount" min-width="120">
+                  <template #default="scope"><span v-if="scope.row.invoiceAmount != null" style="font-weight:500">{{ formatMoney(scope.row.invoiceAmount) }}</span><span v-else style="color: #c0c4cc">—</span></template>
+               </el-table-column>
+               <el-table-column label="开票状态" align="center" prop="invoiceStatus" min-width="90">
+                  <template #default="scope">
+                     <el-tag v-if="scope.row.invoiceStatus === '未开'" type="info">未开</el-tag>
+                     <el-tag v-else-if="scope.row.invoiceStatus === '已开'" type="success">已开</el-tag>
+                     <el-tag v-else-if="scope.row.invoiceStatus === '已作废'" type="danger">已作废</el-tag>
+                     <span v-else style="color: #c0c4cc">—</span>
+                  </template>
+               </el-table-column>
             </el-table>
          </el-tab-pane>
 
@@ -163,20 +163,39 @@
 
          <!-- 产值结算 -->
          <el-tab-pane label="产值结算" name="settlement">
-            <el-row :gutter="12" style="margin-top: 8px">
-               <el-col :span="8">
-                  <div class="kpi-card"><div class="kpi-label">内部产值</div><div class="kpi-value" style="color:#67c23a">{{ formatMoney(totalInternalOutput) }}</div></div>
+            <div v-loading="settlementLoading">
+               <el-row :gutter="12" style="margin-top: 8px">
+               <el-col :span="6">
+                  <div class="kpi-card"><div class="kpi-label">外部产值</div><div class="kpi-value" style="color:#e6a23c">{{ formatMoney(settlementOverview.externalOutput) }}</div></div>
                </el-col>
-               <el-col :span="8">
-                  <div class="kpi-card kpi-green"><div class="kpi-label">外部产值</div><div class="kpi-value" style="color:#e6a23c">{{ formatMoney(totalExternalOutput) }}</div></div>
+               <el-col :span="6">
+                  <div class="kpi-card"><div class="kpi-label">内部产值</div><div class="kpi-value" style="color:#67c23a">{{ formatMoney(settlementOverview.internalOutput) }}</div></div>
                </el-col>
-               <el-col :span="8">
-                  <div class="kpi-card"><div class="kpi-label">产值合计</div><div class="kpi-value" style="color:#409eff">{{ formatMoney(totalOutput) }}</div></div>
+               <el-col :span="6">
+                  <div class="kpi-card"><div class="kpi-label">已收款</div><div class="kpi-value" style="color:#409eff">{{ formatMoney(settlementOverview.receivedAmount) }}</div></div>
+               </el-col>
+               <el-col :span="6">
+                  <div class="kpi-card"><div class="kpi-label">待收差额</div><div class="kpi-value" :style="{ color: pendingColor }">{{ formatMoney(settlementOverview.pendingAmount) }}</div></div>
                </el-col>
             </el-row>
+            <!-- 结算进度 -->
+            <div class="settle-progress-card" style="margin-top: 12px;">
+               <div class="settle-progress-head">
+                  <span class="settle-progress-label">结算进度</span>
+                  <el-tag :type="settleStatusType" size="small">{{ settleStatusText }}</el-tag>
+               </div>
+               <div class="settle-progress-track">
+                  <div class="settle-progress-bar" :style="{ width: settleProgressPercent + '%', background: settleStatusColor }"></div>
+               </div>
+               <div class="settle-progress-foot">
+                  <span>已收 {{ formatMoney(settlementOverview.receivedAmount) }} / 结算总额 {{ formatMoney(settlementOverview.totalOutput) }}</span>
+                  <span>{{ settleProgressPercent }}%</span>
+               </div>
+            </div>
             <el-alert type="info" :closable="false" style="margin-top: 12px">
                产值数据来源于「费用结算」模块的工作量核算，收款数据来源于「付款记录」页签。如需调整请在对应模块操作。
             </el-alert>
+            </div>
          </el-tab-pane>
       </el-tabs>
 
@@ -266,13 +285,14 @@
 
 <script setup name="ProjectDetail">
 import { getProject } from "@/api/project/project"
-import { getContract } from "@/api/project/contract"
 import { listTask } from "@/api/project/task"
 import { listWorkload, addWorkload, updateWorkload, delWorkload } from "@/api/project/workload"
 import { listPayment, addPayment, updatePayment, delPayment } from "@/api/project/payment"
+import { getSettlementOverview } from "@/api/project/settlement"
 import { listMaterial } from "@/api/project/material"
 import { listCategory, categoryTreeselect } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
+import { countWorkdays } from "@/utils/workday"
 
 const { proxy } = getCurrentInstance()
 const { proj_payment_type, proj_project_status, proj_material_result_type, proj_material_status, proj_task_status } = useDict('proj_payment_type', 'proj_project_status', 'proj_material_result_type', 'proj_material_status', 'proj_task_status')
@@ -281,8 +301,18 @@ const route = useRoute()
 const projectId = route.params.projectId
 const activeTab = ref("info")
 const projectInfo = ref({})
-const contractAmount = ref(0)
-const receivedAmount = ref(0)
+
+// 详情总时长：进行中按"安排日期→今天"实时计算工作日（含头含尾）；办结/归档固定显示存储值
+const detailDuration = ref(null)
+const durationDisplay = computed(() => {
+   const st = projectInfo.value.status
+   if (st === 'closed' || st === 'archived') {
+      return projectInfo.value.totalDuration != null ? projectInfo.value.totalDuration + ' 天' : '-'
+   }
+   if (!projectInfo.value.assignDate) return '-'
+   if (detailDuration.value != null) return detailDuration.value + ' 天'
+   return '计算中...'
+})
 
 // 各 Tab 数据
 const taskLoading = ref(false)
@@ -296,6 +326,17 @@ const materialList = ref([])
 const userOptions = ref([])
 const categoryOptions = ref([])
 const categoryPriceMap = ref({})  // 类目id → { internalPrice, externalPrice }
+
+// 产值结算总览（聚合接口数据）
+const settlementLoading = ref(false)
+const settlementOverview = ref({
+   internalOutput: null,
+   externalOutput: null,
+   totalOutput: null,
+   receivedAmount: null,
+   pendingAmount: null,
+   settlementStatus: null
+})
 
 // 工作量弹窗
 const workloadOpen = ref(false)
@@ -315,22 +356,37 @@ const paymentRules = {
    amount: [{ required: true, message: "请输入金额", trigger: "blur" }]
 }
 
-// 计算属性
-const unpaidAmount = computed(() => {
-   return Math.max(0, (contractAmount.value || 0) - receivedAmount.value)
+// 产值结算 tab 计算属性
+const settleProgressPercent = computed(() => {
+   const total = settlementOverview.value.totalOutput
+   const received = settlementOverview.value.receivedAmount
+   if (!total || total === 0) return 0
+   return Math.min(100, Math.round(received * 100 / total))
 })
-const paymentProgress = computed(() => {
-   if (!contractAmount.value || contractAmount.value === 0) return 0
-   return Math.min(100, Math.round(receivedAmount.value * 100 / contractAmount.value * 10) / 10)
+const settleStatusText = computed(() => {
+   const status = settlementOverview.value.settlementStatus
+   if (status === 'overdue') return '超额收款'
+   if (status === 'settled') return '已结清'
+   return '未结清'
 })
-const totalOutput = computed(() => {
-   return workloadList.value.reduce((sum, w) => sum + (w.internalOutput || 0) + (w.externalOutput || 0), 0)
+const settleStatusType = computed(() => {
+   const status = settlementOverview.value.settlementStatus
+   if (status === 'overdue') return 'danger'
+   if (status === 'settled') return 'success'
+   return 'warning'
 })
-const totalInternalOutput = computed(() => {
-   return workloadList.value.reduce((sum, w) => sum + (w.internalOutput || 0), 0)
+const settleStatusColor = computed(() => {
+   const status = settlementOverview.value.settlementStatus
+   if (status === 'overdue') return '#f56c6c'
+   if (status === 'settled') return '#67c23a'
+   return '#e6a23c'
 })
-const totalExternalOutput = computed(() => {
-   return workloadList.value.reduce((sum, w) => sum + (w.externalOutput || 0), 0)
+const pendingColor = computed(() => {
+   const pending = settlementOverview.value.pendingAmount
+   if (pending == null) return '#303133'
+   if (pending > 0) return '#f56c6c'
+   if (pending < 0) return '#e6a23c'
+   return '#67c23a'
 })
 
 /** 格式化金额 */
@@ -350,22 +406,38 @@ function handleTabChange(tabName) {
    if (tabName === "workload") loadWorkloads()
    if (tabName === "payment") loadPayments()
    if (tabName === "material" && materialList.value.length === 0) loadMaterials()
-   if (tabName === "settlement") { loadWorkloads(); loadPayments() }
+   if (tabName === "settlement") loadSettlementOverview()
 }
 
-/** 加载项目信息 + 合同金额 + 付款（KPI） */
+/** 加载产值结算总览（聚合接口，一次返回全部指标） */
+function loadSettlementOverview() {
+   settlementLoading.value = true
+   getSettlementOverview(projectId).then(response => {
+      settlementOverview.value = response.data || {}
+      settlementLoading.value = false
+   }).catch(() => { settlementLoading.value = false })
+}
+
+/** 加载项目信息 + 付款记录 */
 function loadProjectInfo() {
    getProject(projectId).then(response => {
       projectInfo.value = response.data
-      if (response.data.contractId) {
-         getContract(response.data.contractId).then(res => {
-            contractAmount.value = res.data.contractAmount || 0
-         })
-      }
+      refreshDuration()
    }).catch(() => {
       projectInfo.value = {}
    })
    loadPayments()
+}
+
+/** 刷新详情总时长（工作日，自动排除周末/法定节假日） */
+function refreshDuration() {
+   detailDuration.value = null
+   const st = projectInfo.value.status
+   if (st === 'closed' || st === 'archived') return
+   if (!projectInfo.value.assignDate) return
+   countWorkdays(projectInfo.value.assignDate, new Date())
+      .then(v => { detailDuration.value = v })
+      .catch(() => {})
 }
 
 /** 加载任务 */
@@ -386,12 +458,11 @@ function loadWorkloads() {
    }).catch(() => { workloadLoading.value = false })
 }
 
-/** 加载付款 + 更新已收 KPI */
+/** 加载付款记录 */
 function loadPayments() {
    paymentLoading.value = true
    listPayment({ projectId: projectId, pageNum: 1, pageSize: 1000 }).then(response => {
       paymentList.value = response.rows || []
-      receivedAmount.value = paymentList.value.reduce((sum, p) => sum + (p.amount || 0), 0)
       paymentLoading.value = false
    }).catch(() => { paymentLoading.value = false })
 }
@@ -558,9 +629,6 @@ onMounted(() => {
    padding: 16px;
    min-height: 72px;
 }
-.kpi-card.kpi-green {
-   background: #f0f9eb;
-}
 .kpi-label {
    font-size: 13px;
    color: #909399;
@@ -571,16 +639,40 @@ onMounted(() => {
    font-weight: 600;
    color: #303133;
 }
-.kpi-green .kpi-value {
-   color: #67c23a;
+.settle-progress-card {
+   background: #fff;
+   border: 1px solid #ebeef5;
+   border-radius: 8px;
+   padding: 16px 20px;
 }
-.kpi-progress {
+.settle-progress-head {
    display: flex;
    align-items: center;
-   margin-top: 8px;
+   justify-content: space-between;
+   margin-bottom: 12px;
 }
-.kpi-progress .el-progress {
-   flex: 1;
+.settle-progress-label {
+   font-size: 13px;
+   color: #909399;
+}
+.settle-progress-track {
+   height: 8px;
+   border-radius: 999px;
+   background: #f5f7fa;
+   overflow: hidden;
+}
+.settle-progress-bar {
+   height: 100%;
+   border-radius: 999px;
+   transition: width 0.3s;
+}
+.settle-progress-foot {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   margin-top: 8px;
+   font-size: 12px;
+   color: #909399;
 }
 .mb8 {
    margin-bottom: 8px;

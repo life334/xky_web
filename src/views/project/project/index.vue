@@ -132,8 +132,8 @@
             <el-button type="primary" plain icon="Plus" size="small" @click="handleAdd" v-hasPermi="['project:project:add']">新增</el-button>
             <el-button type="info" plain icon="Upload" size="small" @click="handleImport" v-hasPermi="['project:project:import']">导入</el-button>
             <el-button type="info" plain icon="DocumentCopy" size="small" @click="handlePaste" v-hasPermi="['project:project:add']">粘贴</el-button>
-            <el-button type="success" plain icon="Edit" size="small" :disabled="single" @click="handleUpdate" v-hasPermi="['project:project:edit']">修改</el-button>
-            <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:project:remove']">删除</el-button>
+            <el-button type="success" plain icon="Edit" size="small" :disabled="single || editDisabledByClosed" @click="handleUpdate" v-hasPermi="['project:project:edit']">修改</el-button>
+            <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple || deleteDisabledByClosed" @click="handleDelete" v-hasPermi="['project:project:remove']">删除</el-button>
          </div>
          <div style="display:flex;align-items:center;gap:6px">
             <el-button type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:project:export']">导出</el-button>
@@ -176,16 +176,26 @@
                <span v-if="scope.row.durationRequire != null">{{ scope.row.durationRequire }}天</span>
             </template>
          </el-table-column>
-         <el-table-column label="总时长" align="center" prop="totalDuration" width="90">
+         <el-table-column label="总时长" align="center" prop="totalDuration" width="105">
             <template #default="scope">
-               <span v-if="scope.row.totalDuration != null">{{ scope.row.totalDuration }}天</span>
+               <!-- 办结/归档：固定显示存储值 -->
+               <span v-if="scope.row.status === 'closed' || scope.row.status === 'archived'">
+                  <span v-if="scope.row.totalDuration != null">{{ scope.row.totalDuration }}天</span>
+                  <span v-else>-</span>
+               </span>
+               <!-- 进行中：按"安排日期→今天"实时计算工作日 -->
+               <span v-else>
+                  <span v-if="scope.row._duration != null">{{ scope.row._duration }}天</span>
+                  <span v-else-if="scope.row.assignDate" class="duration-loading">计算中...</span>
+                  <span v-else>-</span>
+               </span>
             </template>
          </el-table-column>
          
          <el-table-column label="操作" align="center" min-width="120" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
                <el-button link type="primary" size="small" @click="handleView(scope.row)">详情</el-button>
-               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:project:edit']">修改</el-button>
+               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-if="scope.row.status !== 'closed' || checkRole(['admin'])" v-hasPermi="['project:project:edit']">修改</el-button>
                <el-button link size="small" type="primary" v-if="scope.row.status !== 'closed'" v-hasPermi="['project:project:complete']" @click="handleComplete(scope.row)">办结</el-button>
             </template>
          </el-table-column>
@@ -240,7 +250,7 @@
                </el-col>
                <el-col :span="8">
                   <el-form-item label="负责人" prop="leaderIds">
-                     <el-select v-model="form.leaderIds" multiple filterable placeholder="请选择项目负责人" style="width: 100%">
+                     <el-select v-model="form.leaderIds" multiple filterable placeholder="请选择项目负责人" style="width: 100%" @change="onLeaderChange">
                         <el-option
                            v-for="user in leaderOptions"
                            :key="user.userId"
@@ -294,7 +304,11 @@
                </el-col>
                <el-col :span="8">
                   <el-form-item label="总时长" prop="totalDuration">
-                     <el-input-number v-model="form.totalDuration" :min="0" placeholder="天" controls-position="right" style="width: 100%" />
+                     <el-input
+                        :model-value="durationDisplay"
+                        disabled
+                        title="按工作日自动计算：安排日期 → 今天（含头含尾，自动排除周末/法定节假日）；项目办结后固定"
+                     />
                   </el-form-item>
                </el-col>
             </el-row>
@@ -514,6 +528,8 @@ import { listTask } from "@/api/project/task"
 import { listContract } from "@/api/project/contract"
 import ExcelImportDialog from "@/components/ExcelImportDialog"
 import { ArrowRight } from '@element-plus/icons-vue'
+import { checkRole } from "@/utils/permission"
+import { countWorkdays } from "@/utils/workday"
 /** 格式化日期 YYYY-MM-DD */
 function fmt(d) { return d.toISOString().slice(0, 10) }
 
@@ -530,6 +546,18 @@ const total = ref(0)
 const single = ref(true)
 const multiple = ref(true)
 const tableRef = ref(null)
+/** 当前勾选的行对象（用于判断选中项是否含已办结项目） */
+const currentSelection = ref([])
+/** 已办结项目非超管不可修改：单选且选中已办结且非超管 → 禁用修改按钮 */
+const editDisabledByClosed = computed(() =>
+  currentSelection.value.length === 1
+  && currentSelection.value[0].status === 'closed'
+  && !checkRole(['admin'])
+)
+/** 已办结项目非超管不可删除：勾选范围含已办结且非超管 → 禁用删除按钮 */
+const deleteDisabledByClosed = computed(() =>
+  currentSelection.value.some(r => r.status === 'closed') && !checkRole(['admin'])
+)
 const categoryOptions = ref([])
 const userOptions = ref([])
 const leaderOptions = ref([])
@@ -676,13 +704,40 @@ watch(() => form.value.contractId, (newVal) => {
   }
 })
 
-/** 模糊搜索合同 */
+/** 表单总时长展示：进行中按"安排日期→今天"实时计算工作日（含头含尾）；办结/归档固定显示存储值 */
+const formDuration = ref(null)
+const durationLoading = ref(false)
+const durationDisplay = computed(() => {
+  const st = form.value.status
+  if (st === 'closed' || st === 'archived') {
+    return form.value.totalDuration != null ? form.value.totalDuration + ' 天（已固定）' : '-'
+  }
+  if (!form.value.assignDate) return '-'
+  if (durationLoading.value) return '计算中...'
+  return formDuration.value != null ? formDuration.value + ' 天' : '-'
+})
+
+/** 实时刷新表单总时长（工作日，自动排除周末/法定节假日） */
+function refreshFormDuration() {
+  formDuration.value = null
+  const st = form.value.status
+  if (st === 'closed' || st === 'archived') return
+  if (!form.value.assignDate) return
+  durationLoading.value = true
+  countWorkdays(form.value.assignDate, new Date())
+    .then(v => { formDuration.value = v })
+    .catch(err => { console.error('[项目总时长] 计算失败', err) })
+    .finally(() => { durationLoading.value = false })
+}
+
+watch(() => form.value.assignDate, refreshFormDuration)
+
+/** 模糊搜索合同（keyword 后端 OR 匹配：编号/名称/委托单位/联系人） */
 function searchContracts(query) {
   contractLoading.value = true
   const params = { pageNum: 1, pageSize: 50 }
   if (query) {
-    params.contractNo = query
-    params.contractName = query
+    params.keyword = query
   }
   listContract(params).then(response => {
     contractOptions.value = response.rows || []
@@ -705,8 +760,25 @@ function getList() {
     projectList.value = response.rows
     total.value = response.total
     loading.value = false
+    refreshRowDurations()
   })
   fetchStatusCounts()
+}
+
+/** 列表进行中项目：按"安排日期→今天"实时计算工作日总时长（办结/归档不计算，显示存储值） */
+function refreshRowDurations() {
+  const rows = projectList.value || []
+  rows.forEach(r => {
+    if (r.status === 'closed' || r.status === 'archived') return
+    if (!r.assignDate) {
+      r._duration = null
+      return
+    }
+    r._duration = null // 先显示"计算中..."
+    countWorkdays(r.assignDate, new Date())
+      .then(v => { r._duration = v })
+      .catch(() => { r._duration = r.totalDuration != null ? r.totalDuration : null })
+  })
 }
 
 /** 加载状态统计数据 */
@@ -854,6 +926,17 @@ function loadLeaderList() {
   })
 }
 
+/** 负责人变化联动安排日期：首次选人填当前日期（仅空时填，不覆盖手填）；清空负责人则清空安排日期 */
+function onLeaderChange(val) {
+  if (val && val.length > 0) {
+    if (!form.value.assignDate) {
+      form.value.assignDate = proxy.parseTime(new Date(), '{y}-{m}-{d}')
+    }
+  } else {
+    form.value.assignDate = undefined
+  }
+}
+
 /** 类别树节点过滤（只展示小类可选，大类不可选） */
 function filterCategoryNode(value, data) {
   if (!value) return true
@@ -924,6 +1007,7 @@ function resetQuery() {
 /** 多选框选中数据 */
 function handleSelectionChange(selection) {
   ids.value = selection.map(item => item.id)
+  currentSelection.value = selection
   single.value = selection.length !== 1
   multiple.value = !selection.length
 }
@@ -966,6 +1050,8 @@ function handleUpdate(row) {
     }
     open.value = true
     title.value = "修改项目"
+    // 打开弹窗即按"安排日期→今天"实时计算总时长（不依赖用户重新选择日期）
+    refreshFormDuration()
   })
 }
 
@@ -1080,6 +1166,12 @@ function submitPasteData() {
 function submitForm() {
   proxy.$refs["projectRef"].validate(valid => {
     if (valid) {
+      // 总时长由后端自动计算：进行中项目提交时不携带，后端按"安排日期→今天"重算；
+      // 办结/归档项目保留固定值（后端跳过重算）
+      const st = form.value.status
+      if (st !== 'closed' && st !== 'archived') {
+        form.value.totalDuration = null
+      }
       if (form.value.id != undefined) {
         updateProject(form.value).then(response => {
           proxy.$modal.msgSuccess("修改成功")
@@ -1305,5 +1397,11 @@ loadDistinctValues()
 .compact-ops {
   margin-top: 5px !important;
   margin-bottom: 0 !important;
+}
+
+/* 列表总时长"计算中..." */
+.duration-loading {
+  color: #a8abb2;
+  font-size: 12px;
 }
 </style>
