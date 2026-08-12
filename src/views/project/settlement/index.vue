@@ -431,9 +431,11 @@ import { categoryTreeselectFull } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { getDistinctValues } from "@/api/project/project"
 import { checkPermi } from "@/utils/permission"
+import useSearchMemoryStore from "@/store/modules/searchMemory"
 import cache from '@/plugins/cache'
 
 const { proxy } = getCurrentInstance()
+const searchMemory = useSearchMemoryStore()
 
 const treeData = ref([])
 const loading = ref(false)
@@ -682,6 +684,8 @@ function onStatusChange(val) {
 }
 
 function handleQuery() {
+  // 同步工程编号到全局记忆（含清空）
+  searchMemory.setProjectCode(queryParams.value.projectCode)
   getList()
 }
 
@@ -930,6 +934,10 @@ function loadDistinctValues() {
 
 loadColumns()
 getList()
+// 全局工程编号回填：仅回填输入框，不自动查询（用户点「查询」才生效）
+if (searchMemory.projectCode && !queryParams.value.projectCode) {
+  queryParams.value.projectCode = searchMemory.projectCode
+}
 loadDistinctValues()
 </script>
 

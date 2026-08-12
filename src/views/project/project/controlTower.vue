@@ -13,7 +13,7 @@
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" icon="Search" @click="getList">查询</el-button>
+        <el-button type="primary" icon="Search" @click="handleQuery">查询</el-button>
         <el-button icon="Refresh" @click="resetQuery">重置</el-button>
       </el-form-item>
     </el-form>
@@ -167,9 +167,11 @@
 import { ref, reactive, computed, onMounted, getCurrentInstance } from 'vue'
 import { listProject, changeProjectStatus } from "@/api/project/project"
 import ProjectDetailDrawer from "@/components/ProjectDetailDrawer"
+import useSearchMemoryStore from "@/store/modules/searchMemory"
 
 const { proxy } = getCurrentInstance()
 const { proj_project_status } = useDict("proj_project_status")
+const searchMemory = useSearchMemoryStore()
 
 const loading = ref(false)
 const dataList = ref([])
@@ -224,6 +226,12 @@ const patrolStats = computed(() => ({
   overdueTasks: dataList.value.reduce((s, r) => s + r.risks.overdueTasks, 0),
   overduePayments: dataList.value.reduce((s, r) => s + r.risks.overduePayments, 0)
 }))
+
+/** 查询：同步工程编号到全局记忆（含清空） */
+function handleQuery() {
+  searchMemory.setProjectCode(queryParams.projectCode)
+  getList()
+}
 
 function getList() {
   loading.value = true
@@ -301,7 +309,13 @@ function handleAdd() {
   proxy.$modal.msgInfo('请使用原项目列表页的新增功能')
 }
 
-onMounted(getList)
+onMounted(() => {
+  getList()
+  // 全局工程编号回填：仅回填输入框，不自动查询（用户点「查询」才生效）
+  if (searchMemory.projectCode && !queryParams.projectCode) {
+    queryParams.projectCode = searchMemory.projectCode
+  }
+})
 </script>
 
 <style scoped>

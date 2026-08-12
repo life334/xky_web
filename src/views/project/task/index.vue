@@ -71,12 +71,14 @@
          </el-table-column>
          <el-table-column label="安排日期" align="center" prop="assignDate" width="120">
             <template #default="scope">
-               <span>{{ parseTime(scope.row.assignDate, '{y}-{m}-{d}') }}</span>
+               <span v-if="scope.row.assignDate">{{ parseTime(scope.row.assignDate, '{y}-{m}-{d}') }}</span>
+               <span v-else style="color: #c0c4cc">-</span>
             </template>
          </el-table-column>
          <el-table-column label="要求完成" align="center" prop="requiredFinishDate" width="120">
             <template #default="scope">
-               <span>{{ parseTime(scope.row.requiredFinishDate, '{y}-{m}-{d}') }}</span>
+               <span v-if="scope.row.requiredFinishDate">{{ parseTime(scope.row.requiredFinishDate, '{y}-{m}-{d}') }}</span>
+               <span v-else style="color: #c0c4cc">-</span>
             </template>
          </el-table-column>
          <el-table-column label="实际完成" align="center" prop="actualFinishDate" width="120">
@@ -86,7 +88,13 @@
             </template>
          </el-table-column>
          <el-table-column label="工期要求" align="center" prop="durationRequire" min-width="100" />
-         <el-table-column label="总时长(天)" align="center" prop="totalDuration" width="100" />
+         <el-table-column label="总时长(天)" align="center" prop="totalDuration" width="110">
+            <template #default="scope">
+               <span v-if="scope.row.totalDuration != null">{{ scope.row.totalDuration }}</span>
+               <span v-else-if="scope.row.assignDate">{{ scope.row.liveDuration != null ? scope.row.liveDuration : '计算中...' }}</span>
+               <span v-else style="color: #c0c4cc">-</span>
+            </template>
+         </el-table-column>
          <el-table-column label="状态" align="center" prop="status" width="100">
             <template #default="scope">
                <dict-tag :options="proj_task_status" :value="scope.row.status" />
@@ -226,6 +234,7 @@
 import { listTask, getTask, addTask, updateTask, delTask } from "@/api/project/task"
 import { listProject } from "@/api/project/project"
 import { listUserOptions } from "@/api/system/user"
+import { countWorkdays } from "@/utils/workday"
 
 const { proxy } = getCurrentInstance()
 const { proj_task_status } = useDict("proj_task_status")
@@ -310,7 +319,17 @@ function handleViewModeChange() {
 function getList() {
   loading.value = true
   listTask(queryParams.value).then(response => {
-    taskList.value = response.rows
+    const rows = response.rows || []
+    // 总时长：办结显示存储值；进行中实时算「安排日期→今天」工作日（countWorkdays 是异步的，
+    // 不能直接在模板调用，这里加载后预计算写入每行 liveDuration）
+    rows.forEach(row => {
+      if (row.totalDuration == null && row.assignDate) {
+        countWorkdays(row.assignDate, new Date())
+          .then(v => { row.liveDuration = v })
+          .catch(() => { row.liveDuration = null })
+      }
+    })
+    taskList.value = rows
     total.value = response.total
     loading.value = false
   })
@@ -354,7 +373,8 @@ function reset() {
   proxy.resetForm("taskRef")
 }
 
-/** 根据日期自动计算工期和总时长 */
+/** 任务总时长：办结显示存储值；进行中实时算「安排日期→今天」工作日（与项目总时长口径一致） */
+/** 计算工期要求/总时长（编辑弹窗内联动） */
 function calcDuration() {
   // 工期要求 = 要求完成日期 - 安排日期
   if (form.value.assignDate && form.value.requiredFinishDate) {

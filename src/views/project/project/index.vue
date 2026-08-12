@@ -517,11 +517,13 @@ import ExcelImportDialog from "@/components/ExcelImportDialog"
 import { ArrowRight } from '@element-plus/icons-vue'
 import { checkRole } from "@/utils/permission"
 import { countWorkdays } from "@/utils/workday"
+import useSearchMemoryStore from "@/store/modules/searchMemory"
 /** 格式化日期 YYYY-MM-DD */
 function fmt(d) { return d.toISOString().slice(0, 10) }
 
 const { proxy } = getCurrentInstance()
 const { proj_project_status, proj_task_status } = useDict("proj_project_status", "proj_task_status")
+const searchMemory = useSearchMemoryStore()
 
 const projectList = ref([])
 const open = ref(false)
@@ -1043,6 +1045,8 @@ function reset() {
 /** 搜索按钮操作 */
 function handleQuery() {
   queryParams.value.pageNum = 1
+  // 同步工程编号到全局记忆（含清空）
+  searchMemory.setProjectCode(queryParams.value.projectCode)
   getList()
 }
 
@@ -1287,6 +1291,10 @@ function handleExport() {
 }
 
 getList()
+// 全局工程编号回填：仅回填输入框，不自动查询（用户点「查询」才生效）
+if (searchMemory.projectCode && !queryParams.value.projectCode) {
+  queryParams.value.projectCode = searchMemory.projectCode
+}
 loadColumns()
 loadSavedSchemes()
 loadCategoryTree()

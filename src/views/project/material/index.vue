@@ -44,7 +44,7 @@
                   </el-select>
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">提交时间</div>
+                  <div class="filter-item-label">交付时间</div>
                   <el-date-picker v-model="submitTimeRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onSubmitTimeChange" />
                </div>
                <div class="filter-item">
@@ -133,8 +133,8 @@
          <el-form ref="materialRef" :model="form" :rules="rules" label-width="90px">
             <el-row :gutter="20">
                <el-col :span="12">
-                  <el-form-item label="提交时间" prop="submitTime">
-                     <el-date-picker v-model="form.submitTime" type="datetime" placeholder="选择提交时间" value-format="YYYY-MM-DD HH:mm:ss" style="width: 100%" />
+                  <el-form-item label="交付时间" prop="submitTime">
+                     <el-date-picker v-model="form.submitTime" type="datetime" placeholder="选择交付时间" value-format="YYYY-MM-DD HH:mm:ss" style="width: 100%" />
                   </el-form-item>
                </el-col>
                <el-col :span="12">
@@ -226,10 +226,12 @@
 import { listMaterial, getMaterial, updateMaterial, delMaterial, borrowMaterial, returnMaterial, getFlowList, getMaterialStatusCounts, getMaterialColumns } from "@/api/project/material"
 import { listProject } from "@/api/project/project"
 import { listUserOptions } from "@/api/system/user"
+import useSearchMemoryStore from "@/store/modules/searchMemory"
 import cache from '@/plugins/cache'
 
 
 const { proxy } = getCurrentInstance()
+const searchMemory = useSearchMemoryStore()
 
 // 字典
 const { proj_material_result_type, proj_material_status, proj_material_submit_status } = useDict("proj_material_result_type", "proj_material_status", "proj_material_submit_status")
@@ -249,7 +251,7 @@ const FALLBACK_COLUMNS = [
   { key: 'engineeringProject', label: '委托任务', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: true },
-  { key: 'submitTime', label: '提交时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
+  { key: 'submitTime', label: '交付时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
   { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
   { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
   { key: 'resultType', label: '成果类型', type: 'dict', group: 'business', prop: 'resultType', defaultVisible: true },
@@ -394,7 +396,7 @@ function reset() {
   proxy.resetForm("materialRef")
 }
 
-function handleQuery() { queryParams.value.pageNum = 1; getList() }
+function handleQuery() { queryParams.value.pageNum = 1; searchMemory.setProjectCode(queryParams.value.projectCode); getList() }
 function resetQuery() {
   submitTimeRange.value = []
   queryParams.value.keyword = undefined
@@ -439,7 +441,7 @@ function handleStatusClick(status) {
   handleQuery()
 }
 
-/** 提交时间变更 */
+/** 交付时间变更 */
 function onSubmitTimeChange(val) {
   if (val && val.length === 2) {
     queryParams.value.submitTimeBegin = val[0]
@@ -568,6 +570,10 @@ function handleExport() {
 loadOptions()
 loadColumns()
 getList()
+// 全局工程编号回填：仅回填输入框，不自动查询（用户点「查询」才生效）
+if (searchMemory.projectCode && !queryParams.value.projectCode) {
+  queryParams.value.projectCode = searchMemory.projectCode
+}
 loadStatusCounts()
 </script>
 

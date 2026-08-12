@@ -55,25 +55,28 @@
          <!-- 任务安排 -->
          <el-tab-pane label="任务安排" name="task">
             <el-table v-loading="taskLoading" :data="taskList" stripe border style="margin-top: 8px">
-               <el-table-column label="任务名称" align="center" prop="taskName" :show-overflow-tooltip="false" min-width="160" />
+               <!-- <el-table-column label="任务名称" align="center" prop="taskName" :show-overflow-tooltip="false" min-width="160" /> -->
                <el-table-column label="执行人" align="center" prop="userName" min-width="90" />
-               <el-table-column label="安排日期" align="center" prop="assignDate" width="110">
-                  <template #default="scope"><span>{{ parseTime(scope.row.assignDate, '{y}-{m}-{d}') }}</span></template>
+               <el-table-column label="安排日期" align="center" prop="assignDate" min-width="110">
+                  <template #default="scope">
+                     <span v-if="scope.row.assignDate">{{ parseTime(scope.row.assignDate, '{y}-{m}-{d}') }}</span>
+                  </template>
                </el-table-column>
-               <el-table-column label="要求完成" align="center" prop="requiredFinishDate" width="110">
-                  <template #default="scope"><span>{{ parseTime(scope.row.requiredFinishDate, '{y}-{m}-{d}') }}</span></template>
+               <el-table-column label="要求完成" align="center" prop="requiredFinishDate" min-width="110">
+                  <template #default="scope">
+                     <span v-if="scope.row.requiredFinishDate">{{ parseTime(scope.row.requiredFinishDate, '{y}-{m}-{d}') }}</span>
+                  </template>
                </el-table-column>
-               <el-table-column label="实际完成" align="center" prop="actualFinishDate" width="110">
+               <el-table-column label="实际完成" align="center" prop="actualFinishDate" min-width="110">
                   <template #default="scope">
                      <span v-if="scope.row.actualFinishDate">{{ parseTime(scope.row.actualFinishDate, '{y}-{m}-{d}') }}</span>
                   </template>
                </el-table-column>
                <el-table-column label="工期要求" align="center" prop="durationRequire" min-width="100" />
-               <el-table-column label="总时长(天)" align="center" prop="totalDuration" width="90" />
-               <el-table-column label="状态" align="center" prop="status" width="90">
+               <el-table-column label="总时长(天)" align="center" prop="totalDuration" min-width="100">
                   <template #default="scope">
-                     <dict-tag v-if="scope.row.status" :options="proj_task_status" :value="scope.row.status" />
-                     <span v-else style="color: #c0c4cc">—</span>
+                     <span v-if="scope.row.totalDuration != null">{{ scope.row.totalDuration }}</span>
+                     <span v-else-if="scope.row.assignDate">{{ scope.row.liveDuration != null ? scope.row.liveDuration : '' }}</span>
                   </template>
                </el-table-column>
             </el-table>
@@ -157,7 +160,7 @@
          </el-tab-pane>
 
          <!-- 产值结算 -->
-         <el-tab-pane label="产值结算" name="settlement">
+         <el-tab-pane label="费用结算" name="settlement">
             <div v-loading="settlementLoading">
                <el-row :gutter="12" style="margin-top: 8px">
                <el-col :span="6">
@@ -186,6 +189,40 @@
                   <span>已收 {{ formatMoney(settlementOverview.receivedAmount) }} / 结算总额 {{ formatMoney(settlementOverview.totalOutput) }}</span>
                   <span>{{ settleProgressPercent }}%</span>
                </div>
+            </div>
+            <!-- 付款明细（预付款/尾款各一条，来源：付款记录） -->
+            <div class="settle-progress-card" style="margin-top: 12px;">
+               <div class="settle-progress-head">
+                  <span class="settle-progress-label">付款明细</span>
+               </div>
+               <el-table :data="settlementPayments" stripe border style="margin-top: 8px">
+                  <el-table-column label="付款类型" align="center" prop="paymentType" min-width="100">
+                     <template #default="scope">
+                        <dict-tag :options="proj_payment_type" :value="scope.row.paymentType" />
+                     </template>
+                  </el-table-column>
+                  <el-table-column label="金额" align="right" min-width="110">
+                     <template #default="scope"><span>{{ formatMoney(scope.row.amount) }}</span></template>
+                  </el-table-column>
+                  <el-table-column label="付款时间" align="center" prop="payTime" min-width="110">
+                     <template #default="scope"><span v-if="scope.row.payTime">{{ parseTime(scope.row.payTime, '{y}-{m}-{d}') }}</span></template>
+                  </el-table-column>
+                  <el-table-column label="付款方式" align="center" prop="payMethod" min-width="100" />
+                  <el-table-column label="付款单位" align="center" prop="payUnit" min-width="150" />
+                  <el-table-column label="开票状态" align="center" prop="invoiceStatus" min-width="90">
+                     <template #default="scope">
+                        <el-tag v-if="scope.row.invoiceStatus === '未开'" type="info">未开</el-tag>
+                        <el-tag v-else-if="scope.row.invoiceStatus === '已开'" type="success">已开</el-tag>
+                        <el-tag v-else-if="scope.row.invoiceStatus === '已作废'" type="danger">已作废</el-tag>
+                        <span v-else-if="scope.row.invoiceStatus">{{ scope.row.invoiceStatus }}</span>
+                     </template>
+                  </el-table-column>
+                  <el-table-column label="发票号码" align="center" prop="invoiceNo" min-width="130" />
+                  <el-table-column label="开票金额" align="right" min-width="110">
+                     <template #default="scope"><span>{{ formatMoney(scope.row.invoiceAmount) }}</span></template>
+                  </el-table-column>
+                  <el-table-column label="备注" align="center" prop="remark" min-width="120" />
+               </el-table>
             </div>
             <el-alert type="info" :closable="false" style="margin-top: 12px">
                产值数据来源于「费用结算」模块的工作量核算，收款数据来源于「付款记录」页签。如需调整请在对应模块操作。
@@ -291,7 +328,7 @@ import { listUserOptions } from "@/api/system/user"
 import { countWorkdays } from "@/utils/workday"
 
 const { proxy } = getCurrentInstance()
-const { proj_payment_type, proj_project_status, proj_material_result_type, proj_material_status, proj_task_status } = useDict('proj_payment_type', 'proj_project_status', 'proj_material_result_type', 'proj_material_status', 'proj_task_status')
+const { proj_payment_type, proj_project_status, proj_material_result_type, proj_material_status } = useDict('proj_payment_type', 'proj_project_status', 'proj_material_result_type', 'proj_material_status')
 const route = useRoute()
 
 const projectId = route.params.projectId
@@ -324,11 +361,11 @@ const MATERIAL_COLUMNS_STORAGE_KEY = 'material-detail-columns'
 const materialColumns = ref({})
 const materialVisibleColumns = computed(() => Object.values(materialColumns.value).filter(c => c.visible))
 const materialFallbackColumns = [
-  { key: 'submitTime', label: '提交时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
+  { key: 'submitTime', label: '交付时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
   { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
   { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
   { key: 'resultType', label: '成果类型', type: 'dict', group: 'business', prop: 'resultType', defaultVisible: true },
-  { key: 'archiveDir', label: '目录', type: 'text', group: 'business', prop: 'archiveDir', defaultVisible: true },
+  { key: 'archiveDir', label: '存档目录', type: 'text', group: 'business', prop: 'archiveDir', defaultVisible: true },
   { key: 'status', label: '状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
   { key: 'remark', label: '备注', type: 'text', group: 'business', prop: 'remark', defaultVisible: true },
   { key: 'guarantorFlag', label: '是否担保', type: 'dict', group: 'business', prop: 'guarantorFlag', defaultVisible: false },
@@ -445,9 +482,12 @@ const pendingColor = computed(() => {
    return '#67c23a'
 })
 
+/** 付款明细（预付款/尾款各一条，来自 overview 接口附带的 payments） */
+const settlementPayments = computed(() => settlementOverview.value.payments || [])
+
 /** 格式化金额 */
 function formatMoney(val) {
-   if (val == null || val === "") return "-"
+   if (val == null || val === "") return ""
    return Number(val).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " 元"
 }
 
@@ -500,7 +540,17 @@ function refreshDuration() {
 function loadTasks() {
    taskLoading.value = true
    listTask({ projectId: projectId, pageNum: 1, pageSize: 1000 }).then(response => {
-      taskList.value = response.rows || []
+      const rows = response.rows || []
+      // 总时长：办结显示存储值；进行中实时算「安排日期→今天」工作日（countWorkdays 是异步的，
+      // 不能直接在模板调用，这里加载后预计算写入每行 liveDuration）
+      rows.forEach(row => {
+         if (row.totalDuration == null && row.assignDate) {
+            countWorkdays(row.assignDate, new Date())
+               .then(v => { row.liveDuration = v })
+               .catch(() => { row.liveDuration = null })
+         }
+      })
+      taskList.value = rows
       taskLoading.value = false
    }).catch(() => { taskLoading.value = false })
 }
