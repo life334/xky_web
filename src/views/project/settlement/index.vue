@@ -92,10 +92,108 @@
          v-loading="loading"
          :data="treeData"
          row-key="id"
-         :tree-props="{ children: 'children' }"
          stripe border
-         :default-expand-all="false"
+         highlight-current-row
+         @current-change="handleCurrentChange"
+         @expand-change="handleExpandChange"
       >
+         <!-- 展开行明细卡列（默认收起，点击箭头懒加载明细） -->
+         <el-table-column type="expand" width="46">
+            <template #default="scope">
+               <div class="expand-panel" v-loading="expandDetailLoading(scope.row.projectId)">
+                  <template v-if="expandDetails[scope.row.projectId]">
+                     <!-- ① 结算核对条 -->
+                     <div class="expand-check-bar">
+                        <div class="check-cell">
+                           <span class="check-label">结算总额</span>
+                           <span class="check-value">{{ formatMoney(scope.row.output) }}</span>
+                        </div>
+                        <div class="check-divider" />
+                        <div class="check-cell">
+                           <span class="check-label">已收金额</span>
+                           <span class="check-value">{{ formatMoney(effectiveReceived(scope.row)) }}</span>
+                        </div>
+                        <div class="check-divider" />
+                        <div class="check-cell">
+                           <span class="check-label">待收差额</span>
+                           <span class="check-value" :class="'text-' + effectiveStatus(scope.row)">{{ formatMoney(Math.abs(effectivePending(scope.row))) }}</span>
+                        </div>
+                        <el-tag :type="effectiveStatusMeta(scope.row).type" effect="dark" size="small">{{ effectiveStatusMeta(scope.row).text }}</el-tag>
+                     </div>
+
+                     <!-- ② 产值构成明细 -->
+                     <div class="expand-section-title">产值构成明细</div>
+                     <el-table :data="expandDetails[scope.row.projectId].workloads" stripe border size="small" show-summary :summary-method="getExpandSummaries">
+                        <el-table-column label="负责人" align="center" prop="userName" min-width="80" show-overflow-tooltip>
+                           <template #default="s"><span v-if="!s.row.userName" class="cell-placeholder">-</span>{{ s.row.userName }}</template>
+                        </el-table-column>
+                        <el-table-column label="项目类别" align="center" prop="categoryName" min-width="80" show-overflow-tooltip>
+                           <template #default="s"><span v-if="!s.row.categoryName" class="cell-placeholder">-</span>{{ s.row.categoryName }}</template>
+                        </el-table-column>
+                        <el-table-column label="工作量" align="center" prop="workload" min-width="100">
+                           <template #default="s">{{ s.row.workload != null ? s.row.workload : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column label="内部单价" align="center" prop="internalPrice"  min-width="110">
+                           <template #default="s">{{ s.row.internalPrice != null ? formatMoney(s.row.internalPrice) : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column label="外部单价" align="center" prop="externalPrice"  min-width="110">
+                           <template #default="s">{{ s.row.externalPrice != null ? formatMoney(s.row.externalPrice) : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column label="内部产值" align="center" prop="internalOutput" width="110">
+                           <template #default="s">{{ s.row.internalOutput != null ? formatMoney(s.row.internalOutput) : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column label="外部产值" align="center" prop="externalOutput"  min-width="110">
+                           <template #default="s">{{ s.row.externalOutput != null ? formatMoney(s.row.externalOutput) : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column label="小计" align="center"  min-width="110">
+                           <template #default="s">{{ s.row.internalOutput != null || s.row.externalOutput != null ? formatMoney((Number(s.row.internalOutput)||0) + (Number(s.row.externalOutput)||0)) : '-' }}</template>
+                        </el-table-column>
+                     </el-table>
+
+                     <!-- ③ 付款记录 -->
+                     <div class="expand-section-title">付款记录</div>
+                     <el-table v-if="(expandDetails[scope.row.projectId].payments || []).length" :data="expandDetails[scope.row.projectId].payments" stripe border size="small">
+                        <el-table-column label="付款类型" align="center"  min-width="90">
+                           <template #default="s">
+                              <el-tag :type="s.row.paymentType === 'advance' ? 'primary' : 'success'" size="small">{{ s.row.paymentType === 'advance' ? '预付款' : '尾款' }}</el-tag>
+                           </template>
+                        </el-table-column>
+                        <el-table-column label="金额" align="center"  min-width="110">
+                           <template #default="s">{{ formatMoney(s.row.amount) }}</template>
+                        </el-table-column>
+                        <el-table-column label="付款时间" align="center" prop="payTime" min-width="150" show-overflow-tooltip>
+                           <template #default="s">{{ s.row.payTime }}</template>
+                        </el-table-column>
+                        <el-table-column label="付款方式" align="center" prop="payMethod" min-width="100">
+                           <template #default="s">{{ s.row.payMethod }}</template>
+                        </el-table-column>
+                        <el-table-column label="付款单位" align="center" prop="payUnit" min-width="140" show-overflow-tooltip>
+                           <template #default="s">{{ s.row.payUnit }}</template>
+                        </el-table-column>
+                        <el-table-column label="开票金额" align="center" min-width="110">
+                           <template #default="s">{{ s.row.invoiceAmount != null ? formatMoney(s.row.invoiceAmount) : '' }}</template>
+                        </el-table-column>
+                        <el-table-column label="开票状态" align="center" min-width="90">
+                           <template #default="s">
+                              <el-tag v-if="s.row.invoiceStatus === '已开'" type="success" size="small">已开</el-tag>
+                              <el-tag v-else-if="s.row.invoiceStatus === '已作废'" type="danger" size="small">已作废</el-tag>
+                              <el-tag v-else-if="s.row.invoiceStatus === '未开'" type="info" size="small">未开</el-tag>
+                              <span v-else class="cell-placeholder">-</span>
+                           </template>
+                        </el-table-column>
+                        <el-table-column label="发票号码" align="center" prop="invoiceNo" min-width="130" >
+                           <template #default="s"><span v-if="!s.row.invoiceNo" class="cell-placeholder">-</span>{{ s.row.invoiceNo }}</template>
+                        </el-table-column>
+                        <el-table-column label="备注" align="center" prop="remark" min-width="120">
+                           <template #default="s"><span v-if="!s.row.remark" class="cell-placeholder">-</span>{{ s.row.remark }}</template>
+                        </el-table-column>
+                     </el-table>
+                     <div v-else class="expand-empty">暂无付款记录</div>
+                  </template>
+               </div>
+            </template>
+         </el-table-column>
+
          <el-table-column label="序号" align="center" width="60">
             <template #default="scope">
                <span>{{ scope.$index + 1 }}</span>
@@ -119,6 +217,12 @@
                <span v-else>{{ scope.row[col.prop] }}</span>
             </template>
          </el-table-column>
+         <!-- 结算状态：已结清 / 未结清 / 超额（不参与列显隐） -->
+         <el-table-column label="结算状态" align="center" width="92">
+            <template #default="scope">
+               <el-tag :type="effectiveStatusMeta(scope.row).type" effect="light">{{ effectiveStatusMeta(scope.row).text }}</el-tag>
+            </template>
+         </el-table-column>
          <el-table-column v-if="checkPermi(['project:settlement:edit'])" label="操作" align="center" width="80" fixed="right">
             <template #default="scope">
                <el-button
@@ -129,6 +233,26 @@
             </template>
          </el-table-column>
       </el-table>
+
+      <!-- 底部结算核对条（点击选中项目行后固定显示） -->
+      <div class="settle-check-bar" v-if="currentRow">
+         <div class="bar-title">结算核对 · {{ currentRow.projectCode }}</div>
+         <div class="bar-cell">
+            <span class="bar-label">结算总额</span>
+            <span class="bar-value">{{ formatMoney(currentRow.output) }}</span>
+         </div>
+         <div class="bar-divider" />
+         <div class="bar-cell">
+            <span class="bar-label">已收</span>
+            <span class="bar-value">{{ formatMoney(effectiveReceived(currentRow)) }}</span>
+         </div>
+         <div class="bar-divider" />
+         <div class="bar-cell">
+            <span class="bar-label">待收差额</span>
+            <span class="bar-value" :class="'text-' + effectiveStatus(currentRow)">{{ formatMoney(Math.abs(effectivePending(currentRow))) }}</span>
+         </div>
+         <el-tag :type="effectiveStatusMeta(currentRow).type" effect="dark">{{ effectiveStatusMeta(currentRow).text }}</el-tag>
+      </div>
 
       <!-- 编辑结算弹窗 -->
       <el-dialog 
@@ -440,6 +564,10 @@ const searchMemory = useSearchMemoryStore()
 const treeData = ref([])
 const loading = ref(false)
 const showSearch = ref(true)
+/** 当前选中行（底部结算核对条用） */
+const currentRow = ref(null)
+/** 展开明细缓存：projectId -> { loading, workloads, payments }（懒加载，刷新时清理） */
+const expandDetails = reactive({})
 /** 表格列显隐配置（后端接口动态加载；序号、操作列固定不参与） */
 const columns = ref({})
 /** 当前可见列（按接口返回顺序过滤） */
@@ -668,8 +796,93 @@ function getList() {
   params.projectStatus = selectedStatuses.value.join(',')
   treeListSettlement(params).then(response => {
     treeData.value = response.data || []
+    // 数据刷新后清理展开明细与选中行，避免旧数据残留
+    Object.keys(expandDetails).forEach(k => delete expandDetails[k])
+    currentRow.value = null
     loading.value = false
   })
+}
+
+// ===== 展开行明细卡 + 结算核对（平表模式） =====
+
+/** 已收金额：优先后端汇总值，缺失时前端兜底（预付款+尾款） */
+function effectiveReceived(row) {
+  if (row.receivedAmount != null) return Number(row.receivedAmount)
+  return (Number(row.prepayAmount) || 0) + (Number(row.tailAmount) || 0)
+}
+
+/** 待收差额 = 结算总额 - 已收 */
+function effectivePending(row) {
+  const output = Number(row.output) || 0
+  return output - effectiveReceived(row)
+}
+
+/** 结算状态：settled 已结清 / pending 未结清 / overdue 超额（后端字段优先，缺失时前端兜底计算） */
+function effectiveStatus(row) {
+  if (row.settlementStatus) return row.settlementStatus
+  const output = Number(row.output) || 0
+  const pending = effectivePending(row)
+  if (pending < -0.01) return 'overdue'
+  if (Math.abs(pending) <= 0.01 && output > 0) return 'settled'
+  return 'pending'
+}
+
+/** 状态标签元数据 */
+function effectiveStatusMeta(row) {
+  const st = effectiveStatus(row)
+  if (st === 'settled') return { text: '已结清', type: 'success' }
+  if (st === 'overdue') return { text: '超额', type: 'danger' }
+  return { text: '未结清', type: 'warning' }
+}
+
+/** 行选中（底部核对条） */
+function handleCurrentChange(row) {
+  currentRow.value = row || null
+}
+
+/** 展开态 loading 标记 */
+function expandDetailLoading(projectId) {
+  return expandDetails[projectId] ? expandDetails[projectId].loading : false
+}
+
+/** 展开/收起回调：首次展开时懒加载明细 */
+function handleExpandChange(row, expandedRows) {
+  if (expandedRows.includes(row) && !expandDetails[row.projectId]) {
+    loadExpandDetail(row)
+  }
+}
+
+/** 加载展开明细（工作量 + 付款记录） */
+function loadExpandDetail(row) {
+  expandDetails[row.projectId] = { loading: true, workloads: [], payments: [] }
+  getSettlementDetail(row.projectId).then(res => {
+    const detail = res.data || {}
+    expandDetails[row.projectId] = {
+      loading: false,
+      workloads: detail.workloads || [],
+      payments: detail.payments || []
+    }
+  }).catch(() => {
+    expandDetails[row.projectId] = { loading: false, workloads: [], payments: [] }
+    proxy.$modal.msgError("加载结算明细失败")
+  })
+}
+
+/** 产值构成表合计行：仅汇总工作量与产值列，单价列留空 */
+function getExpandSummaries({ columns, data }) {
+  const sums = []
+  columns.forEach((col, i) => {
+    if (i === 0) { sums[i] = '合计'; return }
+    if (col.property === 'internalPrice' || col.property === 'externalPrice') { sums[i] = ''; return }
+    if (col.property) {
+      let s = 0
+      data.forEach(r => { s += Number(r[col.property]) || 0 })
+      sums[i] = formatMoney(s)
+    } else {
+      sums[i] = ''
+    }
+  })
+  return sums
 }
 
 /** 状态胶囊点击 */
@@ -1101,4 +1314,67 @@ loadDistinctValues()
   padding-left: 8px;
   border-left: 2px solid #c0c4cc;
 }
+
+/* ===== 展开行明细卡 ===== */
+.expand-panel {
+  padding: 12px 20px 16px;
+  background: #fafbfd;
+}
+.expand-check-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.check-cell { display: inline-flex; align-items: baseline; gap: 8px; }
+.check-label { font-size: 12px; color: #909399; }
+.check-value { font-size: 15px; font-weight: bold; color: #303133; font-family: "JetBrains Mono", Consolas, monospace; }
+.check-divider { width: 1px; height: 20px; background: #e4e7ed; }
+.expand-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  margin: 6px 0 8px;
+  padding-left: 8px;
+  border-left: 3px solid #409eff;
+  line-height: 16px;
+}
+.cell-placeholder { color: #c0c4cc; }
+.expand-empty {
+  padding: 16px;
+  text-align: center;
+  color: #909399;
+  font-size: 13px;
+  background: #fff;
+  border: 1px dashed #e4e7ed;
+  border-radius: 6px;
+}
+
+/* ===== 底部结算核对条 ===== */
+.settle-check-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 10px 20px;
+  background: linear-gradient(90deg, #f0f7ff, #f8fafc);
+  border: 1px solid #d9ecff;
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+.bar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #409eff;
+  margin-right: 8px;
+}
+.bar-cell { display: inline-flex; align-items: baseline; gap: 8px; }
+.bar-label { font-size: 12px; color: #909399; }
+.bar-value { font-size: 16px; font-weight: bold; color: #303133; font-family: "JetBrains Mono", Consolas, monospace; }
+.bar-divider { width: 1px; height: 20px; background: #d9ecff; }
 </style>
