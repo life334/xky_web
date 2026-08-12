@@ -83,6 +83,9 @@
          <el-col :span="1.5">
             <el-button type="warning" size="small" plain icon="Download" @click="handleExport" v-hasPermi="['project:settlement:export']">导出</el-button>
          </el-col>
+         <el-col :span="1.5" style="margin-left:auto">
+            <right-toolbar v-model:showSearch="showSearch" :columns="columns" storage-key="settlement-list-columns" @queryTable="getList" />
+         </el-col>
       </el-row>
 
       <el-table
@@ -98,68 +101,24 @@
                <span>{{ scope.$index + 1 }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="工程编号" align="center" prop="projectCode" min-width="120" :show-overflow-tooltip="true">
+         <el-table-column v-for="col in visibleColumns" :key="col.key" :label="col.label" align="center" :prop="col.prop" :show-overflow-tooltip="true" :min-width="colWidth(col)">
             <template #default="scope">
-               <span v-if="scope.row.projectCode" style="font-weight:bold">{{ scope.row.projectCode }}</span>
+               <!-- 工程编号：加粗 -->
+               <span v-if="col.key === 'projectCode' && scope.row.projectCode" style="font-weight:bold">{{ scope.row.projectCode }}</span>
+               <!-- 开票状态：标签 -->
+               <template v-else-if="col.key === 'invoiceStatus'">
+                  <el-tag v-if="scope.row.invoiceStatus === '未开'" type="info">未开</el-tag>
+                  <el-tag v-else-if="scope.row.invoiceStatus === '已开'" type="success">已开</el-tag>
+                  <el-tag v-else-if="scope.row.invoiceStatus === '已作废'" type="danger">已作废</el-tag>
+               </template>
+               <!-- 金额字段 -->
+               <span v-else-if="col.type === 'money'"><span v-if="scope.row[col.prop] != null">{{ formatMoney(scope.row[col.prop]) }}</span></span>
+               <!-- 日期字段：原样显示 -->
+               <span v-else-if="col.type === 'date' && scope.row[col.prop]">{{ scope.row[col.prop] }}</span>
+               <!-- 其他：直接显示 -->
+               <span v-else>{{ scope.row[col.prop] }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="委托单位" align="center" prop="clientUnit" min-width="120" :show-overflow-tooltip="true" />
-         <el-table-column label="工程地点" align="center" prop="projectLocation" min-width="120" :show-overflow-tooltip="true" />
-         <el-table-column label="工作量" align="center" prop="workload" width="110">
-            <template #default="scope">
-               <span v-if="scope.row.workload != null">{{ scope.row.workload }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="内部产值" align="center" prop="internalOutput" width="120">
-            <template #default="scope">
-               <span v-if="scope.row.internalOutput != null">{{ formatMoney(scope.row.internalOutput) }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="外部产值" align="center" prop="externalOutput" width="120">
-            <template #default="scope">
-               <span v-if="scope.row.externalOutput != null">{{ formatMoney(scope.row.externalOutput) }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="预付款" align="center" prop="prepayAmount" width="100">
-            <template #default="scope">
-               <span v-if="scope.row.prepayAmount != null">{{ formatMoney(scope.row.prepayAmount) }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="预付款时间" align="center" prop="prepayDate" width="120">
-            <template #default="scope">
-               <span v-if="scope.row.prepayDate">{{ scope.row.prepayDate }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="付款单位" align="center" prop="payUnit" min-width="110" :show-overflow-tooltip="true" />
-         <el-table-column label="付款方式" align="center" prop="payMethod" width="100" />
-         <el-table-column label="尾款" align="center" prop="tailAmount" width="100">
-            <template #default="scope">
-               <span v-if="scope.row.tailAmount != null">{{ formatMoney(scope.row.tailAmount) }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="尾款时间" align="center" prop="tailDate" width="120">
-            <template #default="scope">
-               <span v-if="scope.row.tailDate">{{ scope.row.tailDate }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="开票状态" align="center" prop="invoiceStatus" width="90">
-            <template #default="scope">
-               <el-tag v-if="scope.row.invoiceStatus === '未开'" type="info">未开</el-tag>
-               <el-tag v-else-if="scope.row.invoiceStatus === '已开'" type="success">已开</el-tag>
-               <el-tag v-else-if="scope.row.invoiceStatus === '已作废'" type="danger">已作废</el-tag>
-            </template>
-         </el-table-column>
-         <el-table-column label="发票号码" align="center" prop="invoiceNo" min-width="120" :show-overflow-tooltip="true">
-            <template #default="scope">
-               <span v-if="scope.row.invoiceNo">{{ scope.row.invoiceNo }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="开票金额" align="center" prop="invoiceAmount" width="110">
-            <template #default="scope">
-               <span v-if="scope.row.invoiceAmount != null">{{ formatMoney(scope.row.invoiceAmount) }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="备注" align="center" prop="payRemark" min-width="140" :show-overflow-tooltip="true" />
          <el-table-column v-if="checkPermi(['project:settlement:edit'])" label="操作" align="center" width="80" fixed="right">
             <template #default="scope">
                <el-button
@@ -467,17 +426,93 @@
 
 <script setup name="Settlement">
 import { ElMessageBox } from 'element-plus'
-import { treeListSettlement, getSettlementDetail, saveSettlement } from "@/api/project/settlement"
+import { treeListSettlement, getSettlementDetail, saveSettlement, getSettlementColumns } from "@/api/project/settlement"
 import { categoryTreeselectFull } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { getDistinctValues } from "@/api/project/project"
 import { checkPermi } from "@/utils/permission"
+import cache from '@/plugins/cache'
 
 const { proxy } = getCurrentInstance()
 
 const treeData = ref([])
 const loading = ref(false)
 const showSearch = ref(true)
+/** 表格列显隐配置（后端接口动态加载；序号、操作列固定不参与） */
+const columns = ref({})
+/** 当前可见列（按接口返回顺序过滤） */
+const visibleColumns = computed(() => Object.values(columns.value).filter(c => c.visible))
+const COLUMNS_STORAGE_KEY = 'settlement-list-columns'
+/** 兜底清单：后端接口不可用（如后端未重启）时使用，保证表格不退化（与后端 /columns 默认可见列一致） */
+const FALLBACK_COLUMNS = [
+  { key: 'projectCode', label: '工程编号', type: 'text', group: 'business', prop: 'projectCode', defaultVisible: true },
+  { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
+  { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
+  { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
+  { key: 'engineeringProject', label: '工程项目', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: false },
+  { key: 'leaderNames', label: '负责人', type: 'text', group: 'business', prop: 'leaderNames', defaultVisible: false },
+  { key: 'userName', label: '人员', type: 'text', group: 'business', prop: 'userName', defaultVisible: false },
+  { key: 'categoryName', label: '项目类别', type: 'text', group: 'business', prop: 'categoryName', defaultVisible: false },
+  { key: 'workload', label: '工作量', type: 'number', group: 'business', prop: 'workload', defaultVisible: true },
+  { key: 'internalPrice', label: '内部单价', type: 'money', group: 'business', prop: 'internalPrice', defaultVisible: false },
+  { key: 'externalPrice', label: '外部单价', type: 'money', group: 'business', prop: 'externalPrice', defaultVisible: false },
+  { key: 'internalOutput', label: '内部产值', type: 'money', group: 'business', prop: 'internalOutput', defaultVisible: true },
+  { key: 'externalOutput', label: '外部产值', type: 'money', group: 'business', prop: 'externalOutput', defaultVisible: true },
+  { key: 'output', label: '总产值', type: 'money', group: 'business', prop: 'output', defaultVisible: false },
+  { key: 'prepayAmount', label: '预付款', type: 'money', group: 'business', prop: 'prepayAmount', defaultVisible: true },
+  { key: 'prepayDate', label: '预付款时间', type: 'date', group: 'business', prop: 'prepayDate', defaultVisible: true },
+  { key: 'payUnit', label: '付款单位', type: 'text', group: 'business', prop: 'payUnit', defaultVisible: true },
+  { key: 'payMethod', label: '付款方式', type: 'text', group: 'business', prop: 'payMethod', defaultVisible: true },
+  { key: 'tailAmount', label: '尾款', type: 'money', group: 'business', prop: 'tailAmount', defaultVisible: true },
+  { key: 'tailDate', label: '尾款时间', type: 'date', group: 'business', prop: 'tailDate', defaultVisible: true },
+  { key: 'invoiceStatus', label: '开票状态', type: 'text', group: 'business', prop: 'invoiceStatus', defaultVisible: true },
+  { key: 'invoiceNo', label: '发票号码', type: 'text', group: 'business', prop: 'invoiceNo', defaultVisible: true },
+  { key: 'invoiceAmount', label: '开票金额', type: 'money', group: 'business', prop: 'invoiceAmount', defaultVisible: true },
+  { key: 'payRemark', label: '备注', type: 'text', group: 'business', prop: 'payRemark', defaultVisible: true }
+]
+
+/** 把列元数据数组构建为 columns 对象（合并 localStorage 偏好） */
+function buildColumns(list) {
+  let saved = {}
+  try {
+    saved = cache.local.getJSON(COLUMNS_STORAGE_KEY) || {}
+  } catch (e) { /* 忽略本地存储异常 */ }
+  const obj = {}
+  list.forEach(col => {
+    obj[col.key] = {
+      key: col.key,
+      label: col.label,
+      type: col.type,
+      group: col.group,
+      prop: col.prop,
+      visible: saved[col.key] !== undefined ? !!saved[col.key] : !!col.defaultVisible
+    }
+  })
+  columns.value = obj
+}
+
+/** 从后端加载可显隐列元数据；接口不可用时降级到内置兜底清单 */
+async function loadColumns() {
+  try {
+    const list = await getSettlementColumns()
+    if (Array.isArray(list) && list.length > 0) {
+      buildColumns(list)
+    } else {
+      buildColumns(FALLBACK_COLUMNS)
+    }
+  } catch (e) {
+    console.error('加载列配置失败，使用内置默认列', e)
+    buildColumns(FALLBACK_COLUMNS)
+  }
+}
+
+/** 列宽自适应：日期/金额窄列，其余文本宽列 */
+function colWidth(col) {
+  if (col.type === 'date') return 120
+  if (col.type === 'money' || col.type === 'number') return 110
+  return 130
+}
+
 const selectedStatuses = ref(['closed', 'archived'])
 const editOpen = ref(false)
 const saveLoading = ref(false)
@@ -893,6 +928,7 @@ function loadDistinctValues() {
   }).catch(() => {})
 }
 
+loadColumns()
 getList()
 loadDistinctValues()
 </script>

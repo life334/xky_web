@@ -76,3 +76,11 @@ export function getMaterialStatusCounts() {
     method: 'get'
   })
 }
+
+// 查询资料列表可显隐列的元数据（显隐列面板 + 表格动态渲染用）
+export function getMaterialColumns() {
+  return request({
+    url: '/project/material/columns',
+    method: 'get'
+  })
+}

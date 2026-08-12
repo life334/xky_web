@@ -137,7 +137,7 @@
          </div>
          <div style="display:flex;align-items:center;gap:6px">
             <el-button type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:project:export']">导出</el-button>
-            <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" />
+            <right-toolbar v-model:showSearch="showSearch" :columns="columns" storage-key="project-list-columns" @queryTable="getList" />
          </div>
       </el-row>
 
@@ -151,44 +151,30 @@
                <span>{{ (queryParams.pageNum - 1) * queryParams.pageSize + scope.$index + 1 }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="工程编号" align="center" prop="projectCode" :show-overflow-tooltip="true" min-width="140" />
-         <el-table-column label="委托单位" align="center" prop="clientUnit"  min-width="180" />
-         <el-table-column label="联系人" align="center" prop="contactName" min-width="90" />
-         <el-table-column label="联系电话" align="center" prop="contactPhone"  :show-overflow-tooltip="true" min-width="120" />
-          <el-table-column label="工程项目" align="center" prop="engineeringProject" :show-overflow-tooltip="true" min-width="140" />
-         <el-table-column label="工程地点" align="center" prop="projectLocation" min-width="180" />
-         <el-table-column label="状态" align="center" prop="status" min-width="90">
+         <el-table-column v-for="col in visibleColumns" :key="col.key" :label="col.label" align="center" :prop="col.prop" :show-overflow-tooltip="false" :min-width="colWidth(col)">
             <template #default="scope">
-               <dict-tag :options="proj_project_status" :value="scope.row.status" />
-            </template>
-         </el-table-column>
-         <el-table-column label="项目名称" align="center" prop="projectName" :show-overflow-tooltip="true" min-width="150" />
-         
-         <el-table-column label="合同" align="center" prop="contractName" min-width="100" />
-         <el-table-column label="负责人" align="center" prop="leaderNames" min-width="110" />
-         <el-table-column label="安排日期" align="center" prop="assignDate" width="110">
-            <template #default="scope">
-               <span v-if="scope.row.assignDate">{{ parseTime(scope.row.assignDate, '{y}-{m}-{d}') }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="工期要求" align="center" prop="durationRequire" width="100">
-            <template #default="scope">
-               <span v-if="scope.row.durationRequire != null">{{ scope.row.durationRequire }}天</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="总时长" align="center" prop="totalDuration" width="105">
-            <template #default="scope">
-               <!-- 办结/归档：固定显示存储值 -->
-               <span v-if="scope.row.status === 'closed' || scope.row.status === 'archived'">
-                  <span v-if="scope.row.totalDuration != null">{{ scope.row.totalDuration }}天</span>
-                  <span v-else>-</span>
+               <!-- 状态：字典标签 -->
+               <dict-tag v-if="col.type === 'dict'" :options="proj_project_status" :value="scope.row[col.prop]" />
+               <!-- 日期字段 -->
+               <span v-else-if="col.type === 'date' && scope.row[col.prop]">{{ parseTime(scope.row[col.prop], '{y}-{m}-{d}') }}</span>
+               <!-- 工期要求：X天 -->
+               <span v-else-if="col.type === 'duration'"><span v-if="scope.row[col.prop] != null">{{ scope.row[col.prop] }}天</span></span>
+               <!-- 总时长：办结/归档固定显示存储值，进行中实时计算 -->
+               <span v-else-if="col.type === 'total'">
+                  <span v-if="scope.row.status === 'closed' || scope.row.status === 'archived'">
+                     <span v-if="scope.row.totalDuration != null">{{ scope.row.totalDuration }}天</span>
+                     <span v-else>-</span>
+                  </span>
+                  <span v-else>
+                     <span v-if="scope.row._duration != null">{{ scope.row._duration }}天</span>
+                     <span v-else-if="scope.row.assignDate" class="duration-loading">计算中...</span>
+                     <span v-else>-</span>
+                  </span>
                </span>
-               <!-- 进行中：按"安排日期→今天"实时计算工作日 -->
-               <span v-else>
-                  <span v-if="scope.row._duration != null">{{ scope.row._duration }}天</span>
-                  <span v-else-if="scope.row.assignDate" class="duration-loading">计算中...</span>
-                  <span v-else>-</span>
-               </span>
+               <!-- 动态字段：从 extra_data JSONB 取值 -->
+               <span v-else-if="col.type === 'dynamic'"><span v-if="scope.row.extraData && scope.row.extraData[col.key] != null">{{ scope.row.extraData[col.key] }}</span></span>
+               <!-- 其他：直接显示 -->
+               <span v-else>{{ scope.row[col.prop] }}</span>
             </template>
          </el-table-column>
          
@@ -405,7 +391,7 @@
       <!-- 作业清单对话框 -->
       <el-dialog :title="'作业清单 — ' + currentProjectName" :model-value="taskListOpen" @update:model-value="taskListOpen = $event" width="900px" append-to-body>
          <el-table v-loading="taskLoading" :data="taskListData" stripe border max-height="500">
-            <el-table-column label="任务名称" align="center" prop="taskName" :show-overflow-tooltip="true" min-width="160" />
+            <el-table-column label="任务名称" align="center" prop="taskName" :show-overflow-tooltip="false" min-width="160" />
             <el-table-column label="执行人" align="center" prop="userName" min-width="100" />
             <el-table-column label="安排日期" align="center" prop="assignDate" width="120">
                <template #default="scope">
@@ -521,7 +507,8 @@
 </template>
 
 <script setup name="Project">
-import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues } from "@/api/project/project"
+import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues, getProjectColumns } from "@/api/project/project"
+import cache from '@/plugins/cache'
 import { categoryTreeselect } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { listTask } from "@/api/project/task"
@@ -541,6 +528,73 @@ const open = ref(false)
 const detailOpen = ref(false)
 const loading = ref(true)
 const showSearch = ref(true)
+/** 表格列显隐配置（后端接口动态加载；序号、操作列固定不参与） */
+const columns = ref({})
+/** 当前可见列（按接口返回顺序过滤） */
+const visibleColumns = computed(() => Object.values(columns.value).filter(c => c.visible))
+const COLUMNS_STORAGE_KEY = 'project-list-columns'
+/** 兜底清单：后端接口不可用（如后端未重启）时使用，保证表格不退化 */
+const FALLBACK_COLUMNS = [
+  { key: 'projectCode', label: '工程编号', type: 'text', group: 'business', prop: 'projectCode', defaultVisible: true },
+  { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
+  { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
+  { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
+  { key: 'engineeringProject', label: '工程项目', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
+  { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
+  { key: 'status', label: '状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
+  { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
+  { key: 'contractName', label: '合同', type: 'text', group: 'business', prop: 'contractName', defaultVisible: false },
+  { key: 'leaderNames', label: '负责人', type: 'text', group: 'business', prop: 'leaderNames', defaultVisible: true },
+  { key: 'assignDate', label: '安排日期', type: 'date', group: 'business', prop: 'assignDate', defaultVisible: true },
+  { key: 'durationRequire', label: '工期要求', type: 'duration', group: 'business', prop: 'durationRequire', defaultVisible: true },
+  { key: 'totalDuration', label: '总时长', type: 'total', group: 'business', prop: 'totalDuration', defaultVisible: true },
+  { key: 'remark', label: '备注', type: 'text', group: 'business', prop: 'remark', defaultVisible: false },
+  { key: 'createTime', label: '创建时间', type: 'date', group: 'system', prop: 'createTime', defaultVisible: false },
+  { key: 'updateTime', label: '更新时间', type: 'date', group: 'system', prop: 'updateTime', defaultVisible: false }
+]
+
+/** 把列元数据数组构建为 columns 对象（合并 localStorage 偏好） */
+function buildColumns(list) {
+  let saved = {}
+  try {
+    saved = cache.local.getJSON(COLUMNS_STORAGE_KEY) || {}
+  } catch (e) { /* 忽略本地存储异常 */ }
+  const obj = {}
+  list.forEach(col => {
+    obj[col.key] = {
+      key: col.key,
+      label: col.label,
+      type: col.type,
+      group: col.group,
+      prop: col.prop,
+      visible: saved[col.key] !== undefined ? !!saved[col.key] : !!col.defaultVisible
+    }
+  })
+  columns.value = obj
+}
+
+/** 从后端加载可显隐列元数据；接口不可用时降级到内置兜底清单 */
+async function loadColumns() {
+  try {
+    const list = await getProjectColumns()
+    if (Array.isArray(list) && list.length > 0) {
+      buildColumns(list)
+    } else {
+      buildColumns(FALLBACK_COLUMNS)
+    }
+  } catch (e) {
+    console.error('加载列配置失败，使用内置默认列', e)
+    buildColumns(FALLBACK_COLUMNS)
+  }
+}
+/** 列宽自适应：日期/数字/字典窄列，其余文本宽列 */
+function colWidth(col) {
+  if (col.type === 'date') return 110
+  if (col.type === 'duration' || col.type === 'total' || col.type === 'dict') return 100
+  if (col.type === 'dynamic') return 140
+  return 140
+}
+
 const title = ref("")
 const total = ref(0)
 const single = ref(true)
@@ -757,6 +811,14 @@ function getList() {
   loading.value = true
   proxy.addDateRange(queryParams.value, dateRange.value)
   listProject(queryParams.value).then(response => {
+    // 越界保护：修改/删除后当前查询结果变少，若当前页码超出总页数，
+    // 主动回到第 1 页（element-plus 分页组件默认会自动跳到最后一页，造成"保存后跳到最后页"的错觉）
+    const maxPage = Math.max(1, Math.ceil((response.total || 0) / queryParams.value.pageSize))
+    if (queryParams.value.pageNum > maxPage) {
+      queryParams.value.pageNum = 1
+      getList()
+      return
+    }
     projectList.value = response.rows
     total.value = response.total
     loading.value = false
@@ -1172,20 +1234,36 @@ function submitForm() {
       if (st !== 'closed' && st !== 'archived') {
         form.value.totalDuration = null
       }
-      if (form.value.id != undefined) {
+      const savedId = form.value.id
+      if (savedId != undefined) {
         updateProject(form.value).then(response => {
           proxy.$modal.msgSuccess("修改成功")
           open.value = false
-          getList()
+          refreshListStayOnRow(savedId)
         })
       } else {
         addProject(form.value).then(response => {
           proxy.$modal.msgSuccess("新增成功")
           open.value = false
-          getList()
+          refreshListStayOnRow(undefined)
         })
       }
     }
+  })
+}
+
+/** 保存后刷新列表并定位到刚保存的项目所在页：
+ *  记录仍在当前筛选结果中 → 跳到它所在页；已被移出（改动了筛选字段）→ 回到第 1 页 */
+function refreshListStayOnRow(id) {
+  const pageSize = queryParams.value.pageSize || 10
+  listProject({ ...queryParams.value, pageNum: 1, pageSize: 10000 }).then(response => {
+    const rows = response.rows || []
+    const idx = id != undefined ? rows.findIndex(r => r.id === id) : -1
+    queryParams.value.pageNum = idx >= 0 ? Math.floor(idx / pageSize) + 1 : 1
+    getList()
+  }).catch(() => {
+    queryParams.value.pageNum = 1
+    getList()
   })
 }
 
@@ -1209,6 +1287,7 @@ function handleExport() {
 }
 
 getList()
+loadColumns()
 loadSavedSchemes()
 loadCategoryTree()
 loadUserList()

@@ -93,3 +93,11 @@ export function getDistinctValues(field) {
     params: { field }
   })
 }
+
+// 查询项目列表可显隐列的元数据（显隐列面板 + 表格动态渲染）
+export function getProjectColumns() {
+  return request({
+    url: '/project/project/columns',
+    method: 'get'
+  })
+}

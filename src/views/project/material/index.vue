@@ -3,7 +3,7 @@
       <!-- Row 1: 全局搜索 -->
       <div class="search-bar-row">
          <div class="search-input-wrapper">
-            <el-input v-model="queryParams.keyword" placeholder="搜索工程编号/项目名称/联系人/目录..." clearable @keyup.enter="handleQuery" @clear="handleQuery" class="global-search-input">
+            <el-input v-model="queryParams.keyword" placeholder="搜索工程编号/项目名称/联系人/存档目录..." clearable @keyup.enter="handleQuery" @clear="handleQuery" class="global-search-input">
                <template #prefix><el-icon><Search /></el-icon></template>
             </el-input>
          </div>
@@ -85,34 +85,29 @@
          <el-col :span="1.5" style="margin-left:auto">
             <el-button type="warning" size="small" plain icon="Download" @click="handleExport" v-hasPermi="['project:material:export']">导出</el-button>
          </el-col>
+         <el-col :span="1.5">
+            <right-toolbar v-model:showSearch="showSearch" :columns="columns" storage-key="material-list-columns" @queryTable="getList" />
+         </el-col>
       </el-row>
 
       <el-table v-loading="loading" :data="materialList" stripe border @selection-change="handleSelectionChange">
          <el-table-column type="selection" width="50" align="center" />
-         <el-table-column label="工程编号" align="center" prop="projectCode" min-width="130" :show-overflow-tooltip="false" />
-         <el-table-column label="委托任务" align="center" prop="engineeringProject" min-width="160" :show-overflow-tooltip="false" />
-         <el-table-column label="工程地点" align="center" prop="projectLocation" min-width="140" :show-overflow-tooltip="false" />
-         <el-table-column label="项目名称" align="center" prop="projectName" min-width="170" :show-overflow-tooltip="false" />
-         <el-table-column label="提交时间" align="center" prop="submitTime" min-width="155">
+         <el-table-column v-for="col in visibleColumns" :key="col.key" :label="col.label" align="center" :prop="col.prop" :show-overflow-tooltip="false" :min-width="colWidth(col)">
             <template #default="scope">
-               <span v-if="scope.row.submitTime">{{ parseTime(scope.row.submitTime, '{y}-{m}-{d}') }}</span>
+               <!-- 字典标签：按列 key 选择对应字典 -->
+               <template v-if="col.type === 'dict'">
+                  <dict-tag v-if="scope.row[col.prop]" :options="dictOptions(col.key)" :value="scope.row[col.prop]" />
+               </template>
+               <!-- 日期字段 -->
+               <span v-else-if="col.type === 'date' && scope.row[col.prop]">{{ parseTime(scope.row[col.prop], '{y}-{m}-{d}') }}</span>
+               <!-- 用户字段：显示昵称 -->
+               <span v-else-if="col.type === 'user'">{{ userNick(scope.row[col.prop]) }}</span>
+               <!-- 动态字段：从 extra_data JSONB 取值 -->
+               <span v-else-if="col.type === 'dynamic'"><span v-if="scope.row.extraData && scope.row.extraData[col.key] != null">{{ scope.row.extraData[col.key] }}</span></span>
+               <!-- 其他：直接显示 -->
+               <span v-else>{{ scope.row[col.prop] }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="联系人" align="center" prop="contactName" min-width="100" :show-overflow-tooltip="false" />
-         <el-table-column label="联系电话" align="center" prop="contactPhone" min-width="130" />
-         <el-table-column label="成果类型" align="center" prop="resultType" min-width="100">
-            <template #default="scope">
-               <dict-tag v-if="scope.row.resultType" :options="proj_material_result_type" :value="scope.row.resultType" />
-            </template>
-         </el-table-column>
-         <el-table-column label="目录" align="center" prop="archiveDir" min-width="160" :show-overflow-tooltip="false" />
-         <el-table-column label="资料状态" align="center" prop="status" min-width="95">
-            <template #default="scope">
-               <dict-tag v-if="scope.row.status" :options="proj_material_status" :value="scope.row.status" />
-               <span v-else style="color: #c0c4cc">—</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="备注" align="center" prop="remark" min-width="160" :show-overflow-tooltip="false" />
          <el-table-column label="操作" align="center" min-width="160" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
                <el-button v-if="scope.row.status === 'pending' || scope.row.status === 'returned'" link type="warning" @click="handleBorrow(scope.row)" v-hasPermi="['project:material:borrow']" v-text="scope.row.status === 'returned' ? '再次领取' : '领取'" />
@@ -168,9 +163,23 @@
                </el-col>
             </el-row>
             <el-row :gutter="20">
+               <el-col :span="12">
+                  <el-form-item label="是否担保">
+                     <el-checkbox v-model="form.guarantorFlag" true-value="Y" false-value="N">需要担保人</el-checkbox>
+                  </el-form-item>
+               </el-col>
+               <el-col :span="12">
+                  <el-form-item v-if="form.guarantorFlag === 'Y'" label="担保人" prop="guarantorId" :rules="[{ required: true, message: '请选择担保人', trigger: 'change' }]">
+                     <el-select v-model="form.guarantorId" filterable clearable placeholder="请选择担保人" style="width: 100%">
+                        <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
+                     </el-select>
+                  </el-form-item>
+               </el-col>
+            </el-row>
+            <el-row :gutter="20">
                <el-col :span="24">
-                  <el-form-item label="目录" prop="archiveDir">
-                     <el-input v-model="form.archiveDir" placeholder="请输入归档目录" maxlength="500" />
+                  <el-form-item label="存档目录" prop="archiveDir">
+                     <el-input v-model="form.archiveDir" placeholder="请输入存档目录" maxlength="500" />
                   </el-form-item>
                </el-col>
             </el-row>
@@ -186,29 +195,6 @@
             <div class="dialog-footer">
                <el-button type="primary" @click="submitForm">确 定</el-button>
                <el-button @click="cancel">取 消</el-button>
-            </div>
-         </template>
-      </el-dialog>
-
-      <!-- 领取/归还对话框 -->
-      <el-dialog :title="borrowTitle" :model-value="borrowOpen" @update:model-value="borrowOpen = $event" width="500px" append-to-body>
-         <el-form ref="borrowRef" :model="borrowForm" label-width="80px">
-            <el-form-item v-if="borrowForm.flowType === '领取'" label="是否担保">
-               <el-checkbox v-model="borrowForm.guarantorFlag">需要担保人</el-checkbox>
-            </el-form-item>
-            <el-form-item v-if="borrowForm.flowType === '领取' && borrowForm.guarantorFlag" label="担保人" prop="guarantorId" :rules="[{ required: true, message: '请选择担保人', trigger: 'change' }]">
-               <el-select v-model="borrowForm.guarantorId" filterable clearable placeholder="请选择担保人" style="width: 100%">
-                  <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
-               </el-select>
-            </el-form-item>
-            <el-form-item label="备注">
-               <el-input v-model="borrowForm.remark" type="textarea" placeholder="备注（选填）" maxlength="200" :rows="2" />
-            </el-form-item>
-         </el-form>
-         <template #footer>
-            <div class="dialog-footer">
-               <el-button type="primary" @click="submitBorrow">确 定</el-button>
-               <el-button @click="borrowOpen = false">取 消</el-button>
             </div>
          </template>
       </el-dialog>
@@ -237,9 +223,10 @@
 </template>
 
 <script setup name="Material">
-import { listMaterial, getMaterial, updateMaterial, delMaterial, borrowMaterial, returnMaterial, getFlowList, getMaterialStatusCounts } from "@/api/project/material"
+import { listMaterial, getMaterial, updateMaterial, delMaterial, borrowMaterial, returnMaterial, getFlowList, getMaterialStatusCounts, getMaterialColumns } from "@/api/project/material"
 import { listProject } from "@/api/project/project"
 import { listUserOptions } from "@/api/system/user"
+import cache from '@/plugins/cache'
 
 
 const { proxy } = getCurrentInstance()
@@ -251,6 +238,94 @@ const materialList = ref([])
 const open = ref(false)
 const loading = ref(true)
 const showSearch = ref(true)
+/** 表格列显隐配置（后端接口动态加载；序号、操作列固定不参与） */
+const columns = ref({})
+/** 当前可见列（按接口返回顺序过滤） */
+const visibleColumns = computed(() => Object.values(columns.value).filter(c => c.visible))
+const COLUMNS_STORAGE_KEY = 'material-list-columns'
+/** 兜底清单：后端接口不可用（如后端未重启）时使用，保证表格不退化（与后端 getListColumns 默认可见列一致） */
+const FALLBACK_COLUMNS = [
+  { key: 'projectCode', label: '工程编号', type: 'text', group: 'business', prop: 'projectCode', defaultVisible: true },
+  { key: 'engineeringProject', label: '委托任务', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
+  { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
+  { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: true },
+  { key: 'submitTime', label: '提交时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
+  { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
+  { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
+  { key: 'resultType', label: '成果类型', type: 'dict', group: 'business', prop: 'resultType', defaultVisible: true },
+  { key: 'archiveDir', label: '存档目录', type: 'text', group: 'business', prop: 'archiveDir', defaultVisible: true },
+  { key: 'status', label: '资料状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
+  { key: 'submitStatus', label: '提交状态', type: 'dict', group: 'business', prop: 'submitStatus', defaultVisible: false },
+  { key: 'guarantorFlag', label: '是否担保', type: 'dict', group: 'business', prop: 'guarantorFlag', defaultVisible: false },
+  { key: 'guarantorId', label: '担保人', type: 'user', group: 'business', prop: 'guarantorId', defaultVisible: false },
+  { key: 'remark', label: '备注', type: 'text', group: 'business', prop: 'remark', defaultVisible: true },
+  { key: 'id', label: 'ID', type: 'number', group: 'system', prop: 'id', defaultVisible: false },
+  { key: 'createBy', label: '创建人', type: 'text', group: 'system', prop: 'createBy', defaultVisible: false },
+  { key: 'createTime', label: '创建时间', type: 'date', group: 'system', prop: 'createTime', defaultVisible: false },
+  { key: 'updateBy', label: '更新人', type: 'text', group: 'system', prop: 'updateBy', defaultVisible: false },
+  { key: 'updateTime', label: '更新时间', type: 'date', group: 'system', prop: 'updateTime', defaultVisible: false }
+]
+
+/** 把列元数据数组构建为 columns 对象（合并 localStorage 偏好） */
+function buildColumns(list) {
+  let saved = {}
+  try {
+    saved = cache.local.getJSON(COLUMNS_STORAGE_KEY) || {}
+  } catch (e) { /* 忽略本地存储异常 */ }
+  const obj = {}
+  list.forEach(col => {
+    obj[col.key] = {
+      key: col.key,
+      label: col.label,
+      type: col.type,
+      group: col.group,
+      prop: col.prop,
+      visible: saved[col.key] !== undefined ? !!saved[col.key] : !!col.defaultVisible
+    }
+  })
+  columns.value = obj
+}
+
+/** 从后端加载可显隐列元数据；接口不可用时降级到内置兜底清单 */
+async function loadColumns() {
+  try {
+    const list = await getMaterialColumns()
+    if (Array.isArray(list) && list.length > 0) {
+      buildColumns(list)
+    } else {
+      buildColumns(FALLBACK_COLUMNS)
+    }
+  } catch (e) {
+    console.error('加载列配置失败，使用内置默认列', e)
+    buildColumns(FALLBACK_COLUMNS)
+  }
+}
+
+/** 列宽自适应：日期/字典窄列，其余文本宽列 */
+function colWidth(col) {
+  if (col.type === 'date') return 110
+  if (col.type === 'dict') return 100
+  if (col.type === 'dynamic') return 140
+  if (col.type === 'user') return 110
+  return 140
+}
+
+/** 字典标签映射：dict 列按 key 选择对应字典 */
+function dictOptions(key) {
+  if (key === 'resultType') return proj_material_result_type.value
+  if (key === 'status') return proj_material_status.value
+  if (key === 'submitStatus') return proj_material_submit_status.value
+  if (key === 'guarantorFlag') return [{ value: 'Y', label: '需要' }, { value: 'N', label: '不需要' }]
+  return []
+}
+
+/** 用户ID → 昵称（担保人列显示） */
+function userNick(userId) {
+  if (!userId) return ''
+  const u = userOptions.value.find(u => u.userId === userId)
+  return u ? u.nickName : userId
+}
+
 const title = ref("")
 const total = ref(0)
 const single = ref(true)
@@ -263,12 +338,6 @@ const userOptions = ref([])
 const submitTimeRange = ref([])
 const statusCounts = ref({})
 const advancedVisible = ref(false)
-
-// 领取/归还
-const borrowOpen = ref(false)
-const borrowTitle = ref("")
-const borrowForm = ref({ flowType: "", guarantorFlag: false, guarantorId: undefined, remark: "" })
-const currentMaterial = ref({})
 
 // 流转记录
 const flowOpen = ref(false)
@@ -319,7 +388,8 @@ function reset() {
   form.value = {
     id: undefined, projectId: undefined, submitTime: undefined,
     contactName: undefined, contactPhone: undefined,
-    resultType: undefined, archiveDir: undefined, remark: undefined
+    resultType: undefined, archiveDir: undefined, remark: undefined,
+    guarantorFlag: 'N', guarantorId: undefined
   }
   proxy.resetForm("materialRef")
 }
@@ -424,6 +494,12 @@ function handleUpdate(row) {
   const id = row.id || ids.value[0]
   getMaterial(id).then(response => {
     form.value = response.data
+    // 联系人/电话默认取关联项目当前值（同步项目最新，弹窗内可编辑，保存后写入资料表）
+    const proj = projectOptions.value.find(p => p.id === form.value.projectId)
+    if (proj) {
+      form.value.contactName = proj.contactName
+      form.value.contactPhone = proj.contactPhone
+    }
     open.value = true
     title.value = "修改资料提交"
   })
@@ -441,48 +517,30 @@ function submitForm() {
   })
 }
 
-/** 领取/再次领取 */
+/** 领取/再次领取：仅确认，担保人由后端从资料记录读取 */
 function handleBorrow(row) {
-  currentMaterial.value = row
-  borrowForm.value = { flowType: "领取", guarantorFlag: false, guarantorId: undefined, remark: "" }
-  borrowTitle.value = row.status === "returned" ? "再次领取" : "领取资料"
-  borrowOpen.value = true
-}
-
-/** 归还 */
-function handleReturn(row) {
-  currentMaterial.value = row
-  borrowForm.value = { flowType: "归还", guarantorFlag: false, guarantorId: undefined, remark: "" }
-  borrowTitle.value = "归还资料"
-  borrowOpen.value = true
-}
-
-/** 提交领取/归还 */
-function submitBorrow() {
-  const id = currentMaterial.value.id
-  const data = { remark: borrowForm.value.remark }
-  if (borrowForm.value.flowType === "领取") {
-    if (borrowForm.value.guarantorFlag) {
-      if (!borrowForm.value.guarantorId) {
-        proxy.$modal.msgWarning("请选择担保人")
-        return
-      }
-      data.guarantorId = borrowForm.value.guarantorId
-    }
-    borrowMaterial(id, data).then(() => {
+  // 资料标记需要担保但未设置担保人时拦截（后端同样兜底校验）
+  if (row.guarantorFlag === 'Y' && !row.guarantorId) {
+    proxy.$modal.msgWarning("该资料需要担保人，请先在编辑页设置担保人")
+    return
+  }
+  const tip = row.status === "returned" ? "确认再次领取该资料？" : "确认领取该资料？"
+  proxy.$modal.confirm(tip).then(() => {
+    borrowMaterial(row.id).then(() => {
       proxy.$modal.msgSuccess("领取成功")
-      borrowOpen.value = false
       getList()
     })
-  } else {
-    proxy.$modal.confirm("确认归还该资料？").then(() => {
-      returnMaterial(id, data).then(() => {
-        proxy.$modal.msgSuccess("归还成功")
-        borrowOpen.value = false
-        getList()
-      })
-    }).catch(() => {})
-  }
+  }).catch(() => {})
+}
+
+/** 归还：仅确认 */
+function handleReturn(row) {
+  proxy.$modal.confirm("确认归还该资料？").then(() => {
+    returnMaterial(row.id).then(() => {
+      proxy.$modal.msgSuccess("归还成功")
+      getList()
+    })
+  }).catch(() => {})
 }
 
 /** 查看流转记录 */
@@ -508,6 +566,7 @@ function handleExport() {
 }
 
 loadOptions()
+loadColumns()
 getList()
 loadStatusCounts()
 </script>

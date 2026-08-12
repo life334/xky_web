@@ -33,3 +33,11 @@ export function saveSettlement(data) {
     data: data
   })
 }
+
+// 查询费用结算可显隐列的元数据（显隐列面板 + 表格动态渲染用）
+export function getSettlementColumns() {
+  return request({
+    url: '/project/settlement/columns',
+    method: 'get'
+  })
+}

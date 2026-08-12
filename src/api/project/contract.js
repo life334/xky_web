@@ -84,3 +84,11 @@ export function getContractDistinctValues(field) {
     params: { field }
   })
 }
+
+// 查询合同列表可显隐列的元数据（显隐列面板 + 表格动态渲染用）
+export function getContractColumns() {
+  return request({
+    url: '/project/contract/columns',
+    method: 'get'
+  })
+}

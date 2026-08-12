@@ -55,7 +55,7 @@
          <!-- 任务安排 -->
          <el-tab-pane label="任务安排" name="task">
             <el-table v-loading="taskLoading" :data="taskList" stripe border style="margin-top: 8px">
-               <el-table-column label="任务名称" align="center" prop="taskName" :show-overflow-tooltip="true" min-width="160" />
+               <el-table-column label="任务名称" align="center" prop="taskName" :show-overflow-tooltip="false" min-width="160" />
                <el-table-column label="执行人" align="center" prop="userName" min-width="90" />
                <el-table-column label="安排日期" align="center" prop="assignDate" width="110">
                   <template #default="scope"><span>{{ parseTime(scope.row.assignDate, '{y}-{m}-{d}') }}</span></template>
@@ -114,23 +114,22 @@
                <el-table-column label="付款时间" align="center" prop="payTime" min-width="110">
                   <template #default="scope"><span v-if="scope.row.payTime">{{ parseTime(scope.row.payTime, '{y}-{m}-{d}') }}</span></template>
                </el-table-column>
-               <el-table-column label="付款单位" align="center" prop="payUnit" min-width="150" :show-overflow-tooltip="true" />
+               <el-table-column label="付款单位" align="center" prop="payUnit" min-width="150" :show-overflow-tooltip="false" />
                <el-table-column label="付款方式" align="center" prop="payMethod" min-width="100" />
-               <el-table-column label="发票号" align="center" prop="invoiceNo" min-width="140" :show-overflow-tooltip="true">
-                  <template #default="scope"><span v-if="scope.row.invoiceNo">{{ scope.row.invoiceNo }}</span><span v-else style="color: #c0c4cc">—</span></template>
+               <el-table-column label="发票号" align="center" prop="invoiceNo" min-width="140" :show-overflow-tooltip="false">
+                  <template #default="scope"><span v-if="scope.row.invoiceNo">{{ scope.row.invoiceNo }}</span></template>
                </el-table-column>
                <el-table-column label="开票日期" align="center" prop="invoiceDate" min-width="110">
-                  <template #default="scope"><span v-if="scope.row.invoiceDate">{{ parseTime(scope.row.invoiceDate, '{y}-{m}-{d}') }}</span><span v-else style="color: #c0c4cc">—</span></template>
+                  <template #default="scope"><span v-if="scope.row.invoiceDate">{{ parseTime(scope.row.invoiceDate, '{y}-{m}-{d}') }}</span></template>
                </el-table-column>
                <el-table-column label="开票金额" align="center" prop="invoiceAmount" min-width="120">
-                  <template #default="scope"><span v-if="scope.row.invoiceAmount != null" style="font-weight:500">{{ formatMoney(scope.row.invoiceAmount) }}</span><span v-else style="color: #c0c4cc">—</span></template>
+                  <template #default="scope"><span v-if="scope.row.invoiceAmount != null" style="font-weight:500">{{ formatMoney(scope.row.invoiceAmount) }}</span></template>
                </el-table-column>
                <el-table-column label="开票状态" align="center" prop="invoiceStatus" min-width="90">
                   <template #default="scope">
                      <el-tag v-if="scope.row.invoiceStatus === '未开'" type="info">未开</el-tag>
                      <el-tag v-else-if="scope.row.invoiceStatus === '已开'" type="success">已开</el-tag>
                      <el-tag v-else-if="scope.row.invoiceStatus === '已作废'" type="danger">已作废</el-tag>
-                     <span v-else style="color: #c0c4cc">—</span>
                   </template>
                </el-table-column>
             </el-table>
@@ -138,26 +137,22 @@
 
          <!-- 资料管理 -->
          <el-tab-pane label="资料管理" name="material">
+            <el-row :gutter="10" style="margin-top: 8px">
+               <el-col :span="24" style="text-align: right">
+                  <right-toolbar :columns="materialColumns" storage-key="material-detail-columns" />
+               </el-col>
+            </el-row>
             <el-table v-loading="materialLoading" :data="materialList" stripe border style="margin-top: 8px">
-               <el-table-column label="提交时间" align="center" prop="submitTime" min-width="160">
-                  <template #default="scope"><span v-if="scope.row.submitTime">{{ parseTime(scope.row.submitTime, '{y}-{m}-{d}') }}</span></template>
-               </el-table-column>
-               <el-table-column label="联系人" align="center" prop="contactName" min-width="90" />
-               <el-table-column label="联系电话" align="center" prop="contactPhone" min-width="110" />
-               <el-table-column label="成果类型" align="center" prop="resultType" min-width="100">
+               <el-table-column v-for="col in materialVisibleColumns" :key="col.key" :label="col.label" align="center" :prop="col.prop" :show-overflow-tooltip="false" :min-width="materialColWidth(col)">
                   <template #default="scope">
-                     <dict-tag v-if="scope.row.resultType" :options="proj_material_result_type" :value="scope.row.resultType" />
-                     <span v-else style="color: #c0c4cc">—</span>
+                     <template v-if="col.type === 'dict'">
+                        <dict-tag v-if="scope.row[col.prop]" :options="materialDictOptions(col.key)" :value="scope.row[col.prop]" />
+                     </template>
+                     <span v-else-if="col.type === 'date' && scope.row[col.prop]">{{ parseTime(scope.row[col.prop], '{y}-{m}-{d}') }}</span>
+                     <span v-else-if="col.type === 'user'">{{ materialUserNick(scope.row[col.prop]) }}</span>
+                     <span v-else>{{ scope.row[col.prop] }}</span>
                   </template>
                </el-table-column>
-               <el-table-column label="目录" align="center" prop="archiveDir" min-width="120" :show-overflow-tooltip="true" />
-               <el-table-column label="状态" align="center" prop="status" min-width="90">
-                  <template #default="scope">
-                     <dict-tag v-if="scope.row.status" :options="proj_material_status" :value="scope.row.status" />
-                     <span v-else style="color: #c0c4cc">—</span>
-                  </template>
-               </el-table-column>
-               <el-table-column label="备注" align="center" prop="remark" min-width="120" :show-overflow-tooltip="true" />
             </el-table>
          </el-tab-pane>
 
@@ -289,7 +284,8 @@ import { listTask } from "@/api/project/task"
 import { listWorkload, addWorkload, updateWorkload, delWorkload } from "@/api/project/workload"
 import { listPayment, addPayment, updatePayment, delPayment } from "@/api/project/payment"
 import { getSettlementOverview } from "@/api/project/settlement"
-import { listMaterial } from "@/api/project/material"
+import { listMaterial, getMaterialColumns } from "@/api/project/material"
+import cache from '@/plugins/cache'
 import { listCategory, categoryTreeselect } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { countWorkdays } from "@/utils/workday"
@@ -323,6 +319,66 @@ const paymentLoading = ref(false)
 const paymentList = ref([])
 const materialLoading = ref(false)
 const materialList = ref([])
+// 资料 tab 列显隐（复用后端 /columns 元数据，独立存储 key）
+const MATERIAL_COLUMNS_STORAGE_KEY = 'material-detail-columns'
+const materialColumns = ref({})
+const materialVisibleColumns = computed(() => Object.values(materialColumns.value).filter(c => c.visible))
+const materialFallbackColumns = [
+  { key: 'submitTime', label: '提交时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
+  { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
+  { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
+  { key: 'resultType', label: '成果类型', type: 'dict', group: 'business', prop: 'resultType', defaultVisible: true },
+  { key: 'archiveDir', label: '目录', type: 'text', group: 'business', prop: 'archiveDir', defaultVisible: true },
+  { key: 'status', label: '状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
+  { key: 'remark', label: '备注', type: 'text', group: 'business', prop: 'remark', defaultVisible: true },
+  { key: 'guarantorFlag', label: '是否担保', type: 'dict', group: 'business', prop: 'guarantorFlag', defaultVisible: false },
+  { key: 'guarantorId', label: '担保人', type: 'user', group: 'business', prop: 'guarantorId', defaultVisible: false },
+  { key: 'id', label: 'ID', type: 'number', group: 'system', prop: 'id', defaultVisible: false },
+  { key: 'createBy', label: '创建人', type: 'text', group: 'system', prop: 'createBy', defaultVisible: false },
+  { key: 'createTime', label: '创建时间', type: 'date', group: 'system', prop: 'createTime', defaultVisible: false },
+  { key: 'updateBy', label: '更新人', type: 'text', group: 'system', prop: 'updateBy', defaultVisible: false },
+  { key: 'updateTime', label: '更新时间', type: 'date', group: 'system', prop: 'updateTime', defaultVisible: false }
+]
+function buildMaterialColumns(list) {
+  let saved = {}
+  try { saved = cache.local.getJSON(MATERIAL_COLUMNS_STORAGE_KEY) || {} } catch (e) { /* 忽略本地存储异常 */ }
+  const obj = {}
+  list.forEach(col => {
+    obj[col.key] = {
+      key: col.key, label: col.label, type: col.type, group: col.group, prop: col.prop,
+      visible: saved[col.key] !== undefined ? !!saved[col.key] : !!col.defaultVisible
+    }
+  })
+  materialColumns.value = obj
+}
+async function loadMaterialColumns() {
+  try {
+    const list = await getMaterialColumns()
+    if (Array.isArray(list) && list.length > 0) buildMaterialColumns(list)
+    else buildMaterialColumns(materialFallbackColumns)
+  } catch (e) {
+    console.error('加载资料列配置失败，使用内置默认列', e)
+    buildMaterialColumns(materialFallbackColumns)
+  }
+}
+function materialColWidth(col) {
+  if (col.type === 'date') return 110
+  if (col.type === 'dict') return 100
+  if (col.type === 'user') return 110
+  return 130
+}
+function materialDictOptions(key) {
+  if (key === 'resultType') return proj_material_result_type.value
+  if (key === 'status') return proj_material_status.value
+  if (key === 'guarantorFlag') return [{ value: 'Y', label: '需要' }, { value: 'N', label: '不需要' }]
+  return []
+}
+function materialUserNick(userId) {
+  if (!userId) return ''
+  const u = materialUserOptions.value.find(u => u.userId === userId)
+  return u ? u.nickName : userId
+}
+const materialUserOptions = ref([])
 const userOptions = ref([])
 const categoryOptions = ref([])
 const categoryPriceMap = ref({})  // 类目id → { internalPrice, externalPrice }
@@ -405,7 +461,7 @@ function handleTabChange(tabName) {
    if (tabName === "task" && taskList.value.length === 0) loadTasks()
    if (tabName === "workload") loadWorkloads()
    if (tabName === "payment") loadPayments()
-   if (tabName === "material" && materialList.value.length === 0) loadMaterials()
+   if (tabName === "material") { loadMaterialColumns(); if (materialList.value.length === 0) loadMaterials() }
    if (tabName === "settlement") loadSettlementOverview()
 }
 
@@ -470,10 +526,20 @@ function loadPayments() {
 /** 加载资料 */
 function loadMaterials() {
    materialLoading.value = true
+   // 资料 tab 需要显示担保人昵称，独立全量加载用户列表（不依赖项目负责人）
+   loadMaterialUsers()
    listMaterial({ projectId: projectId, pageNum: 1, pageSize: 1000 }).then(response => {
       materialList.value = response.rows || []
       materialLoading.value = false
    }).catch(() => { materialLoading.value = false })
+}
+
+/** 全量加载用户列表（资料担保人显示用，与列表页一致） */
+function loadMaterialUsers() {
+   if (materialUserOptions.value.length > 0) return
+   listUserOptions({ pageNum: 1, pageSize: 1000 }).then(response => {
+      materialUserOptions.value = response.rows || []
+   })
 }
 
 /** 加载用户列表（仅项目分配的负责人） */

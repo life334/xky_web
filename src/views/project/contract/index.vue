@@ -99,8 +99,9 @@
          <el-col :span="1.5">
             <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:contract:remove']">删除</el-button>
          </el-col>
-         <el-col :span="1.5" style="margin-left:auto;display:flex;gap:8px">
+         <el-col :span="1.5" style="margin-left:auto;display:flex;gap:8px;align-items:center">
             <el-button type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:contract:export']">导出</el-button>
+            <right-toolbar v-model:showSearch="showSearch" :columns="columns" storage-key="contract-list-columns" @queryTable="getList" />
          </el-col>
       </el-row>
 
@@ -115,114 +116,103 @@
 
       <el-table v-loading="loading" :data="contractList" stripe border @selection-change="handleSelectionChange">
          <el-table-column type="selection" width="50" align="center" />
-         <el-table-column label="合同编号" align="center" prop="contractNo" :show-overflow-tooltip="false" min-width="140" />
-         <el-table-column label="合同名称" align="center" prop="contractName" :show-overflow-tooltip="false" min-width="180" />
-         <el-table-column label="委托单位" align="center" prop="clientUnit" :show-overflow-tooltip="false" min-width="160" />
-        
-         <el-table-column align="center" min-width="130">
+         <el-table-column v-for="col in visibleColumns" :key="col.key" align="center" :prop="col.prop" :show-overflow-tooltip="true" :min-width="colWidth(col)">
             <template #header>
-               合同金额
-               <el-button link type="primary" size="small" @click="amountUnit = amountUnit === 'wan' ? 'yuan' : 'wan'" style="margin-left:2px">
-                  {{ amountUnit === 'wan' ? '万元' : '元' }}
-               </el-button>
+               <!-- 合同金额列头：万元/元切换 -->
+               <span v-if="col.key === 'contractAmount'">
+                  合同金额
+                  <el-button link type="primary" size="small" @click="amountUnit = amountUnit === 'wan' ? 'yuan' : 'wan'" style="margin-left:2px">
+                     {{ amountUnit === 'wan' ? '万元' : '元' }}
+                  </el-button>
+               </span>
+               <span v-else>{{ col.label }}</span>
             </template>
             <template #default="scope">
-               <span v-if="scope.row.contractAmount != null">{{ formatAmount(scope.row.contractAmount, amountUnit) }}</span>
-            </template>
-         </el-table-column>
-         
-         <el-table-column label="关联项目" align="center" min-width="110">
-            <template #default="scope">
-               <el-button link type="primary" @click="handleShowProjects(scope.row)">
-                  {{ scope.row.projectCount || 0 }} 个项目 ▸
-               </el-button>
-            </template>
-         </el-table-column>
-         <el-table-column label="付款进度" align="center" min-width="150">
-            <template #default="scope">
-               <template v-if="scope.row.projectCount > 0 && scope.row.paidCount > 0">
-                  <el-popover placement="bottom" :width="500" trigger="hover" :show-after="200" popper-class="payment-popover">
-                     <template #reference>
-                        <div class="payment-progress-cell" style="cursor:pointer" @click="openContractSettlement(scope.row)">
-                           <div class="payment-bar-wrap">
-                              <div class="payment-bar" :style="{ width: paymentPercent(scope.row) + '%' }"></div>
+               <!-- 金额字段：万元/元切换格式化 -->
+               <span v-if="col.type === 'money'">
+                  <span v-if="scope.row[col.prop] != null">{{ formatAmount(scope.row[col.prop], amountUnit) }}</span>
+               </span>
+               <!-- 关联项目数：点击查看关联项目 -->
+               <span v-else-if="col.key === 'projectCount'">
+                  <el-button link type="primary" @click="handleShowProjects(scope.row)">
+                     {{ scope.row.projectCount || 0 }} 个项目 ▸
+                  </el-button>
+               </span>
+               <!-- 付款进度：进度条 + popover 明细 -->
+               <span v-else-if="col.type === 'progress'">
+                  <template v-if="scope.row.projectCount > 0 && scope.row.paidCount > 0">
+                     <el-popover placement="bottom" :width="500" trigger="hover" :show-after="200" popper-class="payment-popover">
+                        <template #reference>
+                           <div class="payment-progress-cell" style="cursor:pointer" @click="openContractSettlement(scope.row)">
+                              <div class="payment-bar-wrap">
+                                 <div class="payment-bar" :style="{ width: paymentPercent(scope.row) + '%' }"></div>
+                              </div>
+                              <span class="payment-summary">{{ scope.row.paidCount }}笔 / ¥{{ fmtWan(scope.row.paidTotal) }}</span>
                            </div>
-                           <span class="payment-summary">{{ scope.row.paidCount }}笔 / ¥{{ fmtWan(scope.row.paidTotal) }}</span>
+                        </template>
+                        <div class="popover-payment-detail">
+                           <div class="popover-title">付款明细</div>
+                           <div v-for="(pay, idx) in (scope.row.paidList || [])" :key="pay.paymentId" class="pay-item">
+                              <span class="pay-index">{{ idx + 1 }}</span>
+                              <span class="pay-time">{{ parseDate(pay.payTime) }}</span>
+                              <el-tag size="small" :type="paymentTypeTag(pay.paymentType)">{{ paymentTypeLabel(pay.paymentType) }}</el-tag>
+                              <span class="pay-amount">¥{{ fmtWan(pay.amount) }}</span>
+                              <span class="pay-unit">{{ pay.payUnit }}</span>
+                              <span class="pay-project">{{ pay.projectCode || '-' }}</span>
+                           </div>
+                           <div class="popover-summary" v-if="scope.row.contractAmount">
+                              合计 ¥{{ fmtWan(scope.row.paidTotal) }} / 合同总额 ¥{{ fmtWan(scope.row.contractAmount) }}（{{ paymentPercent(scope.row) }}%）
+                           </div>
                         </div>
+                     </el-popover>
+                  </template>
+                  <span v-else style="color:#c0c4cc;font-size:13px">—</span>
+               </span>
+               <!-- 附件：popover 预览 -->
+               <span v-else-if="col.type === 'attachment'">
+                  <el-popover
+                     v-if="scope.row.attachmentCount > 0"
+                     placement="bottom"
+                     :width="320"
+                     trigger="hover"
+                     :show-after="300"
+                  >
+                     <template #reference>
+                        <el-button link type="primary" @click.stop="openSidePanel(scope.row)">
+                           <el-icon size="14"><Paperclip /></el-icon>
+                           {{ scope.row.attachmentCount }} 个附件 ▸
+                        </el-button>
                      </template>
-                     <div class="popover-payment-detail">
-                        <div class="popover-title">付款明细</div>
-                        <div v-for="(pay, idx) in (scope.row.paidList || [])" :key="pay.paymentId" class="pay-item">
-                           <span class="pay-index">{{ idx + 1 }}</span>
-                           <span class="pay-time">{{ parseDate(pay.payTime) }}</span>
-                           <el-tag size="small" :type="paymentTypeTag(pay.paymentType)">{{ paymentTypeLabel(pay.paymentType) }}</el-tag>
-                           <span class="pay-amount">¥{{ fmtWan(pay.amount) }}</span>
-                           <span class="pay-unit">{{ pay.payUnit }}</span>
-                           <span class="pay-project">{{ pay.projectCode || '-' }}</span>
+                     <div class="attachment-popover">
+                        <div style="font-weight:600;margin-bottom:8px;font-size:13px">合同附件预览</div>
+                        <div v-for="att in scope.row._attachments" :key="att.id" class="popover-att-item">
+                           <el-icon size="14" :color="getFileIconColor(att.fileType)"><Document /></el-icon>
+                           <span style="flex:1;font-size:13px">{{ att.fileName }}</span>
+                           <el-tag v-if="att.isFinal==='1'" size="small" type="success">盖章版</el-tag>
                         </div>
-                        <div class="popover-summary" v-if="scope.row.contractAmount">
-                           合计 ¥{{ fmtWan(scope.row.paidTotal) }} / 合同总额 ¥{{ fmtWan(scope.row.contractAmount) }}（{{ paymentPercent(scope.row) }}%）
+                        <div v-if="scope.row.attachmentCount > 5" style="margin-top:8px;text-align:center;color:#909399;font-size:12px">
+                           还有 {{ scope.row.attachmentCount - 5 }} 个附件...
                         </div>
                      </div>
                   </el-popover>
-               </template>
-               <span v-else style="color:#c0c4cc;font-size:13px">—</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="附件" align="center" min-width="100">
-            <template #default="scope">
-               <el-popover
-                  v-if="scope.row.attachmentCount > 0"
-                  placement="bottom"
-                  :width="320"
-                  trigger="hover"
-                  :show-after="300"
-               >
-                  <template #reference>
-                     <el-button link type="primary" @click.stop="openSidePanel(scope.row)">
-                        <el-icon size="14"><Paperclip /></el-icon>
-                        {{ scope.row.attachmentCount }} 个附件 ▸
-                     </el-button>
+                  <span v-else style="color:#c0c4cc;font-size:13px">无附件</span>
+               </span>
+               <!-- 字典标签：按列 key 选择对应字典 -->
+               <template v-else-if="col.type === 'dict'">
+                  <template v-if="col.key === 'contractType'">
+                     <dict-tag :options="proj_contract_type" :value="scope.row[col.prop]" />
                   </template>
-                  <div class="attachment-popover">
-                     <div style="font-weight:600;margin-bottom:8px;font-size:13px">合同附件预览</div>
-                     <div v-for="att in scope.row._attachments" :key="att.id" class="popover-att-item">
-                        <el-icon size="14" :color="getFileIconColor(att.fileType)"><Document /></el-icon>
-                        <span style="flex:1;font-size:13px">{{ att.fileName }}</span>
-                        <el-tag v-if="att.isFinal==='1'" size="small" type="success">盖章版</el-tag>
-                     </div>
-                     <div v-if="scope.row.attachmentCount > 5" style="margin-top:8px;text-align:center;color:#909399;font-size:12px">
-                        还有 {{ scope.row.attachmentCount - 5 }} 个附件...
-                     </div>
-                  </div>
-               </el-popover>
-               <span v-else style="color:#c0c4cc;font-size:13px">无附件</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="合同类型" align="center" prop="contractType" min-width="100">
-            <template #default="scope">
-               <dict-tag :options="proj_contract_type" :value="scope.row.contractType" />
-            </template>
-         </el-table-column>
-         <el-table-column label="状态" align="center" prop="status" min-width="90">
-            <template #default="scope">
-               <dict-tag v-if="scope.row.status" :options="d('proj_contract_status')" :value="scope.row.status" />
-               <span v-else style="color: #c0c4cc">草稿</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="签署日期" align="center" prop="signDate" min-width="120">
-            <template #default="scope">
-               <span v-if="scope.row.signDate">{{ parseDate(scope.row.signDate) }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="联系人" align="center" prop="contactName" min-width="100">
-            <template #default="scope">
-               <span v-if="scope.row.contactName">{{ scope.row.contactName }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="创建时间" align="center" prop="createTime" width="170">
-            <template #default="scope">
-               <span>{{ parseTime(scope.row.createTime) }}</span>
+                  <template v-else>
+                     <dict-tag v-if="scope.row.status" :options="d('proj_contract_status')" :value="scope.row.status" />
+                     <span v-else style="color: #c0c4cc">草稿</span>
+                  </template>
+               </template>
+               <!-- 日期字段：创建/更新时间含时分秒 -->
+               <span v-else-if="col.type === 'date' && scope.row[col.prop]">{{ col.key === 'createTime' || col.key === 'updateTime' ? parseTime(scope.row[col.prop]) : parseDate(scope.row[col.prop]) }}</span>
+               <!-- 动态字段：从 extra_data JSONB 取值 -->
+               <span v-else-if="col.type === 'dynamic'"><span v-if="scope.row.extraData && scope.row.extraData[col.key] != null">{{ scope.row.extraData[col.key] }}</span></span>
+               <!-- 其他：直接显示 -->
+               <span v-else>{{ scope.row[col.prop] }}</span>
             </template>
          </el-table-column>
          <el-table-column label="操作" align="center" min-width="140" fixed="right" class-name="small-padding fixed-width">
@@ -766,13 +756,14 @@
 </template>
 
 <script setup name="Contract">
-import { listContract, getContract, addContract, updateContract, delContract, changeContractStatus, getContractProjects, getContractStatusCounts } from "@/api/project/contract"
+import { listContract, getContract, addContract, updateContract, delContract, changeContractStatus, getContractProjects, getContractStatusCounts, getContractColumns } from "@/api/project/contract"
 import { listContractPrice, saveContractPrice } from "@/api/project/contractPrice"
 import { getConfigKey } from "@/api/system/config"
 import { getDistinctValues } from "@/api/project/project"
 import { listAttachments, uploadAttachment, deleteAttachment, getAttachmentHistory, restoreVersion } from "@/api/project/contractAttachment"
 import { UploadFilled, Folder, Document, Paperclip, Search } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import cache from '@/plugins/cache'
 
 const { proxy } = getCurrentInstance()
 
@@ -793,6 +784,92 @@ const statusOpen = ref(false)
 const projectsOpen = ref(false)
 const loading = ref(true)
 const showSearch = ref(true)
+/** 表格列显隐配置（后端接口动态加载；序号、操作列固定不参与） */
+const columns = ref({})
+/** 当前可见列（按接口返回顺序过滤） */
+const visibleColumns = computed(() => Object.values(columns.value).filter(c => c.visible))
+const COLUMNS_STORAGE_KEY = 'contract-list-columns'
+/** 兜底清单：后端接口不可用（如后端未重启）时使用，保证表格不退化（与后端 getListColumns 默认可见列一致） */
+const FALLBACK_COLUMNS = [
+  { key: 'contractNo', label: '合同编号', type: 'text', group: 'business', prop: 'contractNo', defaultVisible: true },
+  { key: 'contractName', label: '合同名称', type: 'text', group: 'business', prop: 'contractName', defaultVisible: true },
+  { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
+  { key: 'contractType', label: '合同类型', type: 'dict', group: 'business', prop: 'contractType', defaultVisible: true },
+  { key: 'contractAmount', label: '合同金额', type: 'money', group: 'business', prop: 'contractAmount', defaultVisible: true },
+  { key: 'projectCount', label: '关联项目数', type: 'count', group: 'business', prop: 'projectCount', defaultVisible: true },
+  { key: 'paymentProgress', label: '付款进度', type: 'progress', group: 'business', prop: 'paymentProgress', defaultVisible: true },
+  { key: 'attachment', label: '附件', type: 'attachment', group: 'business', prop: 'attachment', defaultVisible: true },
+  { key: 'paidCount', label: '付款笔数', type: 'count', group: 'business', prop: 'paidCount', defaultVisible: false },
+  { key: 'paidTotal', label: '已付款总额', type: 'money', group: 'business', prop: 'paidTotal', defaultVisible: false },
+  { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
+  { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: false },
+  { key: 'signDate', label: '签署日期', type: 'date', group: 'business', prop: 'signDate', defaultVisible: true },
+  { key: 'entrustDate', label: '委托时间', type: 'date', group: 'business', prop: 'entrustDate', defaultVisible: false },
+  { key: 'auditDate', label: '审核日期', type: 'date', group: 'business', prop: 'auditDate', defaultVisible: false },
+  { key: 'returnDate', label: '返回日期', type: 'date', group: 'business', prop: 'returnDate', defaultVisible: false },
+  { key: 'finishDate', label: '完成日期', type: 'date', group: 'business', prop: 'finishDate', defaultVisible: false },
+  { key: 'archiveDate', label: '归档日期', type: 'date', group: 'business', prop: 'archiveDate', defaultVisible: false },
+  { key: 'archivePath', label: '归档路径', type: 'text', group: 'business', prop: 'archivePath', defaultVisible: false },
+  { key: 'contractPeriod', label: '合同期限', type: 'text', group: 'business', prop: 'contractPeriod', defaultVisible: false },
+  { key: 'paymentTerms', label: '付款条款', type: 'text', group: 'business', prop: 'paymentTerms', defaultVisible: false },
+  { key: 'receivedAmount', label: '已到账金额', type: 'money', group: 'business', prop: 'receivedAmount', defaultVisible: false },
+  { key: 'status', label: '状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
+  { key: 'isSettled', label: '是否结算', type: 'text', group: 'business', prop: 'isSettled', defaultVisible: false },
+  { key: 'remark', label: '备注', type: 'text', group: 'business', prop: 'remark', defaultVisible: false },
+  { key: 'id', label: 'ID', type: 'number', group: 'system', prop: 'id', defaultVisible: false },
+  { key: 'createBy', label: '创建人', type: 'text', group: 'system', prop: 'createBy', defaultVisible: false },
+  { key: 'createTime', label: '创建时间', type: 'date', group: 'system', prop: 'createTime', defaultVisible: true },
+  { key: 'updateBy', label: '更新人', type: 'text', group: 'system', prop: 'updateBy', defaultVisible: false },
+  { key: 'updateTime', label: '更新时间', type: 'date', group: 'system', prop: 'updateTime', defaultVisible: false }
+]
+
+/** 把列元数据数组构建为 columns 对象（合并 localStorage 偏好） */
+function buildColumns(list) {
+  let saved = {}
+  try {
+    saved = cache.local.getJSON(COLUMNS_STORAGE_KEY) || {}
+  } catch (e) { /* 忽略本地存储异常 */ }
+  const obj = {}
+  list.forEach(col => {
+    obj[col.key] = {
+      key: col.key,
+      label: col.label,
+      type: col.type,
+      group: col.group,
+      prop: col.prop,
+      visible: saved[col.key] !== undefined ? !!saved[col.key] : !!col.defaultVisible
+    }
+  })
+  columns.value = obj
+}
+
+/** 从后端加载可显隐列元数据；接口不可用时降级到内置兜底清单 */
+async function loadColumns() {
+  try {
+    const list = await getContractColumns()
+    if (Array.isArray(list) && list.length > 0) {
+      buildColumns(list)
+    } else {
+      buildColumns(FALLBACK_COLUMNS)
+    }
+  } catch (e) {
+    console.error('加载列配置失败，使用内置默认列', e)
+    buildColumns(FALLBACK_COLUMNS)
+  }
+}
+
+/** 列宽自适应：按类型给宽 */
+function colWidth(col) {
+  if (col.type === 'date') return 120
+  if (col.type === 'dict') return 100
+  if (col.type === 'money') return 130
+  if (col.type === 'progress') return 150
+  if (col.type === 'attachment') return 100
+  if (col.type === 'count') return 110
+  if (col.type === 'dynamic') return 140
+  return 140
+}
+
 const title = ref("")
 const total = ref(0)
 const single = ref(true)
@@ -1729,6 +1806,7 @@ function closeSidePanel() {
   sideHistoryMap.value = {}
 }
 
+loadColumns()
 getList()
 loadStatusCounts()
 loadSavedSchemes()
