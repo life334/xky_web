@@ -149,7 +149,7 @@
     </el-card>
 
     <!-- ═══════════ ④ 筛选设置弹窗 ═══════════ -->
-    <el-dialog v-model="filterDialogVisible" title="筛选设置" width="760px" append-to-body destroy-on-close>
+    <el-dialog v-model="filterDialogVisible" title="筛选设置" width="80%" append-to-body destroy-on-close>
       <div class="filter-config-body">
         <div class="config-panel left">
           <div class="panel-title">可选筛选字段（勾选即启用）</div>
@@ -191,7 +191,7 @@
     </el-dialog>
 
     <!-- ═══════════ ⑤ 字段设计器弹窗 ═══════════ -->
-    <el-dialog v-model="designerVisible" :title="designerIsBuiltin ? '设计自定义模板' : '编辑自定义模板字段'" width="960px" append-to-body destroy-on-close>
+    <el-dialog v-model="designerVisible" :title="designerIsBuiltin ? '设计自定义模板' : '编辑自定义模板字段'" width="80%" append-to-body destroy-on-close>
       <!-- 头部工具条 -->
       <div class="designer-head">
         <div class="designer-name">
@@ -353,7 +353,7 @@
     </el-dialog>
 
     <!-- ═══════════ ⑥ 导出历史弹窗 ═══════════ -->
-    <el-dialog v-model="logDialogVisible" title="导出历史" width="860px" append-to-body>
+    <el-dialog v-model="logDialogVisible" title="导出历史" width="80%" append-to-body>
       <el-table v-loading="logLoading" :data="logList" border size="small" max-height="460">
         <el-table-column label="导出时间" prop="exportTime" width="150" />
         <el-table-column label="模板" prop="templateName" min-width="160" show-overflow-tooltip />
@@ -1182,6 +1182,7 @@ function leafWidth(leaf) {
       color: var(--el-text-color-regular);
     }
   }
+}
 
   /* 弹窗公共布局（筛选设置弹窗） */
   .filter-config-body {
@@ -1451,6 +1452,7 @@ function leafWidth(leaf) {
           }
           .preview-header-row {
             display: flex;
+            min-width: max-content;
             border: 1px solid var(--el-border-color);
             border-bottom: none;
             border-radius: 4px 4px 0 0;
@@ -1625,5 +1627,4 @@ function leafWidth(leaf) {
   .field-dot.src-agg, .cell-dot.src-agg, .legend-dot.src-agg { background: #e6a23c; }
   .field-dot.src-dynamic, .cell-dot.src-dynamic, .legend-dot.src-dynamic { background: #a855f7; }
   .field-dot.src-dynamic, .cell-dot.src-dynamic { background: #9254de; }
-}
 </style>
