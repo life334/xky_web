@@ -173,7 +173,6 @@
           <div class="panel-scroll">
             <div v-if="!filterDraft.length" class="panel-empty">未启用任何筛选条件</div>
             <div v-for="(fk, idx) in filterDraft" :key="fk" class="order-row">
-              <span class="order-no">{{ idx + 1 }}</span>
               <span class="order-label">{{ fieldPoolMeta(fk)?.label || fk }}</span>
               <el-button-group size="small">
                 <el-button :icon="'Top'" :disabled="idx === 0" @click="moveDraft(idx, -1)" />
@@ -282,7 +281,33 @@
             <div class="preview-canvas">
               <div v-if="!designerSelected.length" class="preview-empty">从左侧勾选字段，此处实时显示导出表头</div>
               <template v-else>
-                <div class="preview-header-row">
+                <!-- 多级表头：有分组时两行（分组行+字段名行），无分组时单行 -->
+                <div v-if="previewHasGroup" class="preview-header-grid" :style="{ gridTemplateColumns: previewGridCols }">
+                  <!-- 第一行：分组节点 + 无分组叶子（跨两行） -->
+                  <template v-for="(node, ni) in designerHeaderTree" :key="'g' + ni">
+                    <div v-if="node.type === 'group'" class="preview-group-cell"
+                         :style="{ gridColumn: (node.colStart + 1) + ' / span ' + node.span, gridRow: '1' }">
+                      {{ node.label }}
+                    </div>
+                    <div v-else class="preview-cell-span2"
+                         :style="{ gridColumn: (node.colStart + 1), gridRow: '1 / span 2' }">
+                      <span class="cell-dot" :class="'src-' + (node.leaf.source || 'subject')" :title="sourceTip(node.leaf.source)"></span>
+                      <span class="cell-label">{{ node.leaf.label || node.leaf.key }}</span>
+                    </div>
+                  </template>
+                  <!-- 第二行：分组节点的叶子字段 -->
+                  <template v-for="(node, ni) in designerHeaderTree" :key="'f' + ni">
+                    <template v-if="node.type === 'group'">
+                      <div v-for="(child, ci) in node.children" :key="'c' + ni + '-' + ci" class="preview-field-cell"
+                           :style="{ gridColumn: (child.colStart + 1), gridRow: '2' }">
+                        <span class="cell-dot" :class="'src-' + (child.leaf.source || 'subject')" :title="sourceTip(child.leaf.source)"></span>
+                        <span class="cell-label">{{ child.leaf.label || child.leaf.key }}</span>
+                      </div>
+                    </template>
+                  </template>
+                </div>
+                <!-- 单行表头（无分组时保持原样） -->
+                <div v-else class="preview-header-row">
                   <div v-for="h in designerPreviewHeaders" :key="h.key" class="preview-cell" :style="{ minWidth: previewCellWidth(h) + 'px' }">
                     <span class="cell-dot" :class="'src-' + (h.source || 'subject')" :title="sourceTip(h.source)"></span>
                     <span class="cell-label">{{ h.label || h.key }}</span>
@@ -304,7 +329,7 @@
           <div class="stage-list">
             <div class="stage-list-title">
               <span>导出列（{{ designerSelected.length }}）</span>
-              <span class="stage-list-tip">拖拽手柄调整顺序，点击列名可直接改名</span>
+              <span class="stage-list-tip">拖拽手柄调整顺序，点击中间输入框可修改列名，「列宽」控制导出时 Excel 列宽度</span>
             </div>
             <div class="stage-list-body">
               <div v-if="!designerSelected.length" class="stage-empty">未选择任何字段 — 从左侧勾选字段开始设计</div>
@@ -317,10 +342,10 @@
                 @drop="designerDrop(idx)"
                 @dragend="designerDragIdx = -1"
               >
-                <span class="drag-handle" title="拖拽调整顺序" draggable="true" @dragstart="designerDragStart(idx)"></span>
-                <span class="order-no">{{ idx + 1 }}</span>
-                <el-input v-model="f.label" size="small" class="col-label-input" maxlength="30" placeholder="列名" />
-                <el-input-number v-model="f.width" :min="6" :max="60" size="small" controls-position="right" style="width: 84px" title="列宽（字符数）" />
+                <span class="drag-handle" title="拖拽调整顺序" draggable="true" @dragstart="designerDragStart(idx)"></span>                <el-input v-model="f.label" size="small" class="col-label-input" maxlength="30" placeholder="列名" />
+                <span class="col-width-label">列宽</span>
+                <el-input-number v-model="f.width" :min="6" :max="60" size="small" controls-position="right" style="width: 100px" />
+                <span class="col-width-unit">字符</span>
                 <div class="row-actions">
                   <el-button :icon="'Top'" circle size="small" text :disabled="idx === 0" @click="moveDesigner(idx, -1)" title="上移" />
                   <el-button :icon="'Bottom'" circle size="small" text :disabled="idx === designerSelected.length - 1" @click="moveDesigner(idx, 1)" title="下移" />
@@ -345,6 +370,9 @@
         </div>
         <div class="footer-btns">
           <el-button @click="designerVisible = false">取消</el-button>
+          <el-button type="success" :loading="designerExporting" @click="exportDesignerDirect">
+            <el-icon><Download /></el-icon>&nbsp;直接导出
+          </el-button>
           <el-button type="primary" :loading="designerSaving" @click="saveDesigner">
             {{ designerIsBuiltin ? '保存为自定义模板' : '保存修改' }}
           </el-button>
@@ -380,11 +408,11 @@
 <script setup name="Report">
 import { saveAs } from 'file-saver'
 import { ElMessageBox } from 'element-plus'
-import { ArrowRight, ArrowDown, Search } from '@element-plus/icons-vue'
+import { ArrowRight, ArrowDown, Search, Download } from '@element-plus/icons-vue'
 import {
   getFieldPool, listReportTemplate, getReportTemplate, saveReportTemplate, delReportTemplate,
   listReportFilter, getReportFilter, saveReportFilter, delReportFilter,
-  previewReport, exportReport, listReportLog, reExportReport, delReportLog
+  previewReport, exportReport, exportReportByConfig, listReportLog, reExportReport, delReportLog
 } from '@/api/report/report'
 import { categoryTreeselect } from '@/api/project/category'
 
@@ -449,6 +477,7 @@ const filterDraft = ref([])
 /* 字段设计器弹窗 */
 const designerVisible = ref(false)
 const designerSaving = ref(false)
+const designerExporting = ref(false)
 const designerName = ref('')
 const designerIsBuiltin = ref(true)
 const designerBaseId = ref(null)
@@ -514,8 +543,39 @@ const designerPreviewHeaders = computed(() => designerSelected.value.map(f => ({
   key: f.key,
   label: f.label,
   source: f.source,
-  width: f.width || 14
+  width: f.width || 14,
+  headerGroup: f.headerGroup || ''
 })))
+
+/* 多级表头分组树（前端版，逻辑与后端 buildHeaderTree 一致，附带 colStart 用于 grid 定位） */
+const designerHeaderTree = computed(() => {
+  const headers = designerPreviewHeaders.value
+  const tree = []
+  let i = 0
+  let colIdx = 0
+  while (i < headers.length) {
+    const h = headers[i]
+    const g = h.headerGroup || ''
+    if (!g) {
+      tree.push({ type: 'leaf', leaf: h, colStart: colIdx })
+      colIdx++
+      i++
+      continue
+    }
+    const children = []
+    const startCol = colIdx
+    while (i < headers.length && (headers[i].headerGroup || '') === g) {
+      children.push({ leaf: headers[i], colStart: colIdx })
+      colIdx++
+      i++
+    }
+    tree.push({ type: 'group', label: g, children, colStart: startCol, span: children.length })
+  }
+  return tree
+})
+
+/* 预览是否有分组列（决定表头是单行还是两行） */
+const previewHasGroup = computed(() => designerHeaderTree.value.some(n => n.type === 'group'))
 function previewCellWidth(h) {
   return Math.max(64, (h.width || 14) * 9)
 }
@@ -794,6 +854,7 @@ function openDesigner() {
       group: meta ? meta.group : '其他',
       type: meta ? meta.type : 'string',
       width: f.width || 14,
+      headerGroup: f.headerGroup || '',
       checked: true
     })
     seen.add(f.fieldKey)
@@ -901,6 +962,7 @@ async function saveDesigner() {
         fieldLabel: f.label,
         fieldSource: f.source,
         width: f.width || 14,
+        headerGroup: f.headerGroup || null,
         sortOrder: i + 1
       }))
     }
@@ -914,6 +976,51 @@ async function saveDesigner() {
     await onTemplateChange()
   } finally {
     designerSaving.value = false
+  }
+}
+
+/* 直接导出（不保存模板） */
+async function exportDesignerDirect() {
+  const selected = designerSelected.value
+  if (!selected.length) { proxy.$modal.msgError('请至少勾选一个导出字段'); return }
+  designerExporting.value = true
+  try {
+    const tplName = designerName.value.trim() || '临时导出'
+    const payload = {
+      template: {
+        templateType: 'custom',
+        subjectTable: 'proj_project',
+        sourceTemplateId: designerBaseId.value || null,
+        templateName: tplName,
+        hasSummaryRow: designerHasSummary.value ? 'Y' : 'N',
+        fieldList: selected.map((f, i) => ({
+          fieldKey: f.key,
+          fieldLabel: f.label,
+          fieldSource: f.source,
+          width: f.width || 14,
+          headerGroup: f.headerGroup || null,
+          sortOrder: i + 1
+        }))
+      },
+      filter: buildBackendFilter(true)
+    }
+    const blob = await exportReportByConfig(payload)
+    if (blob.type && blob.type.includes('application/json')) {
+      const text = await blob.text()
+      let msg = '导出失败'
+      try { msg = JSON.parse(text).msg || msg } catch (e) { /* ignore */ }
+      proxy.$modal.msgError(msg)
+      return
+    }
+    const time = formatStamp()
+    saveAs(new Blob([blob]), `${tplName}_${time}.xlsx`)
+    proxy.$modal.msgSuccess('导出成功')
+    designerVisible.value = false
+    loadLogs()
+  } catch (e) {
+    proxy.$modal.msgError('导出失败，请稍后重试')
+  } finally {
+    designerExporting.value = false
   }
 }
 
@@ -1234,19 +1341,6 @@ function leafWidth(leaf) {
           padding: 4px 0;
           border-bottom: 1px dashed var(--el-border-color-lighter);
           &:last-child { border-bottom: none; }
-          .order-no {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 20px;
-            height: 20px;
-            border-radius: 10px;
-            background: var(--el-color-primary);
-            color: #fff;
-            font-size: 12px;
-            padding: 0 4px;
-            flex-shrink: 0;
-          }
           .order-label {
             flex: 1;
             font-size: 13px;
@@ -1450,6 +1544,60 @@ function leafWidth(leaf) {
             border: 1px dashed var(--el-border-color);
             border-radius: 4px;
           }
+          .preview-header-grid {
+            display: grid;
+            min-width: max-content;
+            border: 1px solid var(--el-border-color);
+            border-bottom: none;
+            border-radius: 4px 4px 0 0;
+            overflow: hidden;
+            .preview-group-cell {
+              padding: 6px 10px;
+              background: #ebeef5;
+              border-right: 1px solid var(--el-border-color);
+              border-bottom: 1px solid var(--el-border-color);
+              font-size: 12px;
+              font-weight: 600;
+              color: var(--el-text-color-primary);
+              text-align: center;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+            .preview-field-cell {
+              display: flex;
+              align-items: center;
+              gap: 5px;
+              padding: 6px 10px;
+              background: #f5f7fa;
+              border-right: 1px solid var(--el-border-color);
+              font-size: 12px;
+              font-weight: 600;
+              color: var(--el-text-color-primary);
+              .cell-label {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+              }
+            }
+            .preview-cell-span2 {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 5px;
+              padding: 6px 10px;
+              background: #f5f7fa;
+              border-right: 1px solid var(--el-border-color);
+              font-size: 12px;
+              font-weight: 600;
+              color: var(--el-text-color-primary);
+              .cell-label {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+              }
+            }
+          }
           .preview-header-row {
             display: flex;
             min-width: max-content;
@@ -1544,7 +1692,7 @@ function leafWidth(leaf) {
           .col-manage-row {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 0;
             padding: 4px 6px;
             border-radius: 4px;
             border-bottom: 1px dashed var(--el-border-color-lighter);
@@ -1562,22 +1710,41 @@ function leafWidth(leaf) {
               opacity: 0.7;
               &:hover { opacity: 1; }
               &:active { cursor: grabbing; }
-            }
-            .order-no {
-              display: inline-flex;
-              align-items: center;
-              justify-content: center;
-              min-width: 20px;
-              height: 20px;
-              border-radius: 10px;
-              background: var(--el-color-primary);
-              color: #fff;
-              font-size: 11px;
-              padding: 0 4px;
-              flex-shrink: 0;
+              margin-right: 8px;
             }
             .col-label-input { flex: 1; min-width: 0; }
+            .col-label-input { margin-right: 12px; }
+            .col-width-label {
+              font-size: 12px;
+              color: var(--el-text-color-regular);
+              font-weight: 500;
+              white-space: nowrap;
+              
+              background: var(--el-fill-color-light);
+              border: 1px solid var(--el-border-color-lighter);
+              border-radius: 4px 0 0 4px;
+              height: 28px;
+              line-height: 28px;
+              padding: 0 6px;
+              border-right: none;
+              flex-shrink: 0;
+            }
+            .col-width-unit {
+              font-size: 12px;
+              color: var(--el-text-color-secondary);
+              white-space: nowrap;
+              background: var(--el-fill-color-light);
+              border: 1px solid var(--el-border-color-lighter);
+              border-radius: 0 4px 4px 0;
+              height: 28px;
+              line-height: 28px;
+              padding: 0 6px;
+              border-left: none;
+              margin-left: -1px;
+              flex-shrink: 0;
+            }
             .row-actions {
+              margin-left: 8px;
               display: flex;
               gap: 2px;
               flex-shrink: 0;
@@ -1586,6 +1753,20 @@ function leafWidth(leaf) {
         }
       }
     }
+
+  /* 穿透 el-input-number，使其和左右标签无缝贴合 */
+  :deep(.col-width-label + .el-input-number .el-input__wrapper) {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    box-shadow: none;
+  }
+  :deep(.col-width-label + .el-input-number .el-input__inner) {
+    text-align: center;
+  }
+  :deep(.col-manage-row .el-input-number) {
+    width: 96px !important;
+  }
   }
 
   /* 底部统计 + 操作 */

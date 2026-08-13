@@ -111,6 +111,17 @@ export function exportReport(data) {
   })
 }
 
+// 按配置直接导出（不保存模板，临时使用）
+export function exportReportByConfig(data) {
+  return request({
+    url: '/report/exportByConfig',
+    method: 'post',
+    data: data,
+    responseType: 'blob',
+    timeout: 120000
+  })
+}
+
 // ==================== 导出历史 ====================
 
 // 导出历史列表
