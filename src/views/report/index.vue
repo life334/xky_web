@@ -190,7 +190,14 @@
     </el-dialog>
 
     <!-- ═══════════ ⑤ 字段设计器弹窗 ═══════════ -->
-    <el-dialog v-model="designerVisible" :title="designerIsBuiltin ? '设计自定义模板' : '编辑自定义模板字段'" width="80%" append-to-body destroy-on-close>
+    <el-dialog 
+      v-model="designerVisible" 
+      :title="designerIsBuiltin ? '设计自定义模板' : '编辑自定义模板字段'" 
+      width="80%" 
+      class="report-designer-dialog"
+      append-to-body 
+      destroy-on-close
+    >
       <!-- 头部工具条 -->
       <div class="designer-head">
         <div class="designer-name">
@@ -325,38 +332,88 @@
             </div>
           </div>
 
-          <!-- 列管理 -->
+          <!-- 列管理（分组式） -->
           <div class="stage-list">
             <div class="stage-list-title">
-              <span>导出列（{{ designerSelected.length }}）</span>
-              <span class="stage-list-tip">拖拽手柄调整顺序，点击中间输入框可修改列名，「列宽」控制导出时 Excel 列宽度</span>
+              <span>导出列（{{ designerSelected.length }}）· 分组数（{{ designerGroupList.filter(g => g.name).length }}）</span>
+              <span class="stage-list-tip">拖拽手柄调整顺序 / 跨组移动 · 分组头可折叠·重命名·解散</span>
+              <el-button type="primary" size="small" plain icon="Plus" @click="createNewGroup()" style="margin-left: 8px">新建分组</el-button>
             </div>
             <div class="stage-list-body">
               <div v-if="!designerSelected.length" class="stage-empty">未选择任何字段 — 从左侧勾选字段开始设计</div>
+
               <div
-                v-for="(f, idx) in designerSelected"
-                :key="f.key"
-                class="col-manage-row"
-                :class="{ 'is-dragging': designerDragIdx === idx }"
-                @dragover.prevent
-                @drop="designerDrop(idx)"
-                @dragend="designerDragIdx = -1"
+                v-for="(group, gi) in designerGroupList"
+                :key="group.name || '__ungrouped__'"
+                class="col-group-block"
+                :class="{ 'is-group-hover': designerSelectedGroup === group.name, 'is-ungrouped': !group.name }"
+                @dragover.prevent="onGroupDragEnter(group.name)"
+                @dragleave="onGroupDragLeave"
+                @drop.prevent="dropToGroup(group.name)"
               >
-                <span class="drag-handle" title="拖拽调整顺序" draggable="true" @dragstart="designerDragStart(idx)"></span>                <el-input v-model="f.label" size="small" class="col-label-input" maxlength="30" placeholder="列名" />
-                <span class="col-width-label">列宽</span>
-                <el-input-number v-model="f.width" :min="6" :max="60" size="small" controls-position="right" style="width: 100px" />
-                <span class="col-width-unit">字符</span>
-                <div class="row-actions">
-                  <el-button :icon="'Top'" circle size="small" text :disabled="idx === 0" @click="moveDesigner(idx, -1)" title="上移" />
-                  <el-button :icon="'Bottom'" circle size="small" text :disabled="idx === designerSelected.length - 1" @click="moveDesigner(idx, 1)" title="下移" />
-                  <el-button :icon="'Close'" circle size="small" type="danger" text @click="removeDesigner(idx)" title="移除列" />
+                <!-- 分组头（非空分组） -->
+                <div v-if="group.name" class="col-group-header">
+                  <span class="group-fold" @click="toggleDesignerGroupCollapse(group.name)">
+                    <el-icon><component :is="designerGroupCollapsed[group.name] ? 'ArrowRight' : 'ArrowDown'" /></el-icon>
+                  </span>
+                  <template v-if="designerRenamingGroup === group.name">
+                    <el-input
+                      v-model="designerRenameInput"
+                      size="small"
+                      class="col-group-rename-input"
+                      @blur="finishRenameGroup(group.name)"
+                      @keyup.enter="finishRenameGroup(group.name)"
+                      maxlength="20"
+                    />
+                  </template>
+                  <template v-else>
+                    <span class="group-name" @dblclick="startRenameGroup(group.name)">{{ group.name }}</span>
+                    <span class="group-count">{{ group.fields.length }} 列</span>
+                  </template>
+                  <div v-if="designerRenamingGroup !== group.name" class="group-actions">
+                    <el-button icon="EditPen" circle size="small" text @click="startRenameGroup(group.name)" title="重命名分组" />
+                    <el-button icon="Promotion" circle size="small" text type="success" @click="disbandGroup(group.name)" title="解散分组 · 字段提升为一级表头" />
+                  </div>
+                </div>
+
+                <!-- 未分组区标题 -->
+                <div v-if="!group.name" class="col-group-header col-group-ungrouped-title">
+                  <span class="group-name">一级表头（无分组）</span>
+                  <span class="group-count">{{ group.fields.length }} 列</span>
+                  <span class="group-drop-hint" v-if="designerSelectedGroup === ''">· 拖到此处提升为一级表头</span>
+                </div>
+
+                <!-- 组内字段列表 -->
+                <div v-show="group.name ? !designerGroupCollapsed[group.name] : true" class="col-group-items">
+                  <div
+                    v-for="f in group.fields"
+                    :key="f.key"
+                    class="col-manage-row"
+                    :class="{ 'is-dragging': designerDragIdx === designerSelected.indexOf(f) }"
+                    @dragover.prevent
+                    @drop="designerDrop(designerSelected.indexOf(f))"
+                    @dragend="designerDragIdx = -1"
+                  >
+                    <span class="drag-handle" title="拖拽调整顺序 / 跨组移动" draggable="true" @dragstart="designerDragStart(designerSelected.indexOf(f))"></span>
+                    <el-input v-model="f.label" size="small" class="col-label-input" maxlength="30" placeholder="列名" />
+                    <span class="col-width-label">列宽</span>
+                    <el-input-number v-model="f.width" :min="6" :max="60" size="small" controls-position="right" style="width: 100px" />
+                    <span class="col-width-unit">字符</span>
+                    <div class="row-actions">
+                      <el-button icon="Top" circle size="small" text :disabled="designerSelected.indexOf(f) === 0" @click="moveDesigner(designerSelected.indexOf(f), -1)" title="上移" />
+                      <el-button icon="Bottom" circle size="small" text :disabled="designerSelected.indexOf(f) === designerSelected.length - 1" @click="moveDesigner(designerSelected.indexOf(f), 1)" title="下移" />
+                      <el-button v-if="f.headerGroup" icon="Promotion" circle size="small" text type="success" @click="promoteToTop(designerSelected.indexOf(f))" title="提升为一级表头" />
+                      <el-button v-else icon="Folder" circle size="small" text type="warning" @click="moveFieldToGroup(designerSelected.indexOf(f))" title="归入分组" />
+                      <el-button icon="Close" circle size="small" type="danger" text @click="removeDesigner(designerSelected.indexOf(f))" title="移除列" />
+                    </div>
+                  </div>
                 </div>
               </div>
+
             </div>
           </div>
         </div>
       </div>
-
       <!-- 底部统计 + 操作 -->
       <div class="designer-footer">
         <div class="footer-info">
@@ -487,6 +544,11 @@ const designerList = ref([])
 const designerSearch = ref('')
 const designerCollapsed = reactive({})
 const designerDragIdx = ref(-1)
+const designerGroupCollapsed = reactive({})
+const designerRenamingGroup = ref('')
+const designerRenameInput = ref('')
+const designerSelectedGroup = ref('')
+
 
 /* 导出历史弹窗 */
 const logDialogVisible = ref(false)
@@ -943,6 +1005,121 @@ function resetDesigner() {
   const rest = designerList.value.filter(f => !ordered.includes(f))
   designerList.value = [...ordered, ...rest]
   proxy.$modal.msgSuccess('已恢复为来源模板的默认列')
+}
+
+/* ============== 分组操作 ============== */
+
+/* 分组列表：从 designerSelected 中按首次出现顺序汇总分组名 */
+const designerGroupList = computed(() => {
+  const map = new Map()
+  designerSelected.value.forEach(f => {
+    const g = f.headerGroup || ''
+    if (!map.has(g)) map.set(g, [])
+    map.get(g).push(f)
+  })
+  return Array.from(map.entries()).map(([name, fields]) => ({ name, fields }))
+})
+
+/* 切换设计器分组折叠（注意：不与字段库 toggleGroupCollapse 重名） */
+function toggleDesignerGroupCollapse(groupName) {
+  designerGroupCollapsed[groupName] = !designerGroupCollapsed[groupName]
+}
+
+/* 新建分组：默认将所有未分组字段归入，也可传入指定 keys */
+async function createNewGroup(selectedKeys = null) {
+  const msg = (selectedKeys && selectedKeys.length)
+    ? '将选中的 ' + selectedKeys.length + ' 个字段归入新分组，请输入分组名称：'
+    : '新建分组，请输入分组名称（分组内的未分组字段将自动归入）：';
+  try {
+    const { value } = await proxy.$modal.prompt(msg, '新建分组',{ confirmButtonText: '创建', cancelButtonText: '取消' });
+    if (!value || !value.trim()) return;
+    const name = value.trim();
+    const keysToMove = new Set( (selectedKeys && selectedKeys.length) ? selectedKeys : designerSelected.value.filter(f => !f.headerGroup).map(f => f.key) );
+    designerSelected.value.forEach(f => { if (keysToMove.has(f.key)) f.headerGroup = name; });
+    designerGroupCollapsed[name] = false;
+    proxy.$modal.msgSuccess('分组已创建');
+  } catch (e) { /* 取消 */ }
+}
+
+/* 解散分组：组内字段变为一级表头 */
+function disbandGroup(groupName) {
+  if (!groupName) return;
+  designerSelected.value.forEach(f => {
+    if ((f.headerGroup || '') === groupName) f.headerGroup = '';
+  });
+  delete designerGroupCollapsed[groupName];
+  proxy.$modal.msgSuccess('分组已解散，字段提升为一级表头');
+}
+
+/* 进入重命名模式 */
+function startRenameGroup(groupName) {
+  designerRenamingGroup.value = groupName;
+  designerRenameInput.value = groupName;
+  setTimeout(() => {
+    const el = document.querySelector('.col-group-rename-input input, .col-group-rename-input');
+    if (el) { el.focus && el.focus(); if (el.select) el.select(); }
+  }, 60);
+}
+
+/* 完成重命名 */
+function finishRenameGroup(groupName) {
+  const newName = designerRenameInput.value.trim();
+  if (!newName) { designerRenamingGroup.value = ''; return; }
+  if (newName === groupName) { designerRenamingGroup.value = ''; return; }
+  const otherGroups = designerGroupList.value.filter(x => x.name && x.name !== groupName).map(x => x.name);
+  if (otherGroups.includes(newName)) { proxy.$modal.msgError('分组名称已存在'); return; }
+  designerSelected.value.forEach(f => {
+    if ((f.headerGroup || '') === groupName) f.headerGroup = newName;
+  });
+  designerGroupCollapsed[newName] = designerGroupCollapsed[groupName];
+  delete designerGroupCollapsed[groupName];
+  designerRenamingGroup.value = '';
+  proxy.$modal.msgSuccess('分组已重命名');
+}
+
+/* 跨分组拖拽：拖放到目标分组 */
+function dropToGroup(groupName) {
+  const fromIdx = designerDragIdx.value;
+  designerDragIdx.value = -1;
+  designerSelectedGroup.value = '';
+  if (fromIdx < 0) return;
+  const f = designerSelected.value[fromIdx];
+  if (!f) return;
+  const newGroup = groupName || '';
+  if ((f.headerGroup || '') === newGroup) return;
+  f.headerGroup = newGroup;
+}
+
+/* 分组拖放高亮 */
+function onGroupDragEnter(name) { designerSelectedGroup.value = name; }
+function onGroupDragLeave() { designerSelectedGroup.value = ''; }
+
+/* 将单个字段提升为一级表头（快捷操作） */
+function promoteToTop(idx) {
+  const f = designerSelected.value[idx];
+  if (f && f.headerGroup) { f.headerGroup = ''; proxy.$modal.msgSuccess('已提升为一级表头'); }
+}
+
+/* 将单个字段归入现有分组（用对话框选择序号） */
+async function moveFieldToGroup(idx) {
+  const f = designerSelected.value[idx];
+  if (!f) return;
+  const existing = designerGroupList.value.filter(x => x.name && x.name !== (f.headerGroup || '')).map(x => x.name);
+  if (!existing.length) { createNewGroup([f.key]); return; }
+  const lf = String.fromCharCode(10);
+  const options = existing.map((n, i) => (i + 1) + '. ' + n).join(lf);
+  try {
+    const { value } = await proxy.$modal.prompt(
+      '请选择要归入的分组（输入序号）：' + lf + options + lf + lf + '（留空或点取消则创建新分组）',
+      '移动字段到分组',
+      { confirmButtonText: '确定', cancelButtonText: '取消', inputPlaceholder: '输入 1-' + existing.length }
+    );
+    if (!value) { createNewGroup([f.key]); return; }
+    const n = parseInt(value, 10);
+    if (Number.isNaN(n) || n < 1 || n > existing.length) { proxy.$modal.msgError('序号无效'); return; }
+    f.headerGroup = existing[n - 1];
+    proxy.$modal.msgSuccess('已移动到分组「' + existing[n - 1] + '」');
+  } catch (e) { /* 取消 */ }
 }
 
 async function saveDesigner() {
@@ -1654,7 +1831,7 @@ function leafWidth(leaf) {
         }
       }
 
-      /* 列管理 */
+      /* 列管理（分组式） */
       .stage-list {
         flex: 1;
         min-height: 0;
@@ -1672,88 +1849,141 @@ function leafWidth(leaf) {
           color: var(--el-text-color-primary);
           background: var(--el-fill-color-light);
           border-bottom: 1px solid var(--el-border-color);
+          flex-wrap: nowrap;
+          white-space: nowrap;
           .stage-list-tip {
             margin-left: auto;
             font-weight: 400;
             font-size: 11px;
             color: var(--el-text-color-placeholder);
+            white-space: nowrap;
           }
         }
         .stage-list-body {
           flex: 1;
           overflow-y: auto;
-          padding: 4px 8px 8px;
+          padding: 6px;
           .stage-empty {
             text-align: center;
             color: var(--el-text-color-placeholder);
             font-size: 12px;
             padding: 24px 0;
           }
-          .col-manage-row {
-            display: flex;
-            align-items: center;
-            gap: 0;
-            padding: 4px 6px;
-            border-radius: 4px;
-            border-bottom: 1px dashed var(--el-border-color-lighter);
-            &:last-child { border-bottom: none; }
-            &:hover { background: var(--el-fill-color-light); }
-            &.is-dragging { opacity: 0.5; background: var(--el-color-primary-light-9); }
-            .drag-handle {
-              width: 14px;
-              height: 20px;
-              cursor: grab;
-              flex-shrink: 0;
-              background-image: radial-gradient(circle, var(--el-text-color-placeholder) 1.5px, transparent 1.5px);
-              background-size: 6px 6px;
-              background-position: 0 2px;
-              opacity: 0.7;
-              &:hover { opacity: 1; }
-              &:active { cursor: grabbing; }
-              margin-right: 8px;
+
+          /* 分组块 */
+          .col-group-block {
+            margin-bottom: 8px;
+            border: 1px dashed transparent;
+            border-radius: 6px;
+            transition: all 0.15s;
+            &.is-group-hover {
+              border-color: var(--el-color-primary);
+              background: var(--el-color-primary-light-9);
             }
-            .col-label-input { flex: 1; min-width: 0; }
-            .col-label-input { margin-right: 12px; }
-            .col-width-label {
-              font-size: 12px;
-              color: var(--el-text-color-regular);
-              font-weight: 500;
-              white-space: nowrap;
-              
-              background: var(--el-fill-color-light);
-              border: 1px solid var(--el-border-color-lighter);
-              border-radius: 4px 0 0 4px;
-              height: 28px;
-              line-height: 28px;
-              padding: 0 6px;
-              border-right: none;
-              flex-shrink: 0;
-            }
-            .col-width-unit {
-              font-size: 12px;
-              color: var(--el-text-color-secondary);
-              white-space: nowrap;
-              background: var(--el-fill-color-light);
-              border: 1px solid var(--el-border-color-lighter);
-              border-radius: 0 4px 4px 0;
-              height: 28px;
-              line-height: 28px;
-              padding: 0 6px;
-              border-left: none;
-              margin-left: -1px;
-              flex-shrink: 0;
-            }
-            .row-actions {
-              margin-left: 8px;
+            &:last-child { margin-bottom: 0; }
+
+            /* 分组头 */
+            .col-group-header {
               display: flex;
-              gap: 2px;
-              flex-shrink: 0;
+              align-items: center;
+              padding: 5px 8px;
+              margin-bottom: 2px;
+              border-radius: 4px;
+              background: linear-gradient(90deg, var(--el-fill-color-light), transparent);
+              font-size: 12px;
+              .group-fold {
+                display: flex; align-items: center; justify-content: center;
+                width: 20px; height: 20px; cursor: pointer;
+                margin-right: 4px; border-radius: 3px;
+                &:hover { background: var(--el-fill-color); }
+                .el-icon { font-size: 12px; color: var(--el-text-color-secondary); }
+              }
+              .group-name {
+                font-weight: 600; color: var(--el-text-color-primary);
+                font-size: 13px; cursor: text;
+              }
+              .group-count {
+                margin-left: 8px; padding: 0 6px;
+                background: var(--el-fill-color); border-radius: 10px;
+                font-size: 11px; color: var(--el-text-color-secondary);
+                line-height: 18px;
+              }
+              .group-drop-hint {
+                margin-left: 12px; font-size: 11px;
+                color: var(--el-color-primary); font-weight: 500;
+              }
+              .group-actions {
+                margin-left: auto;
+                display: flex; gap: 2px;
+              }
+              .col-group-rename-input {
+                width: 180px; margin-right: 8px;
+              }
+            }
+
+            /* 未分组区标题 */
+            &.is-ungrouped > .col-group-ungrouped-title {
+              background: linear-gradient(90deg, var(--el-color-success-light-9), transparent);
+              .group-name {
+                color: var(--el-color-success); font-weight: 600; font-size: 12px;
+              }
+            }
+
+            /* 组内字段列表 */
+            .col-group-items {
+              padding: 0 0 0 4px;
+            }
+
+            /* 字段行 */
+            .col-manage-row {
+              display: flex; align-items: center; gap: 0;
+              padding: 4px 6px 4px 18px;
+              border-radius: 4px;
+              border-bottom: 1px dashed var(--el-border-color-lighter);
+              position: relative;
+              &:before {
+                content: ''; position: absolute; left: 6px; top: 8px; bottom: 0;
+                width: 1px; background: var(--el-border-color-lighter);
+              }
+              &:last-child { border-bottom: none; &:before { display: none; } }
+              &:hover { background: var(--el-fill-color-light); }
+              &.is-dragging { opacity: 0.5; background: var(--el-color-primary-light-9); }
+              .drag-handle {
+                width: 14px; height: 20px; cursor: grab; flex-shrink: 0;
+                background-image: radial-gradient(circle, var(--el-text-color-placeholder) 1.5px, transparent 1.5px);
+                background-size: 6px 6px; background-position: 0 2px;
+                opacity: 0.7; margin-right: 8px;
+                &:hover { opacity: 1; }
+                &:active { cursor: grabbing; }
+              }
+              .col-label-input { flex: 1; min-width: 0; margin-right: 12px; }
+              .col-width-label {
+                font-size: 12px; color: var(--el-text-color-regular);
+                font-weight: 500; white-space: nowrap;
+                background: var(--el-fill-color-light);
+                border: 1px solid var(--el-border-color-lighter);
+                border-radius: 4px 0 0 4px;
+                height: 28px; line-height: 28px;
+                padding: 0 6px; border-right: none; flex-shrink: 0;
+              }
+              .col-width-unit {
+                font-size: 12px; color: var(--el-text-color-secondary);
+                white-space: nowrap;
+                background: var(--el-fill-color-light);
+                border: 1px solid var(--el-border-color-lighter);
+                border-radius: 0 4px 4px 0;
+                height: 28px; line-height: 28px;
+                padding: 0 6px; border-left: none;
+                margin-left: -1px; flex-shrink: 0;
+              }
+              .row-actions {
+                margin-left: 8px; display: flex; gap: 2px; flex-shrink: 0;
+              }
             }
           }
         }
       }
     }
-
   /* 穿透 el-input-number，使其和左右标签无缝贴合 */
   :deep(.col-width-label + .el-input-number .el-input__wrapper) {
     border-radius: 0;
@@ -1809,3 +2039,47 @@ function leafWidth(leaf) {
   .field-dot.src-dynamic, .cell-dot.src-dynamic, .legend-dot.src-dynamic { background: #a855f7; }
   .field-dot.src-dynamic, .cell-dot.src-dynamic { background: #9254de; }
 </style>
+<style lang="scss">
+/* 字段设计器弹窗：append-to-body → 脱离 scoped 样式，所以用非 scoped 全局样式。
+   注意：el-dialog 的 class 属性会 fallthrough 到 .el-dialog 元素自身上（不是外层 overlay），
+   所以必须用复合选择器 .el-dialog.report-designer-dialog（同一元素两个 class），
+   而不是后代选择器 .report-designer-dialog .el-dialog（那要求父子关系，匹配不到）。 */
+.el-dialog.report-designer-dialog {
+  height: 90vh;
+  max-height: 90vh;
+  margin: 5vh auto !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+
+  .el-dialog__header {
+    flex-shrink: 0;
+    padding: 6px 16px 6px;    /* 缩小 header padding（原 14px 12px → 6px 6px，高度约减半） */
+    margin-right: 0;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+  }
+  .el-dialog__header .el-dialog__title {
+    font-size: 15px;
+    line-height: 0.7;
+  }
+  .el-dialog__headerbtn {
+    top: 6px;                 /* 关闭按钮同步上移，与缩小后的 header 对齐 */
+  }
+  .el-dialog__body {
+    flex: 1;
+    padding: 12px 16px;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+  }
+  .el-dialog__footer {
+    flex-shrink: 0;
+    padding: 10px 16px 14px;
+    border-top: 1px solid var(--el-border-color-lighter);
+    text-align: right;
+  }
+}
+</style>
+
