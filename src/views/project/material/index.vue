@@ -108,12 +108,16 @@
                <span v-else>{{ scope.row[col.prop] }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="操作" align="center" min-width="160" class-name="small-padding fixed-width" fixed="right">
+         <el-table-column label="操作" align="center" min-width="200" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
-               <el-button v-if="scope.row.status === 'pending' || scope.row.status === 'returned'" link type="warning" @click="handleBorrow(scope.row)" v-hasPermi="['project:material:borrow']" v-text="scope.row.status === 'returned' ? '再次领取' : '领取'" />
-               <el-button v-if="scope.row.status === 'received'" link type="success" @click="handleReturn(scope.row)" v-hasPermi="['project:material:return']">归还</el-button>
+               <el-button v-if="scope.row.status === 'pending' || scope.row.status === 'returned'" link type="warning" @click="handleBorrow(scope.row)" v-hasPermi="['project:material:borrow']">领取</el-button>
                <el-button link type="primary" @click="handleUpdate(scope.row)" v-hasPermi="['project:material:edit']">修改</el-button>
-               <el-button link type="primary" @click="handleFlow(scope.row)">流转</el-button>
+               <el-button link type="info" @click="handleFlow(scope.row)">领取记录</el-button>
+               <el-button v-if="scope.row.status === 'received'" link
+                  :type="scope.row.archiveFlag === 'Y' ? 'success' : 'info'"
+                  @click="handleToggleArchive(scope.row)" v-hasPermi="['project:material:edit']">
+                  {{ scope.row.archiveFlag === 'Y' ? '已归档' : '未归档' }}
+               </el-button>
             </template>
          </el-table-column>
       </el-table>
@@ -185,6 +189,13 @@
             </el-row>
             <el-row :gutter="20">
                <el-col :span="24">
+                  <el-form-item label="档案室归档">
+                     <el-checkbox v-model="form.archiveFlag" true-value="Y" false-value="N">已档案室归档</el-checkbox>
+                  </el-form-item>
+               </el-col>
+            </el-row>
+            <el-row :gutter="20">
+               <el-col :span="24">
                   <el-form-item label="备注" prop="remark">
                      <el-input v-model="form.remark" type="textarea" placeholder="请输入备注" maxlength="500" :rows="3" />
                   </el-form-item>
@@ -199,23 +210,61 @@
          </template>
       </el-dialog>
 
-      <!-- 流转记录对话框 -->
-      <el-dialog title="流转记录" :model-value="flowOpen" @update:model-value="flowOpen = $event" width="600px" append-to-body>
+      <!-- 领取记录对话框 -->
+      <el-dialog title="领取记录" :model-value="flowOpen" @update:model-value="flowOpen = $event" width="600px" append-to-body>
          <el-timeline v-if="flowList.length > 0">
             <el-timeline-item v-for="item in flowList" :key="item.id"
                :type="item.flowType === '领取' ? 'primary' : 'success'"
                :timestamp="item.operateTime" placement="top">
                <el-card shadow="never">
-                  <p><strong>{{ item.flowType }}</strong> — 操作人：{{ item.userName }}</p>
+                  <p><strong>{{ item.flowType }}</strong></p>
                   <p v-if="item.guarantorName">担保人：{{ item.guarantorName }}</p>
                   <p v-if="item.remark">备注：{{ item.remark }}</p>
                </el-card>
             </el-timeline-item>
          </el-timeline>
-         <el-empty v-else description="暂无流转记录" />
+         <el-empty v-else description="暂无领取记录" />
          <template #footer>
             <div class="dialog-footer">
                <el-button @click="flowOpen = false">关 闭</el-button>
+            </div>
+         </template>
+      </el-dialog>
+
+      <!-- 欠款确认弹窗 -->
+      <el-dialog title="欠款确认" :model-value="paymentOpen" @update:model-value="paymentOpen = $event" width="520px" append-to-body>
+         <div v-if="paymentInfo" class="payment-check-body">
+            <el-alert type="warning" :closable="false" show-icon class="mb20">
+               <span>该项目存在未结清款项，请确认是否领取资料</span>
+            </el-alert>
+            <div class="payment-grid">
+               <div class="payment-cell">
+                  <div class="payment-label">合同金额</div>
+                  <div class="payment-value">{{ formatMoney(paymentInfo.contractAmount) }}</div>
+               </div>
+               <div class="payment-cell">
+                  <div class="payment-label">已收金额</div>
+                  <div class="payment-value" style="color: #67c23a">{{ formatMoney(paymentInfo.receivedAmount) }}</div>
+               </div>
+               <div class="payment-cell">
+                  <div class="payment-label">未收金额</div>
+                  <div class="payment-value" style="color: #f56c6c">{{ formatMoney(paymentInfo.pendingAmount) }}</div>
+               </div>
+               <div class="payment-cell">
+                  <div class="payment-label">收款比例</div>
+                  <div class="payment-value">{{ paymentInfo.paymentRatio }}%</div>
+               </div>
+            </div>
+            <div class="payment-progress-row">
+               <div class="payment-label">收款进度</div>
+               <el-progress :percentage="Number(paymentInfo.paymentRatio) || 0" :color="'#67c23a'" :stroke-width="14" />
+            </div>
+            <el-checkbox v-model="paymentConfirm" class="mt20">我已知晓欠款情况，确认领取资料</el-checkbox>
+         </div>
+         <template #footer>
+            <div class="dialog-footer">
+               <el-button @click="paymentOpen = false">取消</el-button>
+               <el-button type="primary" :disabled="!paymentConfirm" @click="confirmBorrowWithDebt">确认领取</el-button>
             </div>
          </template>
       </el-dialog>
@@ -223,7 +272,7 @@
 </template>
 
 <script setup name="Material">
-import { listMaterial, getMaterial, updateMaterial, delMaterial, borrowMaterial, returnMaterial, getFlowList, getMaterialStatusCounts, getMaterialColumns } from "@/api/project/material"
+import { listMaterial, getMaterial, updateMaterial, delMaterial, borrowMaterial, getFlowList, getMaterialStatusCounts, getMaterialColumns, checkPayment, toggleArchive } from "@/api/project/material"
 import { listProject } from "@/api/project/project"
 import { listUserOptions } from "@/api/system/user"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
@@ -257,6 +306,8 @@ const FALLBACK_COLUMNS = [
   { key: 'resultType', label: '成果类型', type: 'dict', group: 'business', prop: 'resultType', defaultVisible: true },
   { key: 'archiveDir', label: '存档目录', type: 'text', group: 'business', prop: 'archiveDir', defaultVisible: true },
   { key: 'status', label: '资料状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
+  { key: 'receiveTime', label: '领取时间', type: 'date', group: 'business', prop: 'receiveTime', defaultVisible: true },
+  { key: 'archiveFlag', label: '归档状态', type: 'dict', group: 'business', prop: 'archiveFlag', defaultVisible: true },
   { key: 'submitStatus', label: '提交状态', type: 'dict', group: 'business', prop: 'submitStatus', defaultVisible: false },
   { key: 'guarantorFlag', label: '是否担保', type: 'dict', group: 'business', prop: 'guarantorFlag', defaultVisible: false },
   { key: 'guarantorId', label: '担保人', type: 'user', group: 'business', prop: 'guarantorId', defaultVisible: false },
@@ -318,6 +369,7 @@ function dictOptions(key) {
   if (key === 'status') return proj_material_status.value
   if (key === 'submitStatus') return proj_material_submit_status.value
   if (key === 'guarantorFlag') return [{ value: 'Y', label: '需要' }, { value: 'N', label: '不需要' }]
+  if (key === 'archiveFlag') return [{ value: 'Y', label: '已归档' }, { value: 'N', label: '未归档' }]
   return []
 }
 
@@ -344,6 +396,12 @@ const advancedVisible = ref(false)
 // 流转记录
 const flowOpen = ref(false)
 const flowList = ref([])
+
+// 欠款确认弹窗
+const paymentOpen = ref(false)
+const paymentInfo = ref(null)
+const paymentConfirm = ref(false)
+const pendingBorrowRow = ref(null)
 
 const data = reactive({
   form: {},
@@ -391,7 +449,8 @@ function reset() {
     id: undefined, projectId: undefined, submitTime: undefined,
     contactName: undefined, contactPhone: undefined,
     resultType: undefined, archiveDir: undefined, remark: undefined,
-    guarantorFlag: 'N', guarantorId: undefined
+    guarantorFlag: 'N', guarantorId: undefined,
+    archiveFlag: 'N'
   }
   proxy.resetForm("materialRef")
 }
@@ -519,33 +578,70 @@ function submitForm() {
   })
 }
 
-/** 领取/再次领取：仅确认，担保人由后端从资料记录读取 */
+/** 领取：先检查担保人，再检查欠款 */
 function handleBorrow(row) {
-  // 资料标记需要担保但未设置担保人时拦截（后端同样兜底校验）
+  // 资料标记需要担保但未设置担保人时拦截
   if (row.guarantorFlag === 'Y' && !row.guarantorId) {
     proxy.$modal.msgWarning("该资料需要担保人，请先在编辑页设置担保人")
     return
   }
-  const tip = row.status === "returned" ? "确认再次领取该资料？" : "确认领取该资料？"
-  proxy.$modal.confirm(tip).then(() => {
-    borrowMaterial(row.id).then(() => {
-      proxy.$modal.msgSuccess("领取成功")
+  // 查询欠款信息
+  checkPayment(row.projectId).then(res => {
+    const info = res.data
+    if (info && info.hasDebt) {
+      // 有欠款 → 弹出确认弹窗
+      paymentInfo.value = info
+      paymentConfirm.value = false
+      pendingBorrowRow.value = row
+      paymentOpen.value = true
+    } else {
+      // 无欠款 → 直接确认领取
+      proxy.$modal.confirm("确认领取该资料？").then(() => {
+        borrowMaterial(row.id).then(() => {
+          proxy.$modal.msgSuccess("领取成功")
+          getList()
+        })
+      }).catch(() => {})
+    }
+  }).catch(() => {
+    // 查询失败 → 兜底直接确认
+    proxy.$modal.confirm("确认领取该资料？").then(() => {
+      borrowMaterial(row.id).then(() => {
+        proxy.$modal.msgSuccess("领取成功")
+        getList()
+      })
+    }).catch(() => {})
+  })
+}
+
+/** 欠款弹窗确认领取 */
+function confirmBorrowWithDebt() {
+  if (!pendingBorrowRow.value) return
+  borrowMaterial(pendingBorrowRow.value.id).then(() => {
+    proxy.$modal.msgSuccess("领取成功")
+    paymentOpen.value = false
+    getList()
+  })
+}
+
+/** 快捷切换归档状态 */
+function handleToggleArchive(row) {
+  const action = row.archiveFlag === 'Y' ? '取消归档' : '归档'
+  proxy.$modal.confirm(`确认${action}该资料？`).then(() => {
+    toggleArchive(row.id).then(() => {
+      proxy.$modal.msgSuccess(`${action}成功`)
       getList()
     })
   }).catch(() => {})
 }
 
-/** 归还：仅确认 */
-function handleReturn(row) {
-  proxy.$modal.confirm("确认归还该资料？").then(() => {
-    returnMaterial(row.id).then(() => {
-      proxy.$modal.msgSuccess("归还成功")
-      getList()
-    })
-  }).catch(() => {})
+/** 格式化金额 */
+function formatMoney(val) {
+  if (val == null) return '¥0.00'
+  return '¥' + Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-/** 查看流转记录 */
+/** 查看领取记录 */
 function handleFlow(row) {
   getFlowList(row.id).then(response => {
     flowList.value = response.data || []
@@ -676,4 +772,37 @@ loadStatusCounts()
   user-select: none;
 }
 .collapse-link:hover { color: #409eff; }
+
+/* ===== 欠款确认弹窗 ===== */
+.payment-check-body { padding: 0 4px; }
+.payment-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.payment-cell {
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--el-fill-color-light, #f5f5f5);
+  text-align: center;
+}
+.payment-label {
+  font-size: 13px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+.payment-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+}
+.payment-progress-row {
+  margin-bottom: 16px;
+}
+.payment-progress-row .payment-label {
+  margin-bottom: 10px;
+}
+.mt20 { margin-top: 20px; }
+.mb20 { margin-bottom: 20px; }
 </style>

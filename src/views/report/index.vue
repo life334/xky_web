@@ -197,6 +197,7 @@
       class="report-designer-dialog"
       append-to-body 
       destroy-on-close
+      :close-on-click-modal="false"
     >
       <!-- 头部工具条 -->
       <div class="designer-head">
@@ -426,11 +427,11 @@
           <span class="footer-hint">「汇总」字段由系统计算 · 保存后即可在导出中使用</span>
         </div>
         <div class="footer-btns">
-          <el-button @click="designerVisible = false">取消</el-button>
-          <el-button type="success" :loading="designerExporting" @click="exportDesignerDirect">
+          <el-button size="small" @click="designerVisible = false">取消</el-button>
+          <el-button size="small" type="success" :loading="designerExporting" @click="exportDesignerDirect">
             <el-icon><Download /></el-icon>&nbsp;直接导出
           </el-button>
-          <el-button type="primary" :loading="designerSaving" @click="saveDesigner">
+          <el-button size="small" type="primary" :loading="designerSaving" @click="saveDesigner">
             {{ designerIsBuiltin ? '保存为自定义模板' : '保存修改' }}
           </el-button>
         </div>
@@ -834,6 +835,7 @@ async function onFilterChange(id) {
   clearFilterValues()
   Object.keys(cfg.values || {}).forEach(k => { filterValues[k] = cfg.values[k] })
   currentFilterSchemeName.value = detail.filterName
+  clearTimeout(previewTimer)
   doPreview()
 }
 
@@ -1385,7 +1387,7 @@ function leafWidth(leaf) {
     }
   }
   .filter-empty {
-    margin-top: 12px;
+    margin-top: 8px;
     border-top: 1px dashed var(--el-border-color);
     padding-top: 12px;
     display: flex;
@@ -1561,7 +1563,8 @@ function leafWidth(leaf) {
   .designer-body {
     display: flex;
     gap: 12px;
-    height: 420px;
+    flex: 1;          /* 自适应撑满 body 剩余空间（原 height:420px 写死） */
+    min-height: 0;    /* flex 子项必须设 min-height:0 才能正确收缩/滚动 */
 
     /* 左：字段库 */
     .designer-pool {
@@ -1687,7 +1690,7 @@ function leafWidth(leaf) {
       min-width: 0;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 8px;        /* 预览与列管理间距 12px -> 8px */
 
       /* 实时表头预览 */
       .stage-preview {
@@ -2003,13 +2006,13 @@ function leafWidth(leaf) {
   .designer-footer {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-top: 12px;
+    gap: 8px;
+    margin-top: 4px;
     .footer-info {
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 12px;
+      gap: 6px;
+      font-size: 11px;
       color: var(--el-text-color-secondary);
       .footer-count {
         font-size: 14px;
@@ -2068,17 +2071,14 @@ function leafWidth(leaf) {
   }
   .el-dialog__body {
     flex: 1;
-    padding: 12px 16px;
+    padding: 8px 12px;    /* 缩小 body padding，给编辑区更多空间 */
     overflow: hidden;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
   }
   .el-dialog__footer {
-    flex-shrink: 0;
-    padding: 10px 16px 14px;
-    border-top: 1px solid var(--el-border-color-lighter);
-    text-align: right;
+    display: none;   /* 隐藏空的原生 footer（实际按钮在 body 内的 .designer-footer） */
   }
 }
 </style>

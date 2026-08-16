@@ -61,6 +61,22 @@ export function returnMaterial(id, data) {
   })
 }
 
+// 查询项目欠款信息（领取前检查）
+export function checkPayment(projectId) {
+  return request({
+    url: '/project/material/payment-check/' + projectId,
+    method: 'get'
+  })
+}
+
+// 快捷切换归档状态
+export function toggleArchive(id) {
+  return request({
+    url: '/project/material/toggle-archive/' + id,
+    method: 'put'
+  })
+}
+
 // 查询流转记录
 export function getFlowList(id) {
   return request({
