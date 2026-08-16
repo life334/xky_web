@@ -150,6 +150,20 @@
                   </el-form-item>
                </el-col>
             </el-row>
+            
+            <!-- 关联定线规则（仅小类显示） -->
+            <el-row v-if="form.parentId != null && form.parentId > 0">
+               <el-col :span="24">
+                  <el-form-item label="关联定线">
+                     <el-radio-group v-model="form.linkRule">
+                        <el-radio :value="0">不关联</el-radio>
+                        <el-radio :value="1">可选关联</el-radio>
+                        <el-radio :value="2">必须关联</el-radio>
+                     </el-radio-group>
+                     <div style="color: #999; font-size: 12px; margin-top: 4px;margin-left: 10px">验线类项目可选择关联同大类下的定线项目，必须关联时保存需填写关联定线编号</div>
+                  </el-form-item>
+               </el-col>
+            </el-row>
 
             <!-- 计费方式（仅小类） -->
             <template v-if="isSubCategory">
@@ -347,6 +361,7 @@ function reset() {
     externalPrice: undefined,
     sortOrder: 0,
     status: "0",
+    linkRule: 0,
     remark: undefined,
     billingList: undefined
   }

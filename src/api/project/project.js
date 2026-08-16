@@ -101,3 +101,12 @@ export function getProjectColumns() {
     method: 'get'
   })
 }
+
+// 查询关联定线候选项目
+export function getRelatedCandidates(engineeringProject) {
+  return request({
+    url: '/project/project/relatedCandidates',
+    method: 'get',
+    params: { engineeringProject }
+  })
+}

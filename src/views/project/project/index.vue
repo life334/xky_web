@@ -190,8 +190,16 @@
       <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
       <!-- 添加或修改项目对话框 -->
-      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
-         <el-form ref="projectRef" :model="form" :rules="rules" label-width="90px">
+      <el-dialog 
+         :title="title" 
+         :model-value="open" 
+         @update:model-value="open = $event" 
+         width="80%" 
+         append-to-body 
+         :close-on-click-modal="false" 
+         :close-on-press-escape="false"
+      >
+         <el-form ref="projectRef" :model="form" :rules="rules" label-width="100px">
             <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="工程编号" prop="projectCode">
@@ -207,7 +215,9 @@
             <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="工程项目" prop="engineeringProject">
-                     <el-input v-model="form.engineeringProject" placeholder="请输入工程项目名称" maxlength="200" />
+                     <el-select v-model="form.engineeringProject" filterable clearable placeholder="请选择工程项目" style="width: 100%">
+                        <el-option v-for="item in subCategoryOptions" :key="item.id" :label="item.label" :value="item.label" />
+                     </el-select>
                   </el-form-item>
                </el-col>
                <el-col :span="8">
@@ -220,6 +230,18 @@
                <el-col :span="8">
                   <el-form-item label="工程地点" prop="projectLocation">
                      <el-input v-model="form.projectLocation" placeholder="请输入工程地点" maxlength="300" />
+                  </el-form-item>
+               </el-col>
+            </el-row>
+            <el-row :gutter="20" v-if="relatedFieldVisible">
+               <el-col :span="8">
+                  <el-form-item label="关联定线编号" label-width="110px" prop="relatedProjectId" :rules="relatedFieldRequired ? [{ required: true, message: '该工程项目必须关联定线项目', trigger: 'change' }] : []">
+                     <el-select v-model="form.relatedProjectId" filterable clearable placeholder="请选择关联定线项目" style="width: 100%">
+                        <el-option v-for="item in relatedCandidates" :key="item.id" :label="item.projectCode" :value="item.id">
+                           <span>{{ item.projectCode }}</span>
+                           <span style="color: #999; margin-left: 8px; font-size: 12px">{{ item.projectName }}</span>
+                        </el-option>
+                     </el-select>
                   </el-form-item>
                </el-col>
             </el-row>
@@ -366,6 +388,7 @@
             <el-descriptions-item label="项目名称" :span="1">{{ detail.projectName }}</el-descriptions-item>
             <el-descriptions-item label="项目类别">{{ detail.categoryName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="工程项目">{{ detail.engineeringProject || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="关联定线编号">{{ detail.relatedProjectCode || '-' }}</el-descriptions-item>
             <el-descriptions-item label="委托单位">{{ detail.clientUnit || '-' }}</el-descriptions-item>
             <el-descriptions-item label="工程地点">{{ detail.projectLocation || '-' }}</el-descriptions-item>
             <el-descriptions-item label="联系人">{{ detail.contactName || '-' }}</el-descriptions-item>
@@ -507,9 +530,9 @@
 </template>
 
 <script setup name="Project">
-import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues, getProjectColumns } from "@/api/project/project"
+import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues, getProjectColumns, getRelatedCandidates } from "@/api/project/project"
 import cache from '@/plugins/cache'
-import { categoryTreeselect } from "@/api/project/category"
+import { categoryTreeselectFull } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { listTask } from "@/api/project/task"
 import { listContract } from "@/api/project/contract"
@@ -542,6 +565,7 @@ const FALLBACK_COLUMNS = [
   { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
   { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
   { key: 'engineeringProject', label: '工程项目', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
+  { key: 'relatedProjectCode', label: '关联工程编号', type: 'text', group: 'business', prop: 'relatedProjectCode', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
   { key: 'status', label: '状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
@@ -615,6 +639,27 @@ const deleteDisabledByClosed = computed(() =>
   currentSelection.value.some(r => r.status === 'closed') && !checkRole(['admin'])
 )
 const categoryOptions = ref([])
+const subCategoryOptions = computed(() => {
+  const list = []
+  for (const parent of categoryOptions.value) {
+    if (parent.children && parent.children.length) {
+      for (const child of parent.children) {
+        list.push({ id: child.id, label: child.name, linkRule: child.linkRule || 0 })
+      }
+    }
+  }
+  return list
+})
+const relatedCandidates = ref([])
+const currentSubCategory = computed(() => {
+  return subCategoryOptions.value.find(item => item.label === form.value.engineeringProject)
+})
+const relatedFieldVisible = computed(() => {
+  return currentSubCategory.value && currentSubCategory.value.linkRule > 0
+})
+const relatedFieldRequired = computed(() => {
+  return currentSubCategory.value && currentSubCategory.value.linkRule === 2
+})
 const userOptions = ref([])
 const leaderOptions = ref([])
 const contractOptions = ref([])
@@ -787,6 +832,21 @@ function refreshFormDuration() {
 }
 
 watch(() => form.value.assignDate, refreshFormDuration)
+
+/** 工程项目变化时加载关联定线候选项目 */
+watch(() => form.value.engineeringProject, (val) => {
+  if (val && relatedFieldVisible.value) {
+    relatedCandidates.value = []
+    getRelatedCandidates(val).then(res => {
+      relatedCandidates.value = res.data || []
+    }).catch(() => {
+      relatedCandidates.value = []
+    })
+  } else {
+    form.value.relatedProjectId = undefined
+    relatedCandidates.value = []
+  }
+})
 
 /** 模糊搜索合同（keyword 后端 OR 匹配：编号/名称/委托单位/联系人） */
 function searchContracts(query) {
@@ -971,7 +1031,7 @@ function loadDistinctValues() {
 
 /** 加载类别树 */
 function loadCategoryTree() {
-  categoryTreeselect().then(response => {
+  categoryTreeselectFull().then(response => {
     categoryOptions.value = response.data
   })
 }
@@ -1020,6 +1080,7 @@ function reset() {
     projectCode: undefined,
     projectName: undefined,
     engineeringProject: undefined,
+    relatedProjectId: undefined,
     clientUnit: undefined,
     contactName: undefined,
     contactPhone: undefined,
@@ -1118,6 +1179,13 @@ function handleUpdate(row) {
     title.value = "修改项目"
     // 打开弹窗即按"安排日期→今天"实时计算总时长（不依赖用户重新选择日期）
     refreshFormDuration()
+    // 显式加载关联定线候选项目（watch 可能因时序未触发）
+    if (form.value.engineeringProject && relatedFieldVisible.value) {
+      relatedCandidates.value = []
+      getRelatedCandidates(form.value.engineeringProject).then(res => {
+        relatedCandidates.value = res.data || []
+      })
+    }
   })
 }
 
