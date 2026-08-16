@@ -106,7 +106,7 @@
                      <div class="expand-check-bar">
                         <div class="check-cell">
                            <span class="check-label">结算总额</span>
-                           <span class="check-value">{{ formatMoney(scope.row.output) }}</span>
+                           <span class="check-value">{{ formatMoney(scope.row.externalOutput) }}</span>
                         </div>
                         <div class="check-divider" />
                         <div class="check-cell">
@@ -123,57 +123,70 @@
 
                      <!-- ② 产值构成明细 -->
                      <div class="expand-section-title">产值构成明细</div>
-                     <el-table :data="expandDetails[scope.row.projectId].workloads" stripe border size="small" show-summary :summary-method="getExpandSummaries">
-                        <el-table-column label="负责人" align="center" prop="userName" min-width="80" show-overflow-tooltip>
+                     <el-table :data="expandDetails[scope.row.projectId].workloads" border size="small" :row-class-name="expandRowClass">
+                        <el-table-column label="负责人" align="center" prop="userName" width="120" show-overflow-tooltip>
                            <template #default="s"><span v-if="!s.row.userName" class="cell-placeholder">-</span>{{ s.row.userName }}</template>
                         </el-table-column>
-                        <el-table-column label="项目类别" align="center" prop="categoryName" min-width="80" show-overflow-tooltip>
+                        <el-table-column label="项目类别" align="center" prop="categoryName" width="200" show-overflow-tooltip>
                            <template #default="s"><span v-if="!s.row.categoryName" class="cell-placeholder">-</span>{{ s.row.categoryName }}</template>
                         </el-table-column>
-                        <el-table-column label="工作量" align="center" prop="workload" min-width="100">
-                           <template #default="s">{{ s.row.workload != null ? s.row.workload : '-' }}</template>
+                        <el-table-column label="计费方式" align="center" width="200">
+                           <template #default="s">
+                              <template v-if="s.row._isSummary">
+                                 <span :class="['summary-label', s.row.billingType]">{{ s.row.billingType === 'internal' ? '内部合计' : '外部合计' }}</span>
+                              </template>
+                              <template v-else-if="s.row.billingType">
+                                 <el-tag :type="s.row.billingType === 'internal' ? 'info' : 'warning'" size="small">{{ s.row.billingType === 'internal' ? '内部' : '外部' }}</el-tag>
+                                 <span style="margin-left:4px">{{ s.row.billingCategory || '-' }}</span>
+                              </template>
+                           </template>
                         </el-table-column>
-                        <el-table-column label="内部单价" align="center" prop="internalPrice"  min-width="110">
-                           <template #default="s">{{ s.row.internalPrice != null ? formatMoney(s.row.internalPrice) : '-' }}</template>
+                        <el-table-column label="工作量" align="center" prop="workload" width="150">
+                           <template #default="s">
+                              <span :class="{ 'summary-value': s.row._isSummary }">{{ s.row.workload != null ? s.row.workload : '-' }}</span>
+                              <span v-if="s.row.priceUnit" class="cell-sub-inline">{{ s.row.priceUnit }}</span>
+                           </template>
                         </el-table-column>
-                        <el-table-column label="外部单价" align="center" prop="externalPrice"  min-width="110">
-                           <template #default="s">{{ s.row.externalPrice != null ? formatMoney(s.row.externalPrice) : '-' }}</template>
+                        <el-table-column label="单价" align="center" width="150">
+                           <template #default="s">
+                              <span v-if="s.row._isSummary"></span>
+                              <span v-else-if="s.row.unitPrice != null">{{ formatMoney(s.row.unitPrice) }}</span>
+                              <span v-else class="cell-placeholder">{{ s.row.internalPrice != null || s.row.externalPrice != null ? formatMoney(s.row.internalPrice || s.row.externalPrice) : '-' }}</span>
+                           </template>
                         </el-table-column>
-                        <el-table-column label="内部产值" align="center" prop="internalOutput" width="110">
-                           <template #default="s">{{ s.row.internalOutput != null ? formatMoney(s.row.internalOutput) : '-' }}</template>
-                        </el-table-column>
-                        <el-table-column label="外部产值" align="center" prop="externalOutput"  min-width="110">
-                           <template #default="s">{{ s.row.externalOutput != null ? formatMoney(s.row.externalOutput) : '-' }}</template>
-                        </el-table-column>
-                        <el-table-column label="小计" align="center"  min-width="110">
-                           <template #default="s">{{ s.row.internalOutput != null || s.row.externalOutput != null ? formatMoney((Number(s.row.internalOutput)||0) + (Number(s.row.externalOutput)||0)) : '-' }}</template>
+                        <el-table-column label="产值" align="center" prop="output" width="250">
+                           <template #default="s">
+                              <span v-if="s.row.output != null && s.row.billingType" :class="['output-dot', s.row.billingType]"></span>
+                              <span :class="{ 'summary-value': s.row._isSummary }">{{ s.row.output != null ? formatMoney(s.row.output) : '-' }}</span>
+                              <div v-if="!s.row._isSummary && minQtyHit(s.row)" class="cell-sub min-qty-hit">按起步量取整：{{ s.row.workload }} → {{ ceilWorkload(s.row) }}</div>
+                           </template>
                         </el-table-column>
                      </el-table>
 
                      <!-- ③ 付款记录 -->
                      <div class="expand-section-title">付款记录</div>
-                     <el-table v-if="(expandDetails[scope.row.projectId].payments || []).length" :data="expandDetails[scope.row.projectId].payments" stripe border size="small">
-                        <el-table-column label="付款类型" align="center"  min-width="90">
+                     <el-table v-if="(expandDetails[scope.row.projectId].payments || []).length" :data="expandDetails[scope.row.projectId].payments" border size="small" :span-method="(args) => paymentSpanMethod(args, scope.row.projectId)">
+                        <el-table-column label="付款类型" align="center"  width="120">
                            <template #default="s">
                               <el-tag :type="s.row.paymentType === 'advance' ? 'primary' : 'success'" size="small">{{ s.row.paymentType === 'advance' ? '预付款' : '尾款' }}</el-tag>
                            </template>
                         </el-table-column>
-                        <el-table-column label="金额" align="center"  min-width="110">
+                        <el-table-column label="金额" align="center"  width="150">
                            <template #default="s">{{ formatMoney(s.row.amount) }}</template>
                         </el-table-column>
-                        <el-table-column label="付款时间" align="center" prop="payTime" min-width="150" show-overflow-tooltip>
+                        <el-table-column label="付款时间" align="center" prop="payTime" width="150">
                            <template #default="s">{{ s.row.payTime }}</template>
                         </el-table-column>
-                        <el-table-column label="付款方式" align="center" prop="payMethod" min-width="100">
+                        <el-table-column label="付款方式" align="center" prop="payMethod" width="120">
                            <template #default="s">{{ s.row.payMethod }}</template>
                         </el-table-column>
-                        <el-table-column label="付款单位" align="center" prop="payUnit" min-width="140" show-overflow-tooltip>
+                        <el-table-column label="付款单位" align="center" prop="payUnit" width="200">
                            <template #default="s">{{ s.row.payUnit }}</template>
                         </el-table-column>
-                        <el-table-column label="开票金额" align="center" min-width="110">
+                        <el-table-column label="开票金额" align="center" width="150">
                            <template #default="s">{{ s.row.invoiceAmount != null ? formatMoney(s.row.invoiceAmount) : '' }}</template>
                         </el-table-column>
-                        <el-table-column label="开票状态" align="center" min-width="90">
+                        <el-table-column label="开票状态" align="center" width="100">
                            <template #default="s">
                               <el-tag v-if="s.row.invoiceStatus === '已开'" type="success" size="small">已开</el-tag>
                               <el-tag v-else-if="s.row.invoiceStatus === '已作废'" type="danger" size="small">已作废</el-tag>
@@ -181,10 +194,10 @@
                               <span v-else class="cell-placeholder">-</span>
                            </template>
                         </el-table-column>
-                        <el-table-column label="发票号码" align="center" prop="invoiceNo" min-width="130" >
+                        <el-table-column label="发票号码" align="center" prop="invoiceNo" width="130" >
                            <template #default="s"><span v-if="!s.row.invoiceNo" class="cell-placeholder">-</span>{{ s.row.invoiceNo }}</template>
                         </el-table-column>
-                        <el-table-column label="备注" align="center" prop="remark" min-width="120">
+                        <el-table-column label="备注" align="center" prop="remark" width="150">
                            <template #default="s"><span v-if="!s.row.remark" class="cell-placeholder">-</span>{{ s.row.remark }}</template>
                         </el-table-column>
                      </el-table>
@@ -239,7 +252,7 @@
          <div class="bar-title">结算核对 · {{ currentRow.projectCode }}</div>
          <div class="bar-cell">
             <span class="bar-label">结算总额</span>
-            <span class="bar-value">{{ formatMoney(currentRow.output) }}</span>
+            <span class="bar-value">{{ formatMoney(currentRow.externalOutput) }}</span>
          </div>
          <div class="bar-divider" />
          <div class="bar-cell">
@@ -290,7 +303,7 @@
                工作量明细
                <el-button type="primary" link icon="Plus" @click="addWorkloadRow" style="margin-left:10px">添加行</el-button>
             </el-divider>
-            <el-table :data="editForm.workloads" stripe border>
+            <el-table :data="editForm.workloads" border :row-class-name="workloadRowClass">
                <el-table-column label="负责人" align="center" min-width="110">
                   <template #default="scope">
                      <el-select v-model="scope.row.userId" filterable placeholder="选择负责人" style="width:100%">
@@ -298,7 +311,7 @@
                      </el-select>
                   </template>
                </el-table-column>
-               <el-table-column label="项目类别" align="center" min-width="130">
+               <el-table-column label="项目类别" align="center" min-width="140">
                   <template #default="scope">
                      <el-tree-select
                         v-model="scope.row.categoryId"
@@ -312,29 +325,50 @@
                      />
                   </template>
                </el-table-column>
-               <el-table-column label="工作量" align="center" width="120">
+               <el-table-column label="类型" align="center" width="72">
+                  <template #default="scope">
+                     <el-tag v-if="scope.row.billingType === 'internal'" type="info" size="small" effect="dark">内部</el-tag>
+                     <el-tag v-else-if="scope.row.billingType === 'external'" type="warning" size="small" effect="dark">外部</el-tag>
+                     <span v-else class="cell-placeholder">—</span>
+                  </template>
+               </el-table-column>
+               <el-table-column label="计费方式" align="center" min-width="180">
+                  <template #default="scope">
+                     <el-select
+                        v-model="scope.row.billingKey"
+                        placeholder="先选类别"
+                        style="width:100%"
+                        :disabled="!scope.row.categoryId"
+                        @change="(val) => onBillingChange(val, scope.row)"
+                     >
+                        <el-option-group v-for="g in billingGroups(scope.row.categoryId)" :key="g.label" :label="g.label">
+                           <el-option v-for="o in g.options" :key="o.value" :label="o.label" :value="o.value" />
+                        </el-option-group>
+                     </el-select>
+                  </template>
+               </el-table-column>
+               <el-table-column label="工作量" align="center" width="150">
                   <template #default="scope">
                      <el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" style="width:100%" @change="calcRow(scope.row)" />
+                     <div v-if="scope.row.priceUnit" class="cell-sub">
+                        {{ scope.row.priceUnit }}
+                        <span v-if="minQtyHit(scope.row)" class="min-qty-hit">按起步量取整：{{ scope.row.workload }} → {{ ceilWorkload(scope.row) }}</span>
+                     </div>
                   </template>
                </el-table-column>
-               <el-table-column label="内部单价" align="center" width="120">
+               <el-table-column label="单价（元）" align="center" width="140">
                   <template #default="scope">
-                     <el-input-number v-model="scope.row.internalPrice" :min="0" :precision="2" controls-position="right" style="width:100%" @change="calcRow(scope.row)" />
+                     <el-input-number v-model="scope.row.unitPrice" :min="0" :precision="2" controls-position="right" style="width:100%" @change="onUnitPriceChange(scope.row)" />
+                     <div v-if="scope.row.priceSource && scope.row.unitPrice != null" class="cell-sub">
+                        <el-tag :type="priceSourceMeta(scope.row.priceSource).type" size="small" effect="plain">{{ priceSourceMeta(scope.row.priceSource).text }}</el-tag>
+                     </div>
                   </template>
                </el-table-column>
-               <el-table-column label="外部单价" align="center" width="120">
+               <el-table-column label="产值" align="center" min-width="140">
                   <template #default="scope">
-                     <el-input-number v-model="scope.row.externalPrice" :min="0" :precision="2" controls-position="right" style="width:100%" @change="calcRow(scope.row)" />
-                  </template>
-               </el-table-column>
-               <el-table-column label="内部产值" align="center" width="120">
-                  <template #default="scope">
-                     <span>{{ formatMoney(scope.row.internalOutput) }}</span>
-                  </template>
-               </el-table-column>
-               <el-table-column label="外部产值" align="center" width="120">
-                  <template #default="scope">
-                     <span>{{ formatMoney(scope.row.externalOutput) }}</span>
+                     <span v-if="scope.row.output != null && scope.row.billingType" :class="['output-dot', scope.row.billingType]"></span>
+                     <span class="row-output">{{ scope.row.output != null ? formatMoney(scope.row.output) : '-' }}</span>
+                     <div v-if="calcExpr(scope.row)" class="cell-sub calc-hint">{{ calcExpr(scope.row) }}</div>
                   </template>
                </el-table-column>
                <el-table-column label="操作" align="center" width="60">
@@ -344,15 +378,24 @@
                </el-table-column>
             </el-table>
 
-            <!-- 产值统计条（内部/外部各计，无总产值） -->
+            <!-- 产值统计条（紧凑单行） -->
             <div class="output-summary-bar">
-               <span class="sum-item">
-                  <span class="sum-label">内部产值合计</span>
-                  <span class="sum-value">{{ formatMoney(internalOutputTotal) }}</span>
+               <span class="sum-inline sum-internal">
+                  <i class="sum-dot" />内部产值
+                  <b>{{ formatMoney(internalOutputTotal) }}</b>
+                  <small>{{ internalRowCount }} 行</small>
                </span>
-               <span class="sum-item">
-                  <span class="sum-label">外部产值合计</span>
-                  <span class="sum-value">{{ formatMoney(externalOutputTotal) }}</span>
+               <span class="sum-sep" />
+               <span class="sum-inline sum-external">
+                  <i class="sum-dot" />外部产值
+                  <b>{{ formatMoney(externalOutputTotal) }}</b>
+                  <small>{{ externalRowCount }} 行</small>
+               </span>
+               <span class="sum-sep" />
+               <span class="sum-inline sum-total">
+                  <i class="sum-dot" />结算总额
+                  <b>{{ formatMoney(externalOutputTotal) }}</b>
+                  <small>= 外部合计</small>
                </span>
             </div>
 
@@ -551,7 +594,7 @@
 <script setup name="Settlement">
 import { ElMessageBox } from 'element-plus'
 import { treeListSettlement, getSettlementDetail, saveSettlement, getSettlementColumns } from "@/api/project/settlement"
-import { categoryTreeselectFull } from "@/api/project/category"
+import { categoryTreeselectFull, listBilling } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { getDistinctValues } from "@/api/project/project"
 import { checkPermi } from "@/utils/permission"
@@ -655,6 +698,8 @@ const leaderOptions = ref([])   // 当前项目负责人（编辑弹窗里用）
 const categoryOptions = ref([])
 const contractPriceMap = ref({})
 const clientUnitOptions = ref([])
+/** 全量计费方式：categoryId -> [{billingType, billingCategory, unitPrice, priceUnit, minQuantity}] */
+const billingMap = ref({})
 
 // 新增：智能查询面板
 const assignDateRange = ref([])
@@ -697,11 +742,11 @@ const data = reactive({
 
 const { queryParams, editForm } = toRefs(data)
 
-// 内部产值合计
+// 内部产值合计（按行 billingType 分组求和）
 const internalOutputTotal = computed(() => {
   let sum = 0
   editForm.value.workloads.forEach(row => {
-    if (row.internalOutput) sum += Number(row.internalOutput)
+    if (row.billingType === 'internal' && row.output) sum += Number(row.output)
   })
   return sum
 })
@@ -710,10 +755,15 @@ const internalOutputTotal = computed(() => {
 const externalOutputTotal = computed(() => {
   let sum = 0
   editForm.value.workloads.forEach(row => {
-    if (row.externalOutput) sum += Number(row.externalOutput)
+    if (row.billingType === 'external' && row.output) sum += Number(row.output)
   })
   return sum
 })
+
+// 内部计费行数
+const internalRowCount = computed(() => editForm.value.workloads.filter(r => r.billingType === 'internal').length)
+// 外部计费行数
+const externalRowCount = computed(() => editForm.value.workloads.filter(r => r.billingType === 'external').length)
 
 // 已收 = 预付款 + 尾款（实时联动）
 const receivedAmount = computed(() => {
@@ -746,45 +796,119 @@ function formatMoney(val) {
   return Number(val).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-/** 计算单行产值 */
+/** 计算单行产值（起步量兜底）并同步内部/外部产值字段（供后端汇总口径） */
 function calcRow(row) {
-  if (row.workload && row.internalPrice) {
-    row.internalOutput = (Number(row.workload) * Number(row.internalPrice)).toFixed(2)
-  } else {
-    row.internalOutput = null
-  }
-  if (row.workload && row.externalPrice) {
-    row.externalOutput = (Number(row.workload) * Number(row.externalPrice)).toFixed(2)
-  } else {
+  const w = Number(row.workload) || 0
+  const p = Number(row.unitPrice) || 0
+  const min = Number(row.minQuantity) || 0
+  // 起步量向上取整：工作量按起步量的整数倍计费
+  const effQty = (min > 0 && w > 0) ? Math.ceil(w / min) * min : w
+  row.output = (w > 0 && p > 0) ? (effQty * p).toFixed(2) : null
+  // 同步旧字段：内部行写 internal_*，外部行写 external_*（列表页/总览汇总依赖）
+  if (row.billingType === 'internal') {
+    row.internalPrice = row.unitPrice
+    row.internalOutput = row.output
+    row.externalPrice = null
     row.externalOutput = null
+  } else if (row.billingType === 'external') {
+    row.externalPrice = row.unitPrice
+    row.externalOutput = row.output
+    row.internalPrice = null
+    row.internalOutput = null
   }
 }
 
-/** 选择类别后自动填默认单价 */
+/** 是否命中起步量取整（实际工作量非起步量整数倍） */
+function minQtyHit(row) {
+  const w = Number(row.workload) || 0
+  const min = Number(row.minQuantity) || 0
+  return min > 0 && w > 0 && Math.ceil(w / min) * min !== w
+}
+
+/** 起步量取整后的计费数量 */
+function ceilWorkload(row) {
+  const w = Number(row.workload) || 0
+  const min = Number(row.minQuantity) || 0
+  return (min > 0 && w > 0) ? Math.ceil(w / min) * min : w
+}
+
+/** 产值计算式小字（如 2公里（实际1.5）× 2,000.00 = 4,000.00） */
+function calcExpr(row) {
+  const w = Number(row.workload) || 0
+  const p = Number(row.unitPrice) || 0
+  if (!(w > 0) || !(p > 0)) return ''
+  const effQty = ceilWorkload(row)
+  const unit = row.priceUnit || ''
+  const qtyStr = minQtyHit(row) ? `${effQty}${unit}（实际${w}）` : `${effQty}${unit}`
+  return `${qtyStr} × ${formatMoney(p)} = ${formatMoney(effQty * p)}`
+}
+
+/** 单价来源徽标 */
+function priceSourceMeta(source) {
+  if (source === 'contract') return { text: '合同价', type: 'success' }
+  if (source === 'manual') return { text: '手动', type: 'danger' }
+  return { text: '类别价', type: 'info' }
+}
+
+/** 类别的计费方式下拉分组（内部/外部） */
+function billingGroups(categoryId) {
+  const list = (billingMap.value[categoryId] || [])
+  const build = type => ({
+    label: type === 'internal' ? '内部' : '外部',
+    options: list
+      .filter(b => b.billingType === type)
+      .map(b => ({
+        value: `${b.billingType}#${b.billingCategory}`,
+        label: `${b.billingCategory}（¥${formatMoney(b.unitPrice)}/${b.priceUnit || '项'}${Number(b.minQuantity) > 1 ? `，起步${b.minQuantity}` : ''}）`,
+        raw: b
+      }))
+  })
+  return [build('internal'), build('external')].filter(g => g.options.length)
+}
+
+/** 选择类别后重置计费方式（仅一个选项时自动选中） */
 function onCategoryChange(categoryId, row) {
-  if (!categoryId || !categoryOptions.value.length) return
-  // 递归查找类别节点获取单价
-  function findNode(nodes, id) {
-    for (const n of nodes) {
-      if (n.id === id) return n
-      if (n.children) {
-        const found = findNode(n.children, id)
-        if (found) return found
-      }
-    }
-    return null
+  row.billingKey = null
+  row.billingType = null
+  row.billingCategory = null
+  row.priceUnit = null
+  row.minQuantity = null
+  row.unitPrice = null
+  row.priceSource = null
+  calcRow(row)
+  const groups = billingGroups(categoryId)
+  if (groups.length === 1 && groups[0].options.length === 1) {
+    onBillingChange(groups[0].options[0].value, row)
   }
-  const node = findNode(categoryOptions.value, categoryId)
-  // 内部单价：始终取类别默认值
-  if (node && node.internalPrice != null) {
-    row.internalPrice = node.internalPrice
+}
+
+/** 选择计费方式后带出 单价/单位/起步量（外部优先合同价） */
+function onBillingChange(billingKey, row) {
+  const groups = billingGroups(row.categoryId)
+  let opt = null
+  groups.forEach(g => g.options.forEach(o => { if (o.value === billingKey) opt = o }))
+  if (!opt || !opt.raw) return
+  const b = opt.raw
+  row.billingType = b.billingType
+  row.billingCategory = b.billingCategory
+  row.priceUnit = b.priceUnit
+  row.minQuantity = b.minQuantity
+  // 外部计费方式：有合同价优先合同价
+  const cp = contractPriceMap.value[row.categoryId]
+  if (b.billingType === 'external' && cp && cp.price != null) {
+    row.unitPrice = cp.price
+    row.priceSource = 'contract'
+  } else {
+    row.unitPrice = b.unitPrice
+    row.priceSource = 'dict'
   }
-  // 外部单价：有合同取合同价，无合同取类别默认值
-  const cp = contractPriceMap.value[categoryId]
-  if (cp && cp.price != null) {
-    row.externalPrice = cp.price
-  } else if (node && node.externalPrice != null) {
-    row.externalPrice = node.externalPrice
+  calcRow(row)
+}
+
+/** 手动修改单价：标记来源为手动 */
+function onUnitPriceChange(row) {
+  if (row.unitPrice != null) {
+    row.priceSource = 'manual'
   }
   calcRow(row)
 }
@@ -811,16 +935,16 @@ function effectiveReceived(row) {
   return (Number(row.prepayAmount) || 0) + (Number(row.tailAmount) || 0)
 }
 
-/** 待收差额 = 结算总额 - 已收 */
+/** 待收差额 = 结算总额(外部产值) - 已收 */
 function effectivePending(row) {
-  const output = Number(row.output) || 0
+  const output = Number(row.externalOutput) || 0
   return output - effectiveReceived(row)
 }
 
 /** 结算状态：settled 已结清 / pending 未结清 / overdue 超额（后端字段优先，缺失时前端兜底计算） */
 function effectiveStatus(row) {
   if (row.settlementStatus) return row.settlementStatus
-  const output = Number(row.output) || 0
+  const output = Number(row.externalOutput) || 0
   const pending = effectivePending(row)
   if (pending < -0.01) return 'overdue'
   if (Math.abs(pending) <= 0.01 && output > 0) return 'settled'
@@ -859,8 +983,57 @@ function loadExpandDetail(row) {
     const detail = res.data || {}
     expandDetails[row.projectId] = {
       loading: false,
-      workloads: detail.workloads || [],
-      payments: detail.payments || []
+      workloads: (() => {
+        const sorted = (detail.workloads || [])
+          .map(w => ({
+            ...w,
+            output: w.internalOutput != null ? w.internalOutput : (w.externalOutput != null ? w.externalOutput : null)
+          }))
+          .sort((a, b) => {
+            // 外部在前、内部在后
+            const order = { external: 0, internal: 1 }
+            return (order[a.billingType] ?? 2) - (order[b.billingType] ?? 2)
+          })
+        // 追加分组合计行
+        const makeSummary = (type, rows) => {
+          if (!rows.length) return null
+          const sumWL = rows.reduce((s, r) => s + (Number(r.workload) || 0), 0)
+          const sumOut = rows.reduce((s, r) => s + (Number(r.output) || 0), 0)
+          return {
+            _isSummary: true,
+            billingType: type,
+            userName: '',
+            categoryName: '',
+            billingCategory: '',
+            workload: sumWL,
+            unitPrice: null,
+            output: sumOut,
+            priceUnit: '',
+            minQuantity: null
+          }
+        }
+        const extRows = sorted.filter(r => r.billingType === 'external')
+        const intRows = sorted.filter(r => r.billingType === 'internal')
+        const result = []
+        // 外部行 + 外部合计
+        if (extRows.length) {
+          result.push(...extRows)
+          const extSum = makeSummary('external', extRows)
+          if (extSum) result.push(extSum)
+        }
+        // 内部行 + 内部合计
+        if (intRows.length) {
+          result.push(...intRows)
+          const intSum = makeSummary('internal', intRows)
+          if (intSum) result.push(intSum)
+        }
+        return result
+      })(),
+      payments: (detail.payments || []).sort((a, b) => {
+        // 预付款在前、尾款在后
+        const order = { advance: 0, final: 1 }
+        return (order[a.paymentType] ?? 2) - (order[b.paymentType] ?? 2)
+      })
     }
   }).catch(() => {
     expandDetails[row.projectId] = { loading: false, workloads: [], payments: [] }
@@ -868,21 +1041,28 @@ function loadExpandDetail(row) {
   })
 }
 
-/** 产值构成表合计行：仅汇总工作量与产值列，单价列留空 */
-function getExpandSummaries({ columns, data }) {
-  const sums = []
-  columns.forEach((col, i) => {
-    if (i === 0) { sums[i] = '合计'; return }
-    if (col.property === 'internalPrice' || col.property === 'externalPrice') { sums[i] = ''; return }
-    if (col.property) {
-      let s = 0
-      data.forEach(r => { s += Number(r[col.property]) || 0 })
-      sums[i] = formatMoney(s)
-    } else {
-      sums[i] = ''
+/** 展开明细表行样式：合计行高亮 */
+function expandRowClass({ row }) {
+  if (row._isSummary) {
+    return 'expand-summary-row ' + row.billingType
+  }
+  return ''
+}
+
+/** 付款记录表合并：统一开票时合并开票金额/开票状态/发票号码三列 */
+function paymentSpanMethod({ rowIndex, columnIndex }, projectId) {
+  const payments = expandDetails[projectId]?.payments || []
+  if (payments.length <= 1) return
+  // 检测是否分笔开票：尾款有独立发票信息 → split
+  const hasSplit = payments.slice(1).some(p => p.invoiceNo || p.invoiceStatus || p.invoiceAmount != null)
+  if (hasSplit) return
+  // 统一开票：合并开票金额(5)、开票状态(6)、发票号码(7)
+  if (columnIndex === 5 || columnIndex === 6 || columnIndex === 7) {
+    if (rowIndex === 0) {
+      return { rowspan: payments.length, colspan: 1 }
     }
-  })
-  return sums
+    return { rowspan: 0, colspan: 0 }
+  }
 }
 
 /** 状态胶囊点击 */
@@ -969,10 +1149,19 @@ function handleEdit(row) {
   editProjectLocation.value = row.projectLocation || ""
 
   // 加载基础数据
-  Promise.all([categoryTreeselectFull(), listUserOptions({ pageNum: 1, pageSize: 1000 }), getSettlementDetail(row.projectId)])
-    .then(([catRes, userRes, detailRes]) => {
+  Promise.all([categoryTreeselectFull(), listUserOptions({ pageNum: 1, pageSize: 1000 }), getSettlementDetail(row.projectId), listBilling()])
+    .then(([catRes, userRes, detailRes, billingRes]) => {
       categoryOptions.value = catRes.data
       userOptions.value = userRes.rows || []
+
+      // 计费方式映射：categoryId -> 启用中的计费方式列表
+      const bMap = {}
+      ;(billingRes.data || []).forEach(b => {
+        if (b.status === '1') return // 停用的不参与
+        if (!bMap[b.categoryId]) bMap[b.categoryId] = []
+        bMap[b.categoryId].push(b)
+      })
+      billingMap.value = bMap
 
       const detail = detailRes.data
       const payments = detail.payments || []
@@ -1012,17 +1201,28 @@ function handleEdit(row) {
       editForm.value.tailInvoiceDate = tail ? tail.invoiceDate : null
       editForm.value.tailInvoiceAmount = tail ? tail.invoiceAmount : null
 
-      // 填充工作量
-      editForm.value.workloads = workloads.map(w => ({
-        workloadId: w.id,
-        userId: w.userId,
-        categoryId: w.categoryId,
-        workload: w.workload,
-        internalPrice: w.internalPrice,
-        externalPrice: w.externalPrice,
-        internalOutput: w.internalOutput,
-        externalOutput: w.externalOutput
-      }))
+      // 填充工作量（新计费模型：一行一种计费方式）
+      editForm.value.workloads = workloads.map(w => {
+        const output = w.internalOutput != null ? w.internalOutput : w.externalOutput
+        return {
+          workloadId: w.id,
+          userId: w.userId,
+          categoryId: w.categoryId,
+          billingKey: w.billingType ? `${w.billingType}#${w.billingCategory}` : null,
+          billingType: w.billingType || null,
+          billingCategory: w.billingCategory || null,
+          priceUnit: w.priceUnit || null,
+          minQuantity: w.minQuantity != null ? Number(w.minQuantity) : null,
+          unitPrice: w.unitPrice != null ? w.unitPrice : (w.internalPrice != null ? w.internalPrice : w.externalPrice),
+          priceSource: w.priceSource || 'dict',
+          workload: w.workload,
+          internalPrice: w.internalPrice,
+          externalPrice: w.externalPrice,
+          internalOutput: w.internalOutput,
+          externalOutput: w.externalOutput,
+          output: output != null ? Number(output) : null
+        }
+      })
 
       // 负责人下拉：项目负责人 + 已有工作量行的负责人（Number 归一化，防 Long/字符串 类型失配）
       const leaderIdSet = new Set((detailRes.data.leaderIds || []).map(id => Number(id)))
@@ -1035,17 +1235,32 @@ function handleEdit(row) {
     })
 }
 
+/** 行样式：内部行淡蓝底，外部行淡橙底 */
+function workloadRowClass({ row }) {
+  if (row.billingType === 'internal') return 'wl-row-internal'
+  if (row.billingType === 'external') return 'wl-row-external'
+  return ''
+}
+
 /** 添加工作量行 */
 function addWorkloadRow() {
   editForm.value.workloads.push({
     workloadId: null,
     userId: null,
     categoryId: null,
+    billingKey: null,
+    billingType: null,
+    billingCategory: null,
+    priceUnit: null,
+    minQuantity: null,
+    unitPrice: null,
+    priceSource: null,
     workload: null,
     internalPrice: null,
     externalPrice: null,
     internalOutput: null,
-    externalOutput: null
+    externalOutput: null,
+    output: null
   })
 }
 
@@ -1245,21 +1460,73 @@ loadDistinctValues()
 }
 .collapse-link:hover { color: #409eff; }
 
-/* ===== 编辑弹窗：产值统计条 ===== */
+/* ===== 编辑弹窗：产值统计条（紧凑单行） ===== */
 .output-summary-bar {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 40px;
-  margin-top: 12px;
-  padding: 8px 20px;
-  background: #ecf5ff;
+  gap: 16px;
+  margin-top: 8px;
+  padding: 6px 16px;
+  background: #f8fafc;
   border-radius: 6px;
-  border: 1px solid #d9ecff;
+  border: 1px solid #e4e7ed;
 }
-.sum-item { display: inline-flex; align-items: baseline; gap: 8px; }
-.sum-label { font-size: 13px; color: #606266; }
-.sum-value { font-size: 14px; font-weight: bold; color: #409eff; font-family: "JetBrains Mono", Consolas, monospace; }
+.sum-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #606266;
+}
+.sum-inline b {
+  font-size: 15px;
+  font-weight: bold;
+  font-family: "JetBrains Mono", Consolas, monospace;
+}
+.sum-inline small {
+  font-size: 11px;
+  color: #c0c4cc;
+}
+.sum-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sum-internal .sum-dot { background: #409eff; }
+.sum-internal b { color: #409eff; }
+.sum-external .sum-dot { background: #e6a23c; }
+.sum-external b { color: #e6a23c; }
+.sum-total .sum-dot { background: #67c23a; }
+.sum-total b { color: #67c23a; }
+.sum-sep {
+  width: 1px;
+  height: 18px;
+  background: #dcdfe6;
+  flex-shrink: 0;
+}
+
+/* ===== 工作量明细行底色微染 ===== */
+:deep(.wl-row-internal td.el-table__cell) {
+  background: #f0f7ff !important;
+}
+:deep(.wl-row-external td.el-table__cell) {
+  background: #fdf6ec !important;
+}
+
+/* ===== 产值列色点 ===== */
+.output-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.output-dot.internal { background: #409eff; }
+.output-dot.external { background: #e6a23c; }
 
 /* ===== 编辑弹窗：结算金额核对区 ===== */
 .settle-check-row {
@@ -1345,6 +1612,44 @@ loadDistinctValues()
   line-height: 16px;
 }
 .cell-placeholder { color: #c0c4cc; }
+/* ===== 展开明细合计行 ===== */
+.expand-summary-row td {
+  background: #f5f7fa !important;
+  font-weight: 600;
+}
+.expand-summary-row.external td {
+  background: #fdf6ec !important;
+  border-top: 2px solid #e6a23c;
+}
+.expand-summary-row.internal td {
+  background: #ecf5ff !important;
+  border-top: 2px solid #409eff;
+}
+.summary-label {
+  font-size: 13px;
+  font-weight: 700;
+}
+.summary-label.external { color: #e6a23c; }
+.summary-label.internal { color: #409eff; }
+.summary-value {
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 14px;
+}
+/* ===== 工作量明细单元格辅助文字 ===== */
+.cell-sub {
+   font-size: 12px;
+   color: #909399;
+   line-height: 16px;
+   margin-top: 2px;
+   text-align: center;
+}
+.cell-sub-inline { font-size: 12px; color: #909399; margin-left: 3px; }
+.min-qty-hit { color: #e6a23c; margin-left: 4px; }
+.calc-hint { color: #a8abb2; font-family: "JetBrains Mono", Consolas, monospace; }
+.row-output {
+   font-weight: 600;
+   font-family: "JetBrains Mono", Consolas, monospace;
+}
 .expand-empty {
   padding: 16px;
   text-align: center;

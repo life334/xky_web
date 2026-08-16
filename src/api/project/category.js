@@ -60,3 +60,28 @@ export function delCategory(id) {
     method: 'delete'
   })
 }
+
+// 查询计费方式列表（不传 categoryId 时返回全量，供列表页徽标展示）
+export function listBilling(query) {
+  return request({
+    url: '/project/category/billingList',
+    method: 'get',
+    params: query
+  })
+}
+
+// 查询指定类别的计费方式
+export function getBilling(categoryId) {
+  return request({
+    url: '/project/category/billing/' + categoryId,
+    method: 'get'
+  })
+}
+
+// 查询所有已使用的计费类别（去重，供下拉可创建选项）
+export function listBillingCategories() {
+  return request({
+    url: '/project/category/billingCategories',
+    method: 'get'
+  })
+}
