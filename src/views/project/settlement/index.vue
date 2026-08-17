@@ -168,14 +168,17 @@
                      <el-table v-if="(expandDetails[scope.row.projectId].payments || []).length" :data="expandDetails[scope.row.projectId].payments" border size="small" :span-method="(args) => paymentSpanMethod(args, scope.row.projectId)">
                         <el-table-column label="付款类型" align="center"  width="120">
                            <template #default="s">
-                              <el-tag :type="s.row.paymentType === 'advance' ? 'primary' : 'success'" size="small">{{ s.row.paymentType === 'advance' ? '预付款' : '尾款' }}</el-tag>
+                              <el-tag :type="s.row.paymentType === 'advance' ? 'primary' : (s.row.paymentType === 'refund' ? 'danger' : 'success')" size="small">{{ s.row.paymentType === 'advance' ? '预付款' : (s.row.paymentType === 'refund' ? '退款' : '尾款') }}</el-tag>
                            </template>
                         </el-table-column>
                         <el-table-column label="金额" align="center"  width="150">
-                           <template #default="s">{{ formatMoney(s.row.amount) }}</template>
+                           <template #default="s">
+                              <span v-if="s.row.paymentType === 'refund'" style="color:var(--el-color-danger)">-{{ formatMoney(s.row.amount) }}</span>
+                              <span v-else>{{ formatMoney(s.row.amount) }}</span>
+                           </template>
                         </el-table-column>
                         <el-table-column label="付款时间" align="center" prop="payTime" width="150">
-                           <template #default="s">{{ s.row.payTime }}</template>
+                           <template #default="s">{{ s.row.paymentType === 'refund' ? (s.row.payTime || '-') : s.row.payTime }}</template>
                         </el-table-column>
                         <el-table-column label="付款方式" align="center" prop="payMethod" width="120">
                            <template #default="s">{{ s.row.payMethod }}</template>
@@ -458,6 +461,44 @@
                      </el-col>
                   </el-row>
                </div>
+               <!-- 退款信息（③，多笔动态列表） -->
+               <div class="refund-section">
+                  <div class="refund-header">
+                     <span class="pay-label pay-label-refund">③ 退款信息</span>
+                     <span class="refund-total">退款合计：<b class="refund-total-num">{{ formatMoney(refundTotal) }}</b></span>
+                     <el-button type="primary" link icon="Plus" @click="addRefundRow">添加退款</el-button>
+                  </div>
+                  <div v-for="(rf, idx) in editForm.refunds" :key="idx" class="pay-row refund-row">
+                     <el-row :gutter="20">
+                        <el-col :span="6">
+                           <el-form-item :label="`第${idx + 1}笔金额`">
+                              <el-input-number v-model="rf.amount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="退款金额" />
+                           </el-form-item>
+                        </el-col>
+                        <el-col :span="5">
+                           <el-form-item label="退款时间">
+                              <el-date-picker v-model="rf.payTime" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                           </el-form-item>
+                        </el-col>
+                        <el-col :span="5">
+                           <el-form-item label="退款方式">
+                              <el-select v-model="rf.payMethod" clearable placeholder="选择" style="width:100%">
+                                 <el-option v-for="m in payMethodOptions" :key="m" :label="m" :value="m" />
+                              </el-select>
+                           </el-form-item>
+                        </el-col>
+                        <el-col :span="6">
+                           <el-form-item label="退款原因">
+                              <el-input v-model="rf.remark" placeholder="选填" maxlength="200" />
+                           </el-form-item>
+                        </el-col>
+                        <el-col :span="2">
+                           <el-button type="danger" link icon="Delete" class="refund-del" @click="removeRefundRow(idx)">删除</el-button>
+                        </el-col>
+                     </el-row>
+                  </div>
+                  <div v-if="!editForm.refunds.length" class="refund-empty">暂无退款记录，点击「添加退款」录入</div>
+               </div>
                <!-- 备注 -->
                <el-form-item label="备注">
                   <el-input v-model="editForm.remark" placeholder="备注" maxlength="500" />
@@ -476,9 +517,14 @@
                <div class="settle-cell">
                   <span class="settle-label">已收</span>
                   <span class="settle-value">{{ formatMoney(receivedAmount) }}</span>
-                  <span class="settle-hint">（预付款 + 尾款，自动汇总）</span>
+                  <span class="settle-hint">（预付款 + 尾款 − 退款，自动汇总）</span>
                </div>
                <div class="settle-divider" />
+               <div class="settle-cell" v-if="refundTotal > 0">
+                  <span class="settle-label">退款合计</span>
+                  <span class="settle-value" style="color:var(--el-color-danger)">-{{ formatMoney(refundTotal) }}</span>
+               </div>
+               <div class="settle-divider" v-if="refundTotal > 0" />
                <div class="settle-cell">
                   <span class="settle-label">待收差额</span>
                   <span class="settle-value" :class="balanceTextClass">{{ settleStatus === 'settled' ? '¥0.00' : formatMoney(Math.abs(balanceAmount)) }}</span>
@@ -637,6 +683,8 @@ const FALLBACK_COLUMNS = [
   { key: 'payMethod', label: '付款方式', type: 'text', group: 'business', prop: 'payMethod', defaultVisible: true },
   { key: 'tailAmount', label: '尾款', type: 'money', group: 'business', prop: 'tailAmount', defaultVisible: true },
   { key: 'tailDate', label: '尾款时间', type: 'date', group: 'business', prop: 'tailDate', defaultVisible: true },
+  { key: 'refundAmount', label: '退款金额', type: 'money', group: 'business', prop: 'refundAmount', defaultVisible: true },
+  { key: 'refundDate', label: '退款时间', type: 'date', group: 'business', prop: 'refundDate', defaultVisible: true },
   { key: 'invoiceStatus', label: '开票状态', type: 'text', group: 'business', prop: 'invoiceStatus', defaultVisible: true },
   { key: 'invoiceNo', label: '发票号码', type: 'text', group: 'business', prop: 'invoiceNo', defaultVisible: true },
   { key: 'invoiceAmount', label: '开票金额', type: 'money', group: 'business', prop: 'invoiceAmount', defaultVisible: true },
@@ -725,6 +773,7 @@ const data = reactive({
     tailMethod: null,
     tailAmount: null,
     tailDate: null,
+    refunds: [],
     remark: null,
     invoiceMode: 'unified',
     invoiceStatus: null,
@@ -764,11 +813,16 @@ const internalRowCount = computed(() => editForm.value.workloads.filter(r => r.b
 // 外部计费行数
 const externalRowCount = computed(() => editForm.value.workloads.filter(r => r.billingType === 'external').length)
 
-// 已收 = 预付款 + 尾款（实时联动）
+// 退款合计（多笔求和）
+const refundTotal = computed(() => {
+  return editForm.value.refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+})
+
+// 已收 = 预付款 + 尾款 - 退款合计（实时联动）
 const receivedAmount = computed(() => {
   const a = Number(editForm.value.prepayAmount) || 0
   const b = Number(editForm.value.tailAmount) || 0
-  return a + b
+  return a + b - refundTotal.value
 })
 
 // 待收差额 = 结算总额 - 已收
@@ -1048,10 +1102,12 @@ function expandRowClass({ row }) {
   return ''
 }
 
-/** 付款记录表合并：统一开票时合并开票金额/开票状态/发票号码三列 */
+/** 付款记录表合并：统一开票时合并开票金额/开票状态/发票号码三列（退款行不参与合并） */
 function paymentSpanMethod({ rowIndex, columnIndex }, projectId) {
   const payments = expandDetails[projectId]?.payments || []
   if (payments.length <= 1) return
+  // 退款行不携带发票信息：存在退款行时跳过合并，避免退款行被并入发票区
+  if (payments.some(p => p.paymentType === 'refund')) return
   // 检测是否分笔开票：尾款有独立发票信息 → split
   const hasSplit = payments.slice(1).some(p => p.invoiceNo || p.invoiceStatus || p.invoiceAmount != null)
   if (hasSplit) return
@@ -1186,6 +1242,15 @@ function handleEdit(row) {
       editForm.value.tailDate = tail ? tail.payTime : null
       editForm.value.remark = prepay ? prepay.remark : (tail ? tail.remark : null)
 
+      // 退款信息回填（多笔，按时间升序；兼容旧接口无 refunds 字段时从 payments 过滤）
+      const refunds = detail.refunds || payments.filter(p => p.paymentType === 'refund')
+      editForm.value.refunds = refunds.map(r => ({
+        amount: r.amount != null ? Number(r.amount) : null,
+        payTime: r.payTime || null,
+        payMethod: r.payMethod || null,
+        remark: r.remark || null
+      }))
+
       // 开票信息：尾款存在发票数据 → 分笔开票；否则统一开票（发票挂预付款，无预付款取尾款）
       const tailHasInvoice = tail && (tail.invoiceStatus || tail.invoiceNo || tail.invoiceDate || tail.invoiceAmount != null)
       editForm.value.invoiceMode = tailHasInvoice ? 'split' : 'unified'
@@ -1268,6 +1333,16 @@ function removeWorkloadRow(index) {
   editForm.value.workloads.splice(index, 1)
 }
 
+/** 添加退款行 */
+function addRefundRow() {
+  editForm.value.refunds.push({ amount: null, payTime: null, payMethod: null, remark: null })
+}
+
+/** 删除退款行 */
+function removeRefundRow(index) {
+  editForm.value.refunds.splice(index, 1)
+}
+
 /** 提交结算：已收 ≠ 结算总额时先弹确认 */
 function submitSettlement() {
   const received = receivedAmount.value
@@ -1336,6 +1411,16 @@ function doSaveSettlement() {
     }
     payload.tail = tail
   }
+
+  // 退款（多笔，整组替换；金额和时间都为空的行不提交）
+  payload.refunds = editForm.value.refunds
+    .filter(rf => rf && (rf.amount != null || rf.payTime))
+    .map(rf => ({
+      amount: rf.amount != null ? Number(rf.amount) : null,
+      payTime: rf.payTime || null,
+      payMethod: rf.payMethod || null,
+      remark: rf.remark || ''
+    }))
 
   saveSettlement(payload).then(() => {
     proxy.$modal.msgSuccess("保存成功")
@@ -1569,6 +1654,32 @@ loadDistinctValues()
 }
 .pay-label-advance { color: #409eff; }
 .pay-label-tail { color: #67c23a; }
+.pay-label-refund { color: #f56c6c; }
+/* ===== 退款信息小节（多笔动态列表） ===== */
+.refund-section {
+  margin-bottom: 4px;
+  padding: 8px 12px 4px;
+  border-radius: 6px;
+  background: #fef6f6;
+}
+.refund-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+.refund-total {
+  font-size: 13px;
+  color: #909399;
+  .refund-total-num { color: #f56c6c; font-weight: 600; }
+}
+.refund-empty {
+  padding: 8px 0 6px;
+  font-size: 12px;
+  color: #c0c4cc;
+}
+.refund-del { margin-top: 4px; }
 .invoice-group {
   margin-bottom: 12px;
 }
