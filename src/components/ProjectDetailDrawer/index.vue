@@ -188,8 +188,8 @@
               <div class="set-row"><span>外部产值</span><b>¥{{ formatMoney(settlement.externalOutput || 0) }}</b></div>
             </div>
             <div class="set-total">
-              <div class="lbl">合计产值</div>
-              <div class="val">¥{{ formatMoney((settlement.internalOutput || 0) + (settlement.externalOutput || 0)) }}</div>
+              <div class="lbl">结算金额（外部产值）</div>
+              <div class="val">¥{{ formatMoney(settlement.externalOutput || 0) }}</div>
             </div>
           </div>
         </el-tab-pane>
@@ -218,7 +218,7 @@ import { getProject } from '@/api/project/project'
 import { listTask } from '@/api/project/task'
 import { listContract } from '@/api/project/contract'
 import { listPayment } from '@/api/project/payment'
-import { getSettlementDetail } from '@/api/project/settlement'
+import { getSettlementOverview } from '@/api/project/settlement'
 import { listMaterial } from '@/api/project/material'
 
 const { proxy } = getCurrentInstance()
@@ -388,11 +388,12 @@ async function loadPaymentStats() {
 
 async function loadSettlementStats() {
   try {
-    const response = await getSettlementDetail(props.projectId)
+    const response = await getSettlementOverview(props.projectId)
     const data = response.data || {}
     project.value.internalOutput = data.internalOutput || 0
     project.value.externalOutput = data.externalOutput || 0
-    project.value.totalOutput = (data.internalOutput || 0) + (data.externalOutput || 0)
+    // 结算产值 = 外部产值（内部产值仅内部参考，不与外部相加）
+    project.value.totalOutput = data.externalOutput || 0
   } catch (e) {}
 }
 
@@ -447,7 +448,7 @@ async function loadPayments() {
 async function loadSettlement() {
   settlementLoading.value = true
   try {
-    const response = await getSettlementDetail(props.projectId)
+    const response = await getSettlementOverview(props.projectId)
     settlement.value = response.data || {}
   } catch (e) {
     settlement.value = { internalOutput: 0, externalOutput: 0 }

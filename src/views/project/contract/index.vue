@@ -1725,12 +1725,13 @@ async function previewAttachment(att, version) {
   try {
     const params = {}
     if (version) params.version = version
-    const data = await request({
+    const res = await request({
       url: '/project/contract/attachment/' + att.id + '/preview',
       method: 'get',
       params,
       responseType: 'blob'
     })
+    const data = res.data
 
     // Axios 拦截器对 blob 不检查错误码，需手动检测 JSON 401/500
     if (data instanceof Blob && data.type === 'application/json') {
@@ -1755,12 +1756,13 @@ async function downloadAttachment(att, version) {
   try {
     const params = {}
     if (version) params.version = version
-    const data = await request({
+    const res = await request({
       url: '/project/contract/attachment/' + att.id + '/preview',
       method: 'get',
       params,
       responseType: 'blob'
     })
+    const data = res.data
 
     // JSON 错误检测
     if (data instanceof Blob && data.type === 'application/json') {

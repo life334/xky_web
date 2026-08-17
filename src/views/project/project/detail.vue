@@ -186,7 +186,7 @@
                   <div class="settle-progress-bar" :style="{ width: settleProgressPercent + '%', background: settleStatusColor }"></div>
                </div>
                <div class="settle-progress-foot">
-                  <span>已收 {{ formatMoney(settlementOverview.receivedAmount) }} / 结算总额 {{ formatMoney(settlementOverview.totalOutput) }}</span>
+                  <span>已收 {{ formatMoney(settlementOverview.receivedAmount) }} / 结算总额 {{ formatMoney(settlementOverview.settlementAmount) }}</span>
                   <span>{{ settleProgressPercent }}%</span>
                </div>
             </div>
@@ -425,7 +425,7 @@ const settlementLoading = ref(false)
 const settlementOverview = ref({
    internalOutput: null,
    externalOutput: null,
-   totalOutput: null,
+   settlementAmount: null,
    receivedAmount: null,
    pendingAmount: null,
    settlementStatus: null
@@ -451,7 +451,7 @@ const paymentRules = {
 
 // 产值结算 tab 计算属性
 const settleProgressPercent = computed(() => {
-   const total = settlementOverview.value.totalOutput
+   const total = settlementOverview.value.settlementAmount
    const received = settlementOverview.value.receivedAmount
    if (!total || total === 0) return 0
    return Math.min(100, Math.round(received * 100 / total))

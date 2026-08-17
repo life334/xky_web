@@ -19,16 +19,36 @@
 
         <div class="toolbar-group">
           <span class="t-label">筛选方案</span>
-          <el-select v-model="currentFilterId" clearable filterable placeholder="无筛选方案" style="width: 200px" @change="onFilterChange">
-            <el-option v-for="f in filterSchemes" :key="f.id" :label="f.filterName" :value="f.id" />
+          <el-select v-model="currentFilterId" clearable filterable placeholder="无筛选方案" style="width: 220px" @change="onFilterChange">
+            <el-option-group :label="'模板默认方案（' + (currentTemplate?.templateName || '当前模板') + '）'">
+              <el-option :value="DEFAULT_FILTER_ID" :label="templateDefaultFilterLabel" />
+            </el-option-group>
+            <el-option-group label="我的方案（全局共享）">
+              <el-option v-for="f in filterSchemes" :key="f.id" :label="f.filterName" :value="f.id" />
+            </el-option-group>
           </el-select>
           <el-button type="primary" link icon="Operation" v-hasPermi="['report:report:filter']" @click="openFilterDialog">筛选设置</el-button>
-          <el-button type="warning" link icon="FolderAdd" :disabled="!selectedFilterKeys.length" v-hasPermi="['report:report:filter']" @click="saveFilterScheme">保存筛选</el-button>
+          <el-button type="warning" link icon="FolderAdd" :disabled="!selectedFilterKeys.length" v-hasPermi="['report:report:filter']" @click="saveFilterScheme">{{ isDefaultFilterMode ? '保存为模板默认' : '保存筛选' }}</el-button>
+          <el-button type="success" link icon="DocumentCopy" :disabled="!selectedFilterKeys.length" v-hasPermi="['report:report:filter']" @click="saveAsNewFilterScheme">另存为</el-button>
+          <el-button type="warning" link icon="EditPen" :disabled="!canRenameFilter" v-hasPermi="['report:report:filter']" @click="handleRenameFilter">重命名</el-button>
+          <el-button type="danger" link icon="Delete" :disabled="!canDeleteFilter" v-hasPermi="['report:report:filter']" @click="handleDeleteFilter">删除方案</el-button>
         </div>
 
         <div class="toolbar-right">
+          <!-- 「上报记录」复选框：仅「只定未验及补之前扣除项目」报表显示；当月已上报过则置灰 -->
+          <el-checkbox
+            v-if="isZdywTemplate"
+            v-hasPermi="['report:report:log']"
+            v-model="submitAsReport"
+            :disabled="monthSubmitted"
+            class="submit-toggle"
+          >
+            上报记录
+            <span v-if="monthSubmitted" class="submit-toggle-tip">本月已上报，下月可再上报</span>
+          </el-checkbox>
+          <el-button type="primary" icon="Download" :loading="exporting" v-hasPermi="['report:report:export']" @click="openExportDialog">导出报表</el-button>
           <el-button icon="Clock" v-hasPermi="['report:report:log']" @click="openLogDialog">导出历史</el-button>
-          <el-button type="primary" icon="Download" :loading="exporting" v-hasPermi="['report:report:export']" @click="handleExport">导出报表</el-button>
+          <el-button icon="Promotion" v-hasPermi="['report:report:log']" @click="openSubmitDialog">上报历史</el-button>
         </div>
       </div>
 
@@ -115,7 +135,24 @@
         </template>
       </div>
 
-      <el-table v-loading="previewLoading" :data="previewRows" border size="small" max-height="460" empty-text="暂无数据 — 调整筛选条件或更换模板后导出">
+      <el-table
+        ref="previewTableRef"
+        v-loading="previewLoading"
+        :data="previewRows"
+        border size="small"
+        max-height="460"
+        empty-text="暂无数据 — 调整筛选条件或更换模板后导出"
+        @selection-change="onSelectionChange"
+      >
+        <!-- 勾选列：默认全选，去勾选的记录不导出 / 不上报 -->
+        <el-table-column type="selection" width="42" align="center" />
+        <!-- 上报状态标记列（仅预览展示，不参与导出列） -->
+        <el-table-column label="上报状态" width="82" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.__submitted" type="success" size="small" effect="plain">已上报</el-tag>
+            <el-tag v-else type="info" size="small" effect="plain">未上报</el-tag>
+          </template>
+        </el-table-column>
         <template v-for="(node, i) in headerTree" :key="'h' + i">
           <!-- 分组节点：多级表头（外层列 = 分组名） -->
           <el-table-column v-if="node.isGroup" :label="node.label" align="center">
@@ -460,6 +497,86 @@
         <el-button @click="logDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- ═══════════ ⑦ 导出弹窗（勾选条数确认；上报与否由工具栏「上报记录」复选框决定） ═══════════ -->
+    <el-dialog v-model="exportDialogVisible" title="导出报表" width="520px" append-to-body :close-on-click-modal="false">
+      <div class="export-confirm" v-if="currentTemplate">
+        <el-alert type="info" :closable="false" show-icon>
+          <template #title>
+            <span>模板「{{ currentTemplate.templateName }}」命中 <b class="hint-strong">{{ previewTotal }}</b> 条记录</span>
+          </template>
+          <div class="export-tip">
+            已勾选 <b class="ok">{{ effectiveCodes.length }}</b> 条 / 未勾选 <b class="no">{{ uncheckedCount }}</b> 条
+            <span v-if="uncheckedCount" class="tip-sub">（未勾选记录不导出）</span>
+            <span v-if="!previewRows.length" class="tip-sub">（当前无预览数据，请先调整筛选条件）</span>
+          </div>
+          <div v-if="isZdywTemplate && submitAsReport && !monthSubmitted" class="export-tip">
+            本次导出将作为<b class="ok">上报领导记录</b>：未上报过的记录写入上报时间（已上报记录锁定跳过），并在服务器保存报表快照。
+          </div>
+        </el-alert>
+      </div>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="exporting || submitting" @click="confirmExport()">导出</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ═══════════ ⑧ 上报记录弹窗 ═══════════ -->
+    <el-dialog v-model="submitDialogVisible" title="上报领导记录" width="88%" append-to-body>
+      <el-table v-loading="submitLoading" :data="submitBatches" border size="small" max-height="460">
+        <el-table-column label="批次号" prop="batchNo" width="150" />
+        <el-table-column label="模板" prop="templateName" min-width="150" show-overflow-tooltip />
+        <el-table-column label="上报时间" prop="submitTime" width="150" />
+        <el-table-column label="操作人" prop="submitBy" width="90" />
+        <el-table-column label="记录数" prop="projectCount" width="70" align="right" />
+        <el-table-column label="筛选方案" prop="filterDesc" min-width="140" show-overflow-tooltip />
+        <el-table-column label="备注" prop="remark" min-width="120" show-overflow-tooltip />
+        <el-table-column label="快照" width="90" align="center">
+          <template #default="{ row }">
+            <el-button v-if="row.snapshotFile" link type="primary" size="small" @click="handleDownloadSnapshot(row)">下载</el-button>
+            <el-tag v-else size="small" type="info" effect="plain">无</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="130" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="handleViewSubmitDetail(row)">详情</el-button>
+            <el-button v-if="isAdmin" link type="danger" size="small" @click="handleDeleteSubmitBatch(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="submitDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ═══════════ ⑨ 上报批次详情弹窗 ═══════════ -->
+    <el-dialog v-model="submitDetailVisible" title="上报批次详情" width="82%" append-to-body>
+      <template v-if="submitDetail">
+        <el-descriptions :column="3" border size="small">
+          <el-descriptions-item label="批次号">{{ submitDetail.batchNo }}</el-descriptions-item>
+          <el-descriptions-item label="模板">{{ submitDetail.templateName }}</el-descriptions-item>
+          <el-descriptions-item label="上报时间">{{ submitDetail.submitTime }}</el-descriptions-item>
+          <el-descriptions-item label="操作人">{{ submitDetail.submitBy }}</el-descriptions-item>
+          <el-descriptions-item label="记录数">{{ submitDetail.projectCount }}</el-descriptions-item>
+          <el-descriptions-item label="备注">{{ submitDetail.remark || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="筛选方案" :span="3">{{ submitDetail.filterDesc || '—' }}</el-descriptions-item>
+        </el-descriptions>
+        <el-table v-loading="submitDetailLoading" :data="submitDetail.logs || []" border size="small" max-height="380" style="margin-top: 12px">
+          <el-table-column label="工程编号" prop="projectCode" width="150" />
+          <el-table-column label="工程名称" prop="projectName" min-width="180" show-overflow-tooltip />
+          <el-table-column label="单位名称" prop="unitName" min-width="160" show-overflow-tooltip />
+          <el-table-column label="上报时间" prop="submitTime" width="150" />
+          <el-table-column v-if="isAdmin" label="操作" width="90" align="center">
+            <template #default="{ row }">
+              <el-button link type="danger" size="small" @click="handleDeleteSubmitLog(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+      <template #footer>
+        <el-button @click="submitDetailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -468,19 +585,26 @@ import { saveAs } from 'file-saver'
 import { ElMessageBox } from 'element-plus'
 import { ArrowRight, ArrowDown, Search, Download } from '@element-plus/icons-vue'
 import {
-  getFieldPool, listReportTemplate, getReportTemplate, saveReportTemplate, delReportTemplate,
-  listReportFilter, getReportFilter, saveReportFilter, delReportFilter,
-  previewReport, exportReport, exportReportByConfig, listReportLog, reExportReport, delReportLog
+  getFieldPool, listReportTemplate, getReportTemplate, saveReportTemplate, delReportTemplate, saveTemplateDefaultFilter,
+  listReportFilter, getReportFilter, saveReportFilter, delReportFilter, renameReportFilter,
+  previewReport, exportReport, exportReportByConfig, listReportLog, reExportReport, delReportLog,
+  submitReport, listSubmitBatch, getSubmitBatch, downloadSnapshot, delSubmitBatch, delSubmitLog
 } from '@/api/report/report'
 import { categoryTreeselect } from '@/api/project/category'
+import useUserStore from '@/store/modules/user'
+import { checkRole } from '@/utils/permission'
 
 const { proxy } = getCurrentInstance()
+const userStore = useUserStore()
+
+/* 筛选方案下拉的特殊值：代表「当前模板的默认筛选」（存于 template.default_filter） */
+const DEFAULT_FILTER_ID = '__default__'
 
 /* ═══════════ 筛选器映射：字段池 key → 后端筛选参数 ═══════════ */
 const FILTER_MAP = {
   projectCode: { widget: 'input', mapKey: 'projectCode' },
   projectName: { widget: 'input', mapKey: 'projectName' },
-  engineeringProject: { widget: 'input', mapKey: 'engineeringProject' },
+  engineeringProject: { widget: 'select', mapKey: 'engineeringProject', source: 'engineering' },
   clientUnit: { widget: 'input', mapKey: 'clientUnit' },
   contactName: { widget: 'input', mapKey: 'contactName' },
   contactPhone: { widget: 'input', mapKey: 'contactPhone' },
@@ -501,13 +625,20 @@ const FILTER_MAP = {
   archiveDate: { widget: 'daterange', range: ['archiveDateBegin', 'archiveDateEnd'] },
   assignDate: { widget: 'daterange', range: ['assignDateBegin', 'assignDateEnd'] },
   createTime: { widget: 'daterange', range: ['createTimeBegin', 'createTimeEnd'] },
+  closeTime: { widget: 'daterange', range: ['closeTimeBegin', 'closeTimeEnd'] },
   receivedAmount: { widget: 'numberRange', range: ['receivedAmountMin', 'receivedAmountMax'] },
   lastPayTime: { widget: 'daterange', range: ['lastPayTimeBegin', 'lastPayTimeEnd'] },
   pendingAmount: { widget: 'numberRange', range: ['pendingAmountMin', 'pendingAmountMax'] },
   totalInvoiceAmount: { widget: 'numberRange', range: ['totalInvoiceAmountMin', 'totalInvoiceAmountMax'] },
   invoiceFlag: { widget: 'select', mapKey: 'invoiceFlag', source: 'field' },
   settlementStatus: { widget: 'select', mapKey: 'settlementStatus', source: 'field' },
-  debtMonths: { widget: 'number', mapKey: 'debtMonths', placeholder: '完工至今 ≥ 月数' }
+  debtMonths: { widget: 'number', mapKey: 'debtMonths', placeholder: '完工至今 ≥ 月数' },
+  /* 项目维度结算字段（项目金额 = 外部产值合计，内部产值仅内部参考） */
+  projectSettleAmount: { widget: 'numberRange', range: ['projectSettleAmountMin', 'projectSettleAmountMax'] },
+  projectPendingAmount: { widget: 'numberRange', range: ['projectPendingAmountMin', 'projectPendingAmountMax'] },
+  projectArrearsAmount: { widget: 'numberRange', range: ['projectArrearsAmountMin', 'projectArrearsAmountMax'] },
+  projectOverpaidAmount: { widget: 'numberRange', range: ['projectOverpaidAmountMin', 'projectOverpaidAmountMax'] },
+  projectSettleStatus: { widget: 'select', mapKey: 'projectSettleStatus', source: 'field' }
 }
 
 /* ═══════════ 状态 ═══════════ */
@@ -525,8 +656,28 @@ const previewRows = ref([])
 const previewTotal = ref(0)
 const previewLoading = ref(false)
 const headerTree = ref([])          // 多级表头树（后端 preview 返回）
+const previewTableRef = ref(null)   // 预览表格引用（勾选全选）
+const previewCodes = ref([])        // 全量工程编号（与后端 rows 顺序一致，供勾选导出）
+const submittedMap = reactive({})   // { projectCode: submitTime } 已上报状态
+const uncheckedCodes = ref(new Set()) // 用户主动去勾选的工程编号
 const exporting = ref(false)
+const submitting = ref(false)
 const categoryOptions = ref([])
+/* 工程项目下拉选项（类别树小类名称，与项目编辑页数据源一致） */
+const engineeringOptions = ref([])
+
+/* 导出弹窗 + 工具栏「上报记录」复选框 */
+const exportDialogVisible = ref(false)
+const submitAsReport = ref(false)   // 「上报记录」复选框（工具栏，仅 zdyw 模板显示）
+const monthSubmitted = ref(false)   // 当月是否已上报过（后端 preview 返回，控制复选框置灰）
+
+/* 上报记录弹窗 */
+const submitDialogVisible = ref(false)
+const submitLoading = ref(false)
+const submitBatches = ref([])
+const submitDetailVisible = ref(false)
+const submitDetail = ref(null)
+const submitDetailLoading = ref(false)
 
 /* 筛选设置弹窗 */
 const filterDialogVisible = ref(false)
@@ -558,6 +709,45 @@ const logList = ref([])
 
 /* ═══════════ 计算属性 ═══════════ */
 const isCustomTemplate = computed(() => currentTemplate.value?.templateType === 'custom')
+
+/* 本次导出实际生效的工程编号：全量勾选（默认）减去用户去勾选的行 */
+const effectiveCodes = computed(() => previewCodes.value.filter(c => !!c && !uncheckedCodes.value.has(c)))
+
+/* 去勾选条数（仅统计可见行范围内，供导出弹窗提示） */
+const uncheckedCount = computed(() => previewCodes.value.filter(c => !!c && uncheckedCodes.value.has(c)).length)
+
+/* 是否「只定未验及补之前扣除项目」报表（zdyw_report）：唯一支持上报领导的模板 */
+const isZdywTemplate = computed(() => (currentTemplate.value?.templateFile || '').toLowerCase().includes('zdyw_report'))
+
+/* 切换模板时重置「上报记录」勾选，避免误上报 */
+watch(currentTemplateId, () => { submitAsReport.value = false })
+
+/* 管理员：可删除上报批次 / 单条上报记录 */
+const isAdmin = computed(() => checkRole(['admin']))
+
+/* 默认方案下拉文案：模板 defaultFilter 是否已保存过内容 */
+const templateDefaultFilterLabel = computed(() => {
+  const raw = currentTemplate.value?.defaultFilter
+  if (!raw) return '默认方案（未设置）'
+  const s = String(raw).trim()
+  if (!s || s === '{}' || s === 'null' || s === '""') return '默认方案（未设置）'
+  return '默认方案'
+})
+
+/* 当前是否处于「模板默认筛选」编辑状态 */
+const isDefaultFilterMode = computed(() => currentFilterId.value === DEFAULT_FILTER_ID)
+
+/* 当前选中的自定义方案（仅「我的方案」可删，模板默认方案不可删） */
+const currentScheme = computed(() => {
+  if (!currentFilterId.value || currentFilterId.value === DEFAULT_FILTER_ID) return null
+  return filterSchemes.value.find(f => f.id === currentFilterId.value) || null
+})
+
+/* 仅创建者可删：方案 createBy === 当前登录用户名 */
+const canDeleteFilter = computed(() => !!currentScheme.value && currentScheme.value.createBy === userStore.name)
+
+/* 仅创建者可重命名（与删除同一归属口径） */
+const canRenameFilter = computed(() => !!currentScheme.value && currentScheme.value.createBy === userStore.name)
 
 const filterableGroups = computed(() => {
   const groups = new Map()
@@ -690,14 +880,18 @@ async function loadCategories() {
     const res = await categoryTreeselect()
     const tree = res?.data || []
     const flat = []
+    const subNames = new Set()
     const walk = (nodes, depth) => {
       ;(nodes || []).forEach(n => {
         flat.push({ value: n.id, label: (depth > 0 ? '　'.repeat(depth) : '') + n.label })
+        if (depth === 1) subNames.add(n.label)
         if (n.children && n.children.length) walk(n.children, depth + 1)
       })
     }
     walk(tree, 0)
     categoryOptions.value = flat
+    /* 小类名称 = 工程项目下拉选项（与项目编辑页 subCategoryOptions 同源同口径） */
+    engineeringOptions.value = Array.from(subNames)
   } catch (e) {
     categoryOptions.value = []
   }
@@ -720,6 +914,9 @@ async function onTemplateChange() {
   try {
     const res = await getReportTemplate(currentTemplateId.value)
     currentTemplate.value = res?.data || null
+    // 切换模板 → 自动回到「模板默认方案」并加载其默认筛选
+    currentFilterId.value = DEFAULT_FILTER_ID
+    applyDefaultFilter(false)
   } finally {
     previewLoading.value = false
   }
@@ -727,6 +924,7 @@ async function onTemplateChange() {
 }
 
 let previewTimer = null
+let previewSeq = 0 // 预览请求序号：丢弃过期响应，防止并发预览乱序覆盖
 function debouncePreview() {
   clearTimeout(previewTimer)
   previewTimer = setTimeout(() => doPreview(), 400)
@@ -734,23 +932,47 @@ function debouncePreview() {
 
 async function doPreview() {
   if (!currentTemplateId.value) return
+  const seq = ++previewSeq
   previewLoading.value = true
   try {
     const res = await previewReport({ templateId: currentTemplateId.value, filter: buildBackendFilter() })
+    if (seq !== previewSeq) return // 已有更新的预览请求，丢弃本次过期响应
     const d = res?.data || {}
     currentTemplate.value = d.template
     previewTotal.value = d.total || 0
     headerTree.value = d.headerTree || []
-    previewRows.value = (d.rows || []).map(arr => {
+    previewCodes.value = d.codes || []
+    // 已上报状态表 { code: submitTime }
+    Object.keys(submittedMap).forEach(k => delete submittedMap[k])
+    Object.assign(submittedMap, d.submitted || {})
+    // 当月是否已上报过：置灰工具栏复选框并取消勾选
+    monthSubmitted.value = !!d.monthSubmitted
+    if (monthSubmitted.value) submitAsReport.value = false
+    previewRows.value = (d.rows || []).map((arr, idx) => {
       const o = {}
       ;(arr || []).forEach((v, i) => { o['c' + i] = v })
+      o.__code = previewCodes.value[idx] || ''
+      o.__submitted = !!submittedMap[o.__code]
       return o
+    })
+    // 预览刷新后默认全部勾选
+    uncheckedCodes.value = new Set()
+    nextTick(() => {
+      previewTableRef.value?.clearSelection()
+      previewTableRef.value?.toggleAllSelection()
     })
   } catch (e) {
     // 错误已由拦截器提示
   } finally {
-    previewLoading.value = false
+    if (seq === previewSeq) previewLoading.value = false
   }
+}
+
+/* 预览勾选变化：记录去勾选的工程编号（仅可见行；未展示行默认导出） */
+function onSelectionChange(rows) {
+  const sel = new Set((rows || []).map(r => r.__code))
+  const visibleCodes = previewRows.value.map(r => r.__code).filter(c => !!c)
+  uncheckedCodes.value = new Set(visibleCodes.filter(c => !sel.has(c)))
 }
 
 /* ═══════════ 筛选值构建（后端扁平键） ═══════════ */
@@ -782,6 +1004,8 @@ function buildBackendFilter(withName = false) {
 function selectOptions(fk) {
   const meta = FILTER_MAP[fk]
   if (meta.source === 'category') return Object.fromEntries(categoryOptions.value.map(o => [o.value, o.label]))
+  /* 工程项目：选项为类别树小类名称（值 = 名称本身，与项目编辑页一致） */
+  if (meta.source === 'engineering') return Object.fromEntries(engineeringOptions.value.map(s => [s, s]))
   const pool = fieldPoolMeta(fk)
   return pool?.options || {}
 }
@@ -820,6 +1044,30 @@ function clearFilterValues() {
 }
 
 /* ═══════════ 筛选方案 ═══════════ */
+
+/* 回填反序列化：multiSelect 保存时被 join(',') 成字符串，回填需还原为数组，
+   否则 el-select multiple 绑定字符串显示为空（预览/导出不受影响，仅 UI 显示问题） */
+function deserializeFilterValue(k, v) {
+  if (v === undefined || v === null || v === '') return null
+  if (typeof v === 'string') {
+    for (const fk in FILTER_MAP) {
+      const meta = FILTER_MAP[fk]
+      if (meta && meta.mapKey === k && meta.widget === 'multiSelect') {
+        return v.split(',').filter(Boolean)
+      }
+    }
+  }
+  return v
+}
+
+/* 回填筛选值（自定义方案 / 模板默认方案共用） */
+function applyFilterConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) cfg = {}
+  selectedFilterKeys.value = (cfg.selected || []).filter(k => FILTER_MAP[k])
+  Object.keys(filterValues).forEach(k => { filterValues[k] = null })
+  Object.keys(cfg.values || {}).forEach(k => { filterValues[k] = deserializeFilterValue(k, cfg.values[k]) })
+}
+
 async function onFilterChange(id) {
   currentFilterId.value = id
   if (!id) {
@@ -827,41 +1075,126 @@ async function onFilterChange(id) {
     clearFilterValues()
     return
   }
+  if (id === DEFAULT_FILTER_ID) {
+    applyDefaultFilter(true)
+    return
+  }
   const res = await getReportFilter(id)
   const detail = res?.data || {}
   let cfg = {}
   try { cfg = JSON.parse(detail.filterConfig || '{}') } catch (e) { cfg = {} }
-  selectedFilterKeys.value = (cfg.selected || []).filter(k => FILTER_MAP[k])
-  clearFilterValues()
-  Object.keys(cfg.values || {}).forEach(k => { filterValues[k] = cfg.values[k] })
+  // 跨模板套用全局方案：忽略当前不可用的筛选字段，轻提示
+  const unknownCount = (cfg.selected || []).filter(k => !FILTER_MAP[k]).length
+  applyFilterConfig(cfg)
   currentFilterSchemeName.value = detail.filterName
   clearTimeout(previewTimer)
   doPreview()
+  if (unknownCount > 0) {
+    proxy.$modal.msgWarning(`${unknownCount} 个筛选条件在当前模板不可用，已自动忽略`)
+  }
+}
+
+/* 加载模板默认筛选（template.default_filter）填充筛选表单 */
+function applyDefaultFilter(withPreview = true) {
+  const tpl = currentTemplate.value
+  let cfg = {}
+  try { cfg = JSON.parse(tpl?.defaultFilter || '{}') } catch (e) { cfg = {} }
+  applyFilterConfig(cfg)
+  currentFilterSchemeName.value = '模板默认方案'
+  if (withPreview) {
+    clearTimeout(previewTimer)
+    doPreview()
+  }
+}
+
+/* 收集当前筛选表单的配置结构（与保存方案一致的 JSON 字符串） */
+function buildFilterConfigJson() {
+  return JSON.stringify({ selected: [...selectedFilterKeys.value], values: buildBackendFilter() })
 }
 
 async function saveFilterScheme() {
-  const isUpdate = !!currentFilterId.value
+  // ① 模板默认方案模式：直接保存到模板 default_filter（无需命名）
+  if (isDefaultFilterMode.value) {
+    if (!currentTemplateId.value) { proxy.$modal.msgWarning('请先选择模板'); return }
+    await saveTemplateDefaultFilter(currentTemplateId.value, { defaultFilter: buildFilterConfigJson() })
+    proxy.$modal.msgSuccess('已保存为「' + (currentTemplate.value?.templateName || '') + '」的模板默认筛选')
+    // 刷新模板（更新 defaultFilter，下拉文案同步去掉「未设置」）
+    const res = await getReportTemplate(currentTemplateId.value)
+    currentTemplate.value = res?.data || null
+    return
+  }
+  // ② 自定义方案：更新该方案
+  if (currentFilterId.value) {
+    const { value } = await ElMessageBox.prompt(
+      `将更新方案「${currentFilterSchemeName.value}」的筛选配置`,
+      '保存筛选方案',
+      { confirmButtonText: '更新方案', cancelButtonText: '取消', inputValue: currentFilterSchemeName.value || '' }
+    )
+    if (!value || !value.trim()) return
+    await saveReportFilter({ id: currentFilterId.value, filterName: value.trim(), filterConfig: buildFilterConfigJson() })
+    proxy.$modal.msgSuccess('筛选方案已更新')
+    currentFilterSchemeName.value = value.trim()
+    await loadFilters()
+    return
+  }
+  // ③ 无方案：与「另存为」一致，新建全局方案
+  await saveAsNewFilterScheme()
+}
+
+/* 另存为：将当前筛选配置保存为一个新的全局方案（所有模板共享） */
+async function saveAsNewFilterScheme() {
+  if (!selectedFilterKeys.value.length) { proxy.$modal.msgWarning('请先启用筛选条件'); return }
   const { value } = await ElMessageBox.prompt(
-    isUpdate ? `将更新方案「${currentFilterSchemeName.value}」的筛选配置` : '新建一个筛选方案（保存当前启用的筛选器与已填写的值）',
-    '保存筛选方案',
-    { confirmButtonText: isUpdate ? '更新方案' : '保存方案', cancelButtonText: '取消', inputValue: currentFilterSchemeName.value || '' }
+    '将当前筛选配置保存为新的全局方案（所有模板共享）：',
+    '另存为筛选方案',
+    { confirmButtonText: '保存方案', cancelButtonText: '取消', inputPlaceholder: '请输入方案名称，如：未结算项目' }
   )
   if (!value || !value.trim()) return
-  const payload = {
-    filterName: value.trim(),
-    filterConfig: JSON.stringify({ selected: [...selectedFilterKeys.value], values: buildBackendFilter() })
-  }
-  if (isUpdate) payload.id = currentFilterId.value
-  await saveReportFilter(payload)
-  proxy.$modal.msgSuccess(isUpdate ? '筛选方案已更新' : '筛选方案已保存')
+  const name = value.trim()
+  await saveReportFilter({ filterName: name, filterConfig: buildFilterConfigJson() })
+  proxy.$modal.msgSuccess('方案已保存：' + name)
   await loadFilters()
-  if (isUpdate) {
-    currentFilterSchemeName.value = value.trim()
-  } else {
-    const match = filterSchemes.value.find(s => s.filterName === value.trim())
-    currentFilterId.value = match ? match.id : null
-    currentFilterSchemeName.value = value.trim()
+  const match = filterSchemes.value.find(s => s.filterName === name)
+  currentFilterId.value = match ? match.id : null
+  currentFilterSchemeName.value = name
+}
+
+/* 删除筛选方案：仅创建者可删（后端亦校验 create_by），删除后保留当前筛选值、解除方案绑定 */
+async function handleDeleteFilter() {
+  const scheme = currentScheme.value
+  if (!scheme) return
+  try {
+    await proxy.$modal.confirm('确定删除筛选方案「' + scheme.filterName + '」吗？删除后不可恢复。')
+  } catch {
+    return
   }
+  await delReportFilter(scheme.id)
+  proxy.$modal.msgSuccess('筛选方案已删除')
+  await loadFilters()
+  currentFilterId.value = null
+  currentFilterSchemeName.value = ''
+}
+
+/* 重命名筛选方案：仅创建者可重命名（后端亦校验 create_by），只改名字、不动筛选配置 */
+async function handleRenameFilter() {
+  const scheme = currentScheme.value
+  if (!scheme) return
+  let name = ''
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '重命名方案「' + scheme.filterName + '」，仅修改名称，不影响已保存的筛选条件：',
+      '重命名筛选方案',
+      { confirmButtonText: '重命名', cancelButtonText: '取消', inputValue: scheme.filterName }
+    )
+    name = (value || '').trim()
+  } catch {
+    return
+  }
+  if (!name) { proxy.$modal.msgWarning('方案名称不能为空'); return }
+  await renameReportFilter(scheme.id, name)
+  proxy.$modal.msgSuccess('方案已重命名')
+  currentFilterSchemeName.value = name
+  await loadFilters()
 }
 
 /* ═══════════ 筛选设置弹窗 ═══════════ */
@@ -1183,7 +1516,8 @@ async function exportDesignerDirect() {
       },
       filter: buildBackendFilter(true)
     }
-    const blob = await exportReportByConfig(payload)
+    const res = await exportReportByConfig(payload)
+    const blob = res.data
     if (blob.type && blob.type.includes('application/json')) {
       const text = await blob.text()
       let msg = '导出失败'
@@ -1192,7 +1526,7 @@ async function exportDesignerDirect() {
       return
     }
     const time = formatStamp()
-    saveAs(new Blob([blob]), `${tplName}_${time}.xlsx`)
+    saveAs(new Blob([blob]), parseExportFileName(res, `${tplName}_${time}.xlsx`))
     proxy.$modal.msgSuccess('导出成功')
     designerVisible.value = false
     loadLogs()
@@ -1219,31 +1553,94 @@ async function handleDeleteTemplate() {
   }
 }
 
-/* ═══════════ 导出 ═══════════ */
-async function handleExport() {
+/* ═══════════ 导出（勾选确认 + 可选上报） ═══════════ */
+// 从响应头 Content-Disposition 解析后端文件名（UTF-8'' 编码），解析失败回退
+function parseExportFileName(res, fallback) {
+  const cd = res?.headers?.['content-disposition'] || ''
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  if (m) {
+    try { return decodeURIComponent(m[1].replace(/\+/g, '%20')) } catch (e) { /* ignore */ }
+  }
+  const m2 = cd.match(/filename="?([^";]+)"?/i)
+  if (m2) return m2[1]
+  return fallback
+}
+
+/* 打开导出弹窗：提示勾选条数（上报与否由工具栏「上报记录」复选框决定） */
+function openExportDialog() {
   if (!currentTemplateId.value) { proxy.$modal.msgWarning('请先选择报表模板'); return }
+  if (!previewRows.value.length) { proxy.$modal.msgWarning('当前没有可导出的记录，请先调整筛选条件'); return }
+  exportDialogVisible.value = true
+}
+
+/* 确认导出：工具栏勾选「上报记录」且为 zdyw 模板且当月未上报时，导出文件并同时上报领导 */
+async function confirmExport() {
+  if (!currentTemplateId.value) return
+  if (!effectiveCodes.value.length) { proxy.$modal.msgWarning('请至少勾选一条记录'); return }
+  const wantSubmit = submitAsReport.value && isZdywTemplate.value && !monthSubmitted.value
+  const ok = await doExport(wantSubmit)
+  if (ok && wantSubmit) await doSubmitReport()
+}
+
+/* 导出文件：projectCodes 传勾选集合，未勾选记录不导出；quiet=true 时成功提示由上报结果合并给出 */
+async function doExport(quiet = false) {
   const tpl = currentTemplate.value
   const suffix = tpl?.templateType === 'custom'
     ? '.xlsx'
     : ((tpl?.templateFile || '').toLowerCase().endsWith('.xls') ? '.xls' : '.xlsx')
-  const filename = `${tpl?.templateName || '报表'}_${formatStamp()}_${suffix}`
+  const fallback = `${tpl?.templateName || '报表'}_${formatStamp()}_${suffix}`
   exporting.value = true
   try {
-    const blob = await exportReport({ templateId: currentTemplateId.value, filter: buildBackendFilter(true) })
+    const res = await exportReport({
+      templateId: currentTemplateId.value,
+      filter: buildBackendFilter(true),
+      projectCodes: effectiveCodes.value
+    })
+    const blob = res.data
     if (blob.type && blob.type.includes('application/json')) {
       const text = await blob.text()
       let msg = '导出失败'
       try { msg = JSON.parse(text).msg || msg } catch (e) { /* ignore */ }
       proxy.$modal.msgError(msg)
-      return
+      return false
     }
-    saveAs(new Blob([blob]), filename)
-    proxy.$modal.msgSuccess(`导出成功：${previewTotal.value} 条`)
+    saveAs(new Blob([blob]), parseExportFileName(res, fallback))
+    if (!quiet) proxy.$modal.msgSuccess(`导出成功：${effectiveCodes.value.length} 条`)
+    exportDialogVisible.value = false
     loadLogs()
+    return true
   } catch (e) {
     proxy.$modal.msgError('导出失败，请稍后重试')
+    return false
   } finally {
     exporting.value = false
+  }
+}
+
+/* 上报落库：快照留档 + 记录级上报时间（UNIQUE 锁定，已上报跳过）；与本次导出文件内容一致 */
+async function doSubmitReport() {
+  submitting.value = true
+  try {
+    const res = await submitReport({
+      templateId: currentTemplateId.value,
+      filter: buildBackendFilter(true),
+      projectCodes: effectiveCodes.value,
+      remark: null
+    })
+    const d = res?.data || {}
+    exportDialogVisible.value = false
+    const newCount = d.newCount ?? 0
+    const skippedCount = d.skippedCount ?? 0
+    let tip = `导出成功：新上报 ${newCount} 条`
+    if (skippedCount) tip += `，已上报 ${skippedCount} 条跳过（时间锁定不变）`
+    tip += `（批次 ${d.batchNo || ''}）`
+    proxy.$modal.msgSuccess(tip)
+    // 上报后刷新预览（更新已上报标记 + 当月上报状态置灰复选框）
+    doPreview()
+  } catch (e) {
+    // 错误已由拦截器提示
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -1265,7 +1662,8 @@ async function loadLogs() {
 
 async function handleReExport(row) {
   try {
-    const blob = await reExportReport(row.id)
+    const res = await reExportReport(row.id)
+    const blob = res.data
     if (blob.type && blob.type.includes('application/json')) {
       const text = await blob.text()
       let msg = '重导失败'
@@ -1273,7 +1671,7 @@ async function handleReExport(row) {
       proxy.$modal.msgError(msg)
       return
     }
-    saveAs(new Blob([blob]), row.fileName || `export_${Date.now()}.xlsx`)
+    saveAs(new Blob([blob]), row.fileName || parseExportFileName(res, `export_${Date.now()}.xlsx`))
     proxy.$modal.msgSuccess('已按原模板与原筛选重新导出')
   } catch (e) {
     proxy.$modal.msgError('重导失败，请稍后重试')
@@ -1285,6 +1683,84 @@ async function handleDeleteLog(row) {
   await delReportLog(row.id)
   proxy.$modal.msgSuccess('记录已删除')
   loadLogs()
+}
+
+/* ═══════════ 上报领导记录 ═══════════ */
+function openSubmitDialog() {
+  submitDialogVisible.value = true
+  loadSubmitBatches()
+}
+
+async function loadSubmitBatches() {
+  submitLoading.value = true
+  try {
+    const res = await listSubmitBatch({})
+    submitBatches.value = res?.rows || res?.data || []
+  } finally {
+    submitLoading.value = false
+  }
+}
+
+/* 下载批次快照（上报当时的报表文件） */
+async function handleDownloadSnapshot(row) {
+  try {
+    const res = await downloadSnapshot(row.id)
+    const blob = res.data
+    if (blob.type && blob.type.includes('application/json')) {
+      const text = await blob.text()
+      let msg = '快照下载失败'
+      try { msg = JSON.parse(text).msg || msg } catch (e) { /* ignore */ }
+      proxy.$modal.msgError(msg)
+      return
+    }
+    const fallback = row.snapshotFile ? String(row.snapshotFile).split(/[\\/]/).pop() : `快照_${row.batchNo || row.id}.xls`
+    saveAs(new Blob([blob]), parseExportFileName(res, fallback))
+  } catch (e) {
+    proxy.$modal.msgError('快照下载失败，请稍后重试')
+  }
+}
+
+/* 批次详情（含批次内上报记录） */
+async function handleViewSubmitDetail(row) {
+  submitDetailVisible.value = true
+  submitDetail.value = null
+  submitDetailLoading.value = true
+  try {
+    const res = await getSubmitBatch(row.id)
+    submitDetail.value = res?.data || null
+  } finally {
+    submitDetailLoading.value = false
+  }
+}
+
+/* 删除上报批次（仅管理员；批次内上报记录一并删除，对应工程可重新上报） */
+async function handleDeleteSubmitBatch(row) {
+  try {
+    await proxy.$modal.confirm(
+      `确定删除上报批次「${row.batchNo}」吗？\n批次内 ${row.projectCount ?? ''} 条上报记录将一并删除（删除后对应工程编号可重新上报）。`
+    )
+  } catch {
+    return
+  }
+  await delSubmitBatch(row.id)
+  proxy.$modal.msgSuccess('批次已删除')
+  loadSubmitBatches()
+}
+
+/* 删除单条上报记录（仅管理员；删除后该工程编号可重新上报） */
+async function handleDeleteSubmitLog(row) {
+  try {
+    await proxy.$modal.confirm(`确定删除工程「${row.projectCode}」的上报记录吗？\n删除后该工程编号可重新上报。`)
+  } catch {
+    return
+  }
+  await delSubmitLog(row.id)
+  proxy.$modal.msgSuccess('记录已删除')
+  // 刷新当前批次详情
+  if (submitDetail.value?.id) {
+    const res = await getSubmitBatch(submitDetail.value.id)
+    submitDetail.value = res?.data || null
+  }
 }
 
 /* ═══════════ 工具函数 ═══════════ */
@@ -2079,6 +2555,31 @@ function leafWidth(leaf) {
   }
   .el-dialog__footer {
     display: none;   /* 隐藏空的原生 footer（实际按钮在 body 内的 .designer-footer） */
+  }
+}
+
+/* 导出弹窗 + 上报记录弹窗（append-to-body → 全局样式） */
+.export-confirm {
+  .hint-strong { color: var(--el-color-primary); font-size: 14px; }
+  .export-tip {
+    margin-top: 6px;
+    font-size: 13px;
+    .ok { color: var(--el-color-success); font-weight: 600; }
+    .no { color: var(--el-color-danger); font-weight: 600; }
+    .tip-sub { color: var(--el-text-color-secondary); font-size: 12px; }
+  }
+}
+
+/* 工具栏「上报记录」复选框（仅「只定未验及补之前扣除项目」报表显示） */
+.submit-toggle {
+  margin-right: 6px;
+  height: auto;
+  font-weight: 600;
+  .submit-toggle-tip {
+    margin-left: 4px;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--el-text-color-placeholder);
   }
 }
 </style>

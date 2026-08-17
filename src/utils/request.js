@@ -80,9 +80,9 @@ service.interceptors.response.use(res => {
     const code = res.data.code || 200
     // 获取错误信息
     const msg = errorCode[code] || res.data.msg || errorCode['default']
-    // 二进制数据则直接返回
+    // 二进制数据则返回整个响应对象（含 headers，供调用方解析 Content-Disposition 文件名）
     if (res.request.responseType ===  'blob' || res.request.responseType ===  'arraybuffer') {
-      return res.data
+      return res
     }
     if (code === 401) {
       if (!isRelogin.show) {
@@ -134,7 +134,8 @@ export function download(url, params, filename, config) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     responseType: 'blob',
     ...config
-  }).then(async (data) => {
+  }).then(async (res) => {
+    const data = res.data
     const isBlob = blobValidate(data)
     if (isBlob) {
       const blob = new Blob([data])

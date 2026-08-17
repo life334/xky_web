@@ -53,6 +53,15 @@ export function copyReportTemplate(id, name) {
   })
 }
 
+// 保存模板默认筛选条件（default_filter JSONB）
+export function saveTemplateDefaultFilter(id, data) {
+  return request({
+    url: '/report/template/' + id + '/defaultFilter',
+    method: 'put',
+    data: data
+  })
+}
+
 // ==================== 筛选方案 ====================
 
 // 查询筛选方案列表
@@ -89,18 +98,30 @@ export function delReportFilter(id) {
   })
 }
 
+// 重命名筛选方案（仅创建者可重命名）
+export function renameReportFilter(id, filterName) {
+  return request({
+    url: '/report/filter/' + id + '/rename',
+    method: 'put',
+    data: { filterName: filterName }
+  })
+}
+
 // ==================== 导出 ====================
 
 // 导出前预览（命中行数 + 前 50 行已解析展示值，二维数组按模板字段顺序）
+// 预览为幂等只读查询：筛选操作会频繁触发，跳过全局防重复提交拦截（repeatSubmit: false）
 export function previewReport(data) {
   return request({
     url: '/report/preview',
     method: 'post',
-    data: data
+    data: data,
+    headers: { repeatSubmit: false }
   })
 }
 
-// 导出报表（文件流 blob，文件名由后端 Content-Disposition 携带）
+// 导出报表（文件流 blob；拦截器返回整个响应对象，文件名从 res.headers['content-disposition'] 解析）
+// projectCodes 可选：非空时仅导出勾选工程编号（预览表格去勾选的记录不导出）
 export function exportReport(data) {
   return request({
     url: '/report/export',
@@ -119,6 +140,80 @@ export function exportReportByConfig(data) {
     data: data,
     responseType: 'blob',
     timeout: 120000
+  })
+}
+
+// ==================== 上报领导 ====================
+
+// 导出并上报领导：{ templateId, filter, projectCodes, remark }
+// 服务端生成快照留档 + 记录级上报时间（已上报工程锁定跳过），返回 { batchId, batchNo, newCount, skippedCount, ... }
+export function submitReport(data) {
+  return request({
+    url: '/report/submit',
+    method: 'post',
+    data: data,
+    timeout: 120000
+  })
+}
+
+// 上报批次列表
+export function listSubmitBatch(query) {
+  return request({
+    url: '/report/submit/batch/list',
+    method: 'get',
+    params: query
+  })
+}
+
+// 上报批次详情（含批次内记录）
+export function getSubmitBatch(id) {
+  return request({
+    url: '/report/submit/batch/' + id,
+    method: 'get'
+  })
+}
+
+// 下载批次快照文件（文件流 blob）
+export function downloadSnapshot(id) {
+  return request({
+    url: '/report/submit/batch/' + id + '/snapshot',
+    method: 'get',
+    responseType: 'blob',
+    timeout: 120000
+  })
+}
+
+// 删除上报批次（仅管理员）
+export function delSubmitBatch(id) {
+  return request({
+    url: '/report/submit/batch/' + id,
+    method: 'delete'
+  })
+}
+
+// 上报记录列表
+export function listSubmitLog(query) {
+  return request({
+    url: '/report/submit/log/list',
+    method: 'get',
+    params: query
+  })
+}
+
+// 批量查询工程编号上报状态（预览标记已上报行）
+export function getSubmitStatus(projectCodes) {
+  return request({
+    url: '/report/submit/status',
+    method: 'post',
+    data: { projectCodes: projectCodes }
+  })
+}
+
+// 删除单条上报记录（仅管理员；删除后该工程编号可重新上报）
+export function delSubmitLog(id) {
+  return request({
+    url: '/report/submit/log/' + id,
+    method: 'delete'
   })
 }
 
