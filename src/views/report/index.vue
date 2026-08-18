@@ -46,9 +46,9 @@
             上报记录
             <span v-if="monthSubmitted" class="submit-toggle-tip">本月已上报，下月可再上报</span>
           </el-checkbox>
-          <el-button type="primary" icon="Download" :loading="exporting" v-hasPermi="['report:report:export']" @click="openExportDialog">导出报表</el-button>
-          <el-button icon="Clock" v-hasPermi="['report:report:log']" @click="openLogDialog">导出历史</el-button>
-          <el-button icon="Promotion" v-hasPermi="['report:report:log']" @click="openSubmitDialog">上报历史</el-button>
+          <el-button type="primary" icon="Download" size="small" :loading="exporting" v-hasPermi="['report:report:export']" @click="openExportDialog">导出报表</el-button>
+          <el-button icon="Clock" size="small" v-hasPermi="['report:report:log']" @click="openLogDialog">导出历史</el-button>
+          <el-button icon="Promotion" size="small" v-hasPermi="['report:report:log']" @click="openSubmitDialog">上报历史</el-button>
         </div>
       </div>
 
@@ -139,6 +139,7 @@
         ref="previewTableRef"
         v-loading="previewLoading"
         :data="previewRows"
+        :span-method="previewSpanMethod"
         border size="small"
         max-height="460"
         empty-text="暂无数据 — 调整筛选条件或更换模板后导出"
@@ -146,8 +147,8 @@
       >
         <!-- 勾选列：默认全选，去勾选的记录不导出 / 不上报 -->
         <el-table-column type="selection" width="42" align="center" />
-        <!-- 上报状态标记列（仅预览展示，不参与导出列） -->
-        <el-table-column label="上报状态" width="82" align="center">
+        <!-- 上报状态标记列（仅 zdyw/byx 模板预览展示，不参与导出列） -->
+        <el-table-column v-if="showSubmitStatus" label="上报状态" width="82" align="center">
           <template #default="{ row }">
             <el-tag v-if="row.__submitted" type="success" size="small" effect="plain">已上报</el-tag>
             <el-tag v-else type="info" size="small" effect="plain">未上报</el-tag>
@@ -162,10 +163,10 @@
               :label="leaf.label"
               :prop="'c' + leaf.colIndex"
               :min-width="leafWidth(leaf)"
-              show-overflow-tooltip
+              :show-overflow-tooltip="!isMultilineField(leaf.fieldKey)"
             >
               <template #default="{ row }">
-                <span :class="{ 'cell-number': isNumberFieldKey(leaf.fieldKey) }">{{ formatCell(row['c' + leaf.colIndex]) }}</span>
+                <span :class="{ 'cell-number': isNumberFieldKey(leaf.fieldKey), 'cell-preline': isMultilineField(leaf.fieldKey) }">{{ formatCell(row['c' + leaf.colIndex]) }}</span>
               </template>
             </el-table-column>
           </el-table-column>
@@ -175,10 +176,10 @@
             :label="node.label"
             :prop="'c' + node.colIndex"
             :min-width="leafWidth(node)"
-            show-overflow-tooltip
+            :show-overflow-tooltip="!isMultilineField(node.fieldKey)"
           >
             <template #default="{ row }">
-              <span :class="{ 'cell-number': isNumberFieldKey(node.fieldKey) }">{{ formatCell(row['c' + node.colIndex]) }}</span>
+              <span :class="{ 'cell-number': isNumberFieldKey(node.fieldKey), 'cell-preline': isMultilineField(node.fieldKey) }">{{ formatCell(row['c' + node.colIndex]) }}</span>
             </template>
           </el-table-column>
         </template>
@@ -511,7 +512,7 @@
             <span v-if="!previewRows.length" class="tip-sub">（当前无预览数据，请先调整筛选条件）</span>
           </div>
           <div v-if="isZdywTemplate && submitAsReport && !monthSubmitted" class="export-tip">
-            本次导出将作为<b class="ok">上报领导记录</b>：未上报过的记录写入上报时间（已上报记录锁定跳过），并在服务器保存报表快照。
+            本次导出将作为<b class="ok">上报记录</b>：未上报过的记录写入上报时间（已上报记录锁定跳过），并在服务器保存报表快照。
           </div>
         </el-alert>
       </div>
@@ -522,7 +523,7 @@
     </el-dialog>
 
     <!-- ═══════════ ⑧ 上报记录弹窗 ═══════════ -->
-    <el-dialog v-model="submitDialogVisible" title="上报领导记录" width="88%" append-to-body>
+    <el-dialog v-model="submitDialogVisible" title="上报记录" width="88%" append-to-body>
       <el-table v-loading="submitLoading" :data="submitBatches" border size="small" max-height="460">
         <el-table-column label="批次号" prop="batchNo" width="150" />
         <el-table-column label="模板" prop="templateName" min-width="150" show-overflow-tooltip />
@@ -716,8 +717,14 @@ const effectiveCodes = computed(() => previewCodes.value.filter(c => !!c && !unc
 /* 去勾选条数（仅统计可见行范围内，供导出弹窗提示） */
 const uncheckedCount = computed(() => previewCodes.value.filter(c => !!c && uncheckedCodes.value.has(c)).length)
 
-/* 是否「只定未验及补之前扣除项目」报表（zdyw_report）：唯一支持上报领导的模板 */
+/* 是否「只定未验及补之前扣除项目」报表（zdyw_report）：唯一支持上报的模板 */
 const isZdywTemplate = computed(() => (currentTemplate.value?.templateFile || '').toLowerCase().includes('zdyw_report'))
+
+/* 上报状态列仅「只定未验及补之前扣除项目」(zdyw) 与「补验线」(byx) 模板显示 */
+const showSubmitStatus = computed(() => {
+  const f = (currentTemplate.value?.templateFile || '').toLowerCase()
+  return f.includes('zdyw_report') || f.includes('byx_report')
+})
 
 /* 切换模板时重置「上报记录」勾选，避免误上报 */
 watch(currentTemplateId, () => { submitAsReport.value = false })
@@ -1573,7 +1580,7 @@ function openExportDialog() {
   exportDialogVisible.value = true
 }
 
-/* 确认导出：工具栏勾选「上报记录」且为 zdyw 模板且当月未上报时，导出文件并同时上报领导 */
+/* 确认导出：工具栏勾选「上报记录」且为 zdyw 模板且当月未上报时，导出文件并同时上报 */
 async function confirmExport() {
   if (!currentTemplateId.value) return
   if (!effectiveCodes.value.length) { proxy.$modal.msgWarning('请至少勾选一条记录'); return }
@@ -1685,7 +1692,7 @@ async function handleDeleteLog(row) {
   loadLogs()
 }
 
-/* ═══════════ 上报领导记录 ═══════════ */
+/* ═══════════ 上报记录 ═══════════ */
 function openSubmitDialog() {
   submitDialogVisible.value = true
   loadSubmitBatches()
@@ -1790,6 +1797,56 @@ function isNumberFieldKey(fieldKey) {
   return fieldPoolMeta(fieldKey)?.type === 'number'
 }
 
+/* 多行文本字段（模板4 项目工作量按类别换行）：关闭单行省略，启用 pre-line 换行 */
+function isMultilineField(fieldKey) {
+  return fieldKey === 'workloadDesc'
+}
+
+/* ═══ 委托单位列合并（预览与导出一致）：按 clientUnit 连续相同值纵向合并，空值不合并 ═══ */
+const clientUnitLeaf = computed(() => {
+  function find(nodes) {
+    for (const n of nodes || []) {
+      if (n.isGroup) {
+        const f = find(n.children)
+        if (f) return f
+      } else if (n.fieldKey === 'clientUnit') {
+        return n
+      }
+    }
+    return null
+  }
+  return find(headerTree.value)
+})
+
+const unitMergeSpans = computed(() => {
+  const leaf = clientUnitLeaf.value
+  const rows = previewRows.value
+  const spans = {}
+  if (!leaf || !rows.length) return spans
+  const col = leaf.colIndex
+  let i = 0
+  while (i < rows.length) {
+    let j = i
+    const v = rows[i]['c' + col]
+    while (j + 1 < rows.length && rows[j + 1]['c' + col] === v) j++
+    if (v !== null && v !== undefined && v !== '' && j > i) {
+      for (let k = i; k <= j; k++) {
+        spans[k] = k === i ? { rowspan: j - i + 1, colspan: 1 } : { rowspan: 0, colspan: 0 }
+      }
+    }
+    i = j + 1
+  }
+  return spans
+})
+
+/* el-table span-method：仅对委托单位列生效（勾选列/上报状态列等不合并） */
+function previewSpanMethod({ column, rowIndex }) {
+  const leaf = clientUnitLeaf.value
+  if (!leaf) return
+  if (column.property !== 'c' + leaf.colIndex) return
+  return unitMergeSpans.value[rowIndex]
+}
+
 /* 表头叶子节点最小列宽：Excel 列宽(字符) → 预览 px（窄列保底） */
 function leafWidth(leaf) {
   const w = leaf.width || 14
@@ -1805,7 +1862,7 @@ function leafWidth(leaf) {
   .toolbar-row {
     display: flex;
     align-items: center;
-    gap: 28px;
+    gap: 8px;
     flex-wrap: wrap;
     .toolbar-group {
       display: flex;
@@ -1942,6 +1999,12 @@ function leafWidth(leaf) {
     .cell-number {
       font-variant-numeric: tabular-nums;
       color: var(--el-text-color-regular);
+    }
+    /* 多行文本（模板4 项目工作量）：按 \n 换行显示 */
+    .cell-preline {
+      white-space: pre-line;
+      word-break: break-all;
+      line-height: 1.4;
     }
   }
 }
