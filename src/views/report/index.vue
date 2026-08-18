@@ -382,7 +382,7 @@
               <div v-if="!designerSelected.length" class="stage-empty">未选择任何字段 — 从左侧勾选字段开始设计</div>
 
               <div
-                v-for="(group, gi) in designerGroupList"
+                v-for="group in designerGroupList"
                 :key="group.name || '__ungrouped__'"
                 class="col-group-block"
                 :class="{ 'is-group-hover': designerSelectedGroup === group.name, 'is-ungrouped': !group.name }"
