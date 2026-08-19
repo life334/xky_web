@@ -288,6 +288,7 @@
          append-to-body
          destroy-on-close
          :close-on-click-modal="false"
+         class="scrollbar"
          width="80%"
          draggable
       >
@@ -1530,16 +1531,22 @@ function externalRowsByUser(userId) {
   return workloadForm.value.workloads.filter(r => Number(r.userId) === Number(userId) && r.billingType === 'external')
 }
 
-/** 内部计费方式下拉选项（聚合所有类别下的内部计费方式） */
+/** 内部计费方式下拉选项（聚合所有类别下的内部计费方式，已过滤当前负责人已添加过的类别） */
 function internalBillingOptions(userId) {
   const opts = []
   const seen = new Set()
+  const usedKeys = new Set(
+    workloadForm.value.workloads
+      .filter(r => Number(r.userId) === Number(userId) && r.billingType === 'internal')
+      .map(r => r.billingKey)
+  )
   Object.keys(billingMap.value).forEach(catId => {
     const list = billingMap.value[catId] || []
     list.filter(b => b.billingType === 'internal').forEach(b => {
       const val = b.billingType + '#' + b.billingCategory
       if (!seen.has(val)) {
         seen.add(val)
+        if (usedKeys.has(val)) return
         const label = b.billingCategory + '（¥' + formatMoney(b.unitPrice) + '/' + (b.priceUnit || '项') + (Number(b.minQuantity) > 1 ? ('，起步' + b.minQuantity) : '') + '）'
         opts.push({ value: val, label: label, raw: b, categoryId: catId })
       }
@@ -1548,16 +1555,22 @@ function internalBillingOptions(userId) {
   return opts
 }
 
-/** 外部计费方式下拉选项（聚合所有类别下的外部计费方式） */
+/** 外部计费方式下拉选项（聚合所有类别下的外部计费方式，已过滤已添加过的类别） */
 function externalBillingOptions() {
   const opts = []
   const seen = new Set()
+  const usedKeys = new Set(
+    workloadForm.value.workloads
+      .filter(r => r.billingType === 'external')
+      .map(r => r.billingKey)
+  )
   Object.keys(billingMap.value).forEach(catId => {
     const list = billingMap.value[catId] || []
     list.filter(b => b.billingType === 'external').forEach(b => {
       const val = b.billingType + '#' + b.billingCategory
       if (!seen.has(val)) {
         seen.add(val)
+        if (usedKeys.has(val)) return
         const label = b.billingCategory + '（¥' + formatMoney(b.unitPrice) + '/' + (b.priceUnit || '项') + (Number(b.minQuantity) > 1 ? ('，起步' + b.minQuantity) : '') + '）'
         opts.push({ value: val, label: label, raw: b, categoryId: catId })
       }
@@ -1599,7 +1612,7 @@ function onQuickCatChange(val, leader, type) {
   leader.quickInternalUnit = b.priceUnit || ''
 }
 
-/** 快速添加工作量行（外部不依赖负责人，userId为null） */
+/** 快速添加工作量行（外部不依赖负责人，userId为null）；兜底：若同类别已存在则累加工作量 */
 function quickAddWorkload(leader, type) {
   const isExternal = type === 'external'
   const cat = isExternal ? quickExternalCat.value : leader.quickInternalCat
@@ -1610,6 +1623,27 @@ function quickAddWorkload(leader, type) {
   const options = isExternal ? externalBillingOptions() : internalBillingOptions(leader.userId)
   const opt = options.find(o => o.value === cat)
   if (!opt || !opt.raw) return
+
+  const existRow = workloadForm.value.workloads.find(r => {
+    if (r.billingType !== (isExternal ? 'external' : 'internal') || r.billingKey !== cat) return false
+    return isExternal ? true : Number(r.userId) === Number(leader.userId)
+  })
+  if (existRow) {
+    existRow.workload = (Number(existRow.workload) || 0) + (Number(workload) || 0)
+    calcRow(existRow)
+    if (isExternal) {
+      quickExternalCat.value = null
+      quickExternalWorkload.value = null
+      quickExternalPrice.value = null
+      quickExternalUnit.value = ''
+    } else {
+      leader.quickInternalCat = null
+      leader.quickInternalWorkload = null
+      leader.quickInternalPrice = null
+      leader.quickInternalUnit = ''
+    }
+    return
+  }
 
   const b = opt.raw
   const cp = contractPriceMap.value[opt.categoryId]
