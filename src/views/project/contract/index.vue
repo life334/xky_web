@@ -100,8 +100,8 @@
             <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:contract:remove']">删除</el-button>
          </el-col>
          <el-col :span="1.5" style="margin-left:auto;display:flex;gap:8px;align-items:center">
-            <el-button type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:contract:export']">导出</el-button>
-            <right-toolbar v-model:showSearch="showSearch" :columns="columns" storage-key="contract-list-columns" @queryTable="getList" />
+            <el-button v-if="false" type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:contract:export']">导出</el-button>
+            <right-toolbar size="small" v-model:showSearch="showSearch" :columns="columns" storage-key="contract-list-columns" @queryTable="getList" />
          </el-col>
       </el-row>
 

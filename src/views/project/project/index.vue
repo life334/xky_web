@@ -135,9 +135,9 @@
             <el-button type="success" plain icon="Edit" size="small" :disabled="single || editDisabledByClosed" @click="handleUpdate" v-hasPermi="['project:project:edit']">修改</el-button>
             <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple || deleteDisabledByClosed" @click="handleDelete" v-hasPermi="['project:project:remove']">删除</el-button>
          </div>
-         <div style="display:flex;align-items:center;gap:6px">
-            <el-button type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:project:export']">导出</el-button>
-            <right-toolbar v-model:showSearch="showSearch" :columns="columns" storage-key="project-list-columns" @queryTable="getList" />
+         <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+            <el-button v-if="false" type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:project:export']">导出</el-button>
+            <right-toolbar size="small" v-model:showSearch="showSearch" :columns="columns" storage-key="project-list-columns" @queryTable="getList" />
          </div>
       </el-row>
 

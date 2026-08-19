@@ -79,12 +79,12 @@
 
       <!-- Row 5: 操作按钮行 -->
       <el-row :gutter="10" class="mb8">
-         <el-col :span="1.5" style="margin-left:auto">
+         <right-toolbar size="small" v-model:showSearch="showSearch" :columns="columns" storage-key="material-list-columns" @queryTable="getList" />
+
+         <el-col :span="1.5" style="margin-left:auto" v-if="false">
             <el-button type="warning" size="small" plain icon="Download" @click="handleExport" v-hasPermi="['project:material:export']">导出</el-button>
          </el-col>
-         <el-col :span="1.5">
-            <right-toolbar v-model:showSearch="showSearch" :columns="columns" storage-key="material-list-columns" @queryTable="getList" />
-         </el-col>
+
       </el-row>
 
       <el-table v-loading="loading" :data="materialList" row-key="id" stripe border @selection-change="handleSelectionChange" @expand-change="handleExpandChange">
@@ -215,11 +215,10 @@
                <span v-else>{{ scope.row[col.prop] }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="操作" align="center" min-width="200" class-name="small-padding fixed-width" fixed="right">
+         <el-table-column label="操作" align="center" min-width="160" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
-               <el-button v-if="scope.row.status === 'pending' || scope.row.status === 'returned'" link type="warning" size="small" @click="handleBorrow(scope.row)" v-hasPermi="['project:material:borrow']">领取</el-button>
-               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:material:edit']">修改</el-button>
-               <el-button link type="info" size="small" @click="handleFlow(scope.row)">领取记录</el-button>
+               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:material:edit']">领取/修改</el-button>
+               <el-button link type="info" size="small" @click="handleFlow(scope.row)">历史记录</el-button>
             </template>
          </el-table-column>
       </el-table>
@@ -227,14 +226,17 @@
       <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
       <!-- 修改资料提交对话框 -->
-      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="700px" append-to-body>
-         <!-- 项目信息（只读） -->
-         <el-descriptions :column="2" border size="small" class="mb20">
-            <el-descriptions-item label="工程编号">{{ form.projectCode}}</el-descriptions-item>
-            <el-descriptions-item label="委托任务">{{ form.engineeringProject }}</el-descriptions-item>
-            <el-descriptions-item label="工程地点">{{ form.projectLocation}}</el-descriptions-item>
-            <el-descriptions-item label="项目名称">{{ form.projectName}}</el-descriptions-item>
-         </el-descriptions>
+      <el-dialog 
+         :model-value="open" 
+         @update:model-value="open = $event" 
+         :title="title"
+         :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
+         width="80%" 
+         append-to-body
+         draggable
+      >
+         <!-- 顶部分割线：与标题栏区分 -->
+         <div class="dialog-top-divider"></div>
          <!-- 资料属性（可编辑） -->
          <el-form ref="materialRef" :model="form" :rules="rules" label-width="90px">
             <el-row :gutter="20">
@@ -304,28 +306,65 @@
                </el-col>
             </el-row>
          </el-form>
+         <!-- 领取历史记录（内嵌时间轴） -->
+         <div class="flow-history-block">
+            <div class="flow-history-title" @click="flowHistoryExpanded = !flowHistoryExpanded">
+               <span>领取历史记录 <span class="flow-count">{{ flowList.length }}</span></span>
+               <span class="flow-toggle-arrow" :class="{ expanded: flowHistoryExpanded }"></span>
+            </div>
+            <el-collapse-transition>
+               <div v-show="flowHistoryExpanded" class="flow-history-content" style="margin-top: 10px;">
+                  <el-timeline v-if="flowList.length > 0" class="flow-timeline">
+                     <el-timeline-item v-for="item in flowList" :key="item.id"
+                        :type="item.flowType === '领取' ? 'primary' : 'success'"
+                        :timestamp="item.operateTime" placement="top">
+                        <el-card shadow="never" class="flow-card">
+                           <div v-if="item.guarantorName" class="flow-card-head">
+                              <span class="flow-guarantor">担保人：{{ item.guarantorName }}</span>
+                           </div>
+                           <div v-if="item.snapshotObj" class="flow-snapshot">
+                              <span v-if="item.snapshotObj.contactName" class="flow-snap-item">联系人：{{ item.snapshotObj.contactName }}</span>
+                              <span v-if="item.snapshotObj.contactPhone" class="flow-snap-item">电话：{{ item.snapshotObj.contactPhone }}</span>
+                              <span v-if="item.snapshotObj.resultType" class="flow-snap-item">成果类型：{{ resultTypeLabel(item.snapshotObj.resultType) }}</span>
+                           </div>
+                           <p v-if="item.remark" class="flow-remark">备注：{{ item.remark }}</p>
+                        </el-card>
+                     </el-timeline-item>
+                  </el-timeline>
+                  <el-empty v-else description="暂无历史记录" :image-size="60" />
+               </div>
+            </el-collapse-transition>
+         </div>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" @click="submitForm">确 定</el-button>
+               <el-button type="primary" @click="submitForm">确认领取</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
          </template>
       </el-dialog>
 
-      <!-- 领取记录对话框 -->
-      <el-dialog title="领取记录" :model-value="flowOpen" @update:model-value="flowOpen = $event" width="600px" append-to-body>
-         <el-timeline v-if="flowList.length > 0">
+      <!-- 历史记录对话框 -->
+      <el-dialog title="历史记录" :model-value="flowOpen" @update:model-value="flowOpen = $event" width="600px" append-to-body>
+         <div class="flow-dialog-body">
+            <el-timeline v-if="flowList.length > 0" class="flow-timeline">
             <el-timeline-item v-for="item in flowList" :key="item.id"
                :type="item.flowType === '领取' ? 'primary' : 'success'"
                :timestamp="item.operateTime" placement="top">
-               <el-card shadow="never">
-                  <p><strong>{{ item.flowType }}</strong></p>
-                  <p v-if="item.guarantorName">担保人：{{ item.guarantorName }}</p>
-                  <p v-if="item.remark">备注：{{ item.remark }}</p>
+               <el-card shadow="never" class="flow-card">
+                  <div v-if="item.guarantorName" class="flow-card-head">
+                     <span class="flow-guarantor">担保人：{{ item.guarantorName }}</span>
+                  </div>
+                  <div v-if="item.snapshotObj" class="flow-snapshot">
+                     <span v-if="item.snapshotObj.contactName" class="flow-snap-item">联系人：{{ item.snapshotObj.contactName }}</span>
+                     <span v-if="item.snapshotObj.contactPhone" class="flow-snap-item">电话：{{ item.snapshotObj.contactPhone }}</span>
+                     <span v-if="item.snapshotObj.resultType" class="flow-snap-item">成果类型：{{ resultTypeLabel(item.snapshotObj.resultType) }}</span>
+                  </div>
+                  <p v-if="item.remark" class="flow-remark">备注：{{ item.remark }}</p>
                </el-card>
             </el-timeline-item>
-         </el-timeline>
-         <el-empty v-else description="暂无领取记录" />
+            </el-timeline>
+            <el-empty v-else description="暂无历史记录" />
+         </div>
          <template #footer>
             <div class="dialog-footer">
                <el-button @click="flowOpen = false">关 闭</el-button>
@@ -339,27 +378,27 @@
             <el-alert type="warning" :closable="false" show-icon class="mb20">
                <span>该项目存在未结清款项，请确认是否领取资料</span>
             </el-alert>
-            <div class="payment-grid">
-               <div class="payment-cell">
-                  <div class="payment-label">合同金额</div>
-                  <div class="payment-value">{{ formatMoney(paymentInfo.contractAmount) }}</div>
+            <div class="payment-rows">
+               <div class="payment-row">
+                  <span class="payment-row-label">项目金额</span>
+                  <span class="payment-row-value">{{ formatMoney(paymentInfo.contractAmount) }}</span>
                </div>
-               <div class="payment-cell">
-                  <div class="payment-label">已收金额</div>
-                  <div class="payment-value" style="color: #67c23a">{{ formatMoney(paymentInfo.receivedAmount) }}</div>
+               <div class="payment-row">
+                  <span class="payment-row-label">已收金额</span>
+                  <span class="payment-row-value" style="color: #67c23a">{{ formatMoney(paymentInfo.receivedAmount) }}</span>
                </div>
-               <div class="payment-cell">
-                  <div class="payment-label">未收金额</div>
-                  <div class="payment-value" style="color: #f56c6c">{{ formatMoney(paymentInfo.pendingAmount) }}</div>
+               <div class="payment-row">
+                  <span class="payment-row-label">未收金额</span>
+                  <span class="payment-row-value" style="color: #f56c6c">{{ formatMoney(paymentInfo.pendingAmount) }}</span>
                </div>
-               <div class="payment-cell">
-                  <div class="payment-label">收款比例</div>
-                  <div class="payment-value">{{ paymentInfo.paymentRatio }}%</div>
+               <div class="payment-row">
+                  <span class="payment-row-label">收款比例</span>
+                  <span class="payment-row-value">{{ paymentInfo.paymentRatio }}%</span>
                </div>
             </div>
             <div class="payment-progress-row">
-               <div class="payment-label">收款进度</div>
-               <el-progress :percentage="Number(paymentInfo.paymentRatio) || 0" :color="'#67c23a'" :stroke-width="14" />
+               <div class="payment-row-label">收款进度</div>
+               <el-progress :percentage="Number(paymentInfo.paymentRatio) || 0" :color="'#67c23a'" :stroke-width="10" />
             </div>
             <el-checkbox v-model="paymentConfirm" class="mt20">我已知晓欠款情况，确认领取资料</el-checkbox>
          </div>
@@ -374,7 +413,7 @@
 </template>
 
 <script setup name="Material">
-import { listMaterial, getMaterial, updateMaterial, delMaterial, borrowMaterial, getFlowList, getMaterialStatusCounts, getMaterialColumns, checkPayment, toggleArchive } from "@/api/project/material"
+import { listMaterial, getMaterial, delMaterial, borrowMaterial, getFlowList, getMaterialStatusCounts, getMaterialColumns, checkPayment, toggleArchive } from "@/api/project/material"
 import { getSettlementDetail, getSettlementOverview } from "@/api/project/settlement"
 import { listProject } from "@/api/project/project"
 import { listUserOptions } from "@/api/system/user"
@@ -499,12 +538,12 @@ const advancedVisible = ref(false)
 // 流转记录
 const flowOpen = ref(false)
 const flowList = ref([])
+const flowHistoryExpanded = ref(false)
 
 // 欠款确认弹窗
 const paymentOpen = ref(false)
 const paymentInfo = ref(null)
 const paymentConfirm = ref(false)
-const pendingBorrowRow = ref(null)
 
 const data = reactive({
   form: {},
@@ -577,7 +616,7 @@ function resetQuery() {
 
 /** 状态胶囊 computed（字典驱动） */
 const statusCapsules = computed(() => {
-  const dict = proj_material_status.value || []
+  const dict = (proj_material_status.value || []).filter(d => d.value !== 'returned')
   const counts = statusCounts.value || {}
   const total = Object.values(counts).reduce((sum, c) => sum + (Number(c) || 0), 0)
   const items = [{ label: '全部', value: undefined, count: total }]
@@ -658,73 +697,81 @@ function handleUpdate(row) {
   const id = row.id || ids.value[0]
   getMaterial(id).then(response => {
     form.value = response.data
-    // 联系人/电话默认取关联项目当前值（同步项目最新，弹窗内可编辑，保存后写入资料表）
+    // 联系人/电话：资料有值则保留（保留本次领取修改），为空才从关联项目带出
     const proj = projectOptions.value.find(p => p.id === form.value.projectId)
     if (proj) {
-      form.value.contactName = proj.contactName
-      form.value.contactPhone = proj.contactPhone
+      if (!form.value.contactName) form.value.contactName = proj.contactName
+      if (!form.value.contactPhone) form.value.contactPhone = proj.contactPhone
     }
+    // 交付时间即领取时间，打开编辑页自动刷新为当前时刻（含时分秒）
+    form.value.submitTime = proxy.parseTime(new Date(), '{y}-{m}-{d} {h}:{i}:{s}')
     open.value = true
-    title.value = "修改资料提交"
+    title.value = "领取/修改资料"
+    // 加载历史记录供编辑页内嵌时间轴展示
+    loadFlowList(id)
   })
 }
 
 function submitForm() {
   proxy.$refs["materialRef"].validate(valid => {
-    if (valid) {
-      updateMaterial(form.value).then(() => {
-        proxy.$modal.msgSuccess("修改成功")
-        open.value = false
-        getList()
-      })
+    if (!valid) return
+    // 交付时间即领取时间，未填默认当前
+    if (!form.value.submitTime) {
+      form.value.submitTime = proxy.parseTime(new Date(), '{y}-{m}-{d} {h}:{i}:{s}')
     }
+    // 领取前欠款检查
+    checkPayment(form.value.projectId).then(res => {
+      const info = res.data
+      if (info && info.hasDebt) {
+        paymentInfo.value = info
+        paymentConfirm.value = false
+        paymentOpen.value = true
+      } else {
+        doBorrow()
+      }
+    }).catch(() => doBorrow())
   })
 }
 
-/** 领取：先检查担保人，再检查欠款 */
-function handleBorrow(row) {
-  // 资料标记需要担保但未设置担保人时拦截
-  if (row.guarantorFlag === 'Y' && !row.guarantorId) {
-    proxy.$modal.msgWarning("该资料需要担保人，请先在编辑页设置担保人")
-    return
-  }
-  // 查询欠款信息
-  checkPayment(row.projectId).then(res => {
-    const info = res.data
-    if (info && info.hasDebt) {
-      // 有欠款 → 弹出确认弹窗
-      paymentInfo.value = info
-      paymentConfirm.value = false
-      pendingBorrowRow.value = row
-      paymentOpen.value = true
-    } else {
-      // 无欠款 → 直接确认领取
-      proxy.$modal.confirm("确认领取该资料？").then(() => {
-        borrowMaterial(row.id).then(() => {
-          proxy.$modal.msgSuccess("领取成功")
-          getList()
-        })
-      }).catch(() => {})
-    }
-  }).catch(() => {
-    // 查询失败 → 兜底直接确认
-    proxy.$modal.confirm("确认领取该资料？").then(() => {
-      borrowMaterial(row.id).then(() => {
-        proxy.$modal.msgSuccess("领取成功")
-        getList()
-      })
-    }).catch(() => {})
-  })
-}
-
-/** 欠款弹窗确认领取 */
-function confirmBorrowWithDebt() {
-  if (!pendingBorrowRow.value) return
-  borrowMaterial(pendingBorrowRow.value.id).then(() => {
+/** 执行领取保存：更新主表 + 追加历史记录 */
+function doBorrow() {
+  borrowMaterial(form.value.id, form.value).then(() => {
     proxy.$modal.msgSuccess("领取成功")
-    paymentOpen.value = false
+    open.value = false
     getList()
   })
+}
+
+/** 欠款弹窗确认后领取 */
+function confirmBorrowWithDebt() {
+  borrowMaterial(form.value.id, form.value).then(() => {
+    proxy.$modal.msgSuccess("领取成功")
+    paymentOpen.value = false
+    open.value = false
+    getList()
+  })
+}
+
+/** 加载领取历史记录 */
+function loadFlowList(id) {
+  getFlowList(id).then(response => {
+    flowList.value = (response.data || []).map(item => ({
+      ...item,
+      snapshotObj: safeParseSnapshot(item.snapshot)
+    }))
+  }).catch(() => { flowList.value = [] })
+}
+
+/** 解析历史快照 JSON */
+function safeParseSnapshot(s) {
+  try { return s ? JSON.parse(s) : null } catch (e) { return null }
+}
+
+/** 成果类型字典翻译 */
+function resultTypeLabel(val) {
+  if (!val) return ''
+  const d = (proj_material_result_type.value || []).find(x => x.value === val)
+  return d ? d.label : val
 }
 
 /** 快捷切换归档状态 */
@@ -861,12 +908,10 @@ function paymentSpanMethod({ rowIndex, columnIndex }, projectId) {
   }
 }
 
-/** 查看领取记录 */
+/** 查看历史记录 */
 function handleFlow(row) {
-  getFlowList(row.id).then(response => {
-    flowList.value = response.data || []
-    flowOpen.value = true
-  })
+  loadFlowList(row.id)
+  flowOpen.value = true
 }
 
 function handleDelete(row) {
@@ -995,33 +1040,21 @@ loadStatusCounts()
 
 /* ===== 欠款确认弹窗 ===== */
 .payment-check-body { padding: 0 4px; }
-.payment-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 20px;
+.payment-rows {
+  margin-bottom: 16px;
 }
-.payment-cell {
-  border-radius: 8px;
-  padding: 16px;
-  background: var(--el-fill-color-light, #f5f5f5);
-  text-align: center;
+.payment-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 4px; border-bottom: 1px dashed #ebeef5; font-size: 14px;
 }
-.payment-label {
-  font-size: 13px;
-  color: #909399;
-  margin-bottom: 8px;
-}
-.payment-value {
-  font-size: 20px;
-  font-weight: 600;
-  color: #303133;
-}
+.payment-row:last-child { border-bottom: none; }
+.payment-row-label { color: #606266; }
+.payment-row-value { font-weight: 600; color: #303133; }
 .payment-progress-row {
   margin-bottom: 16px;
 }
-.payment-progress-row .payment-label {
-  margin-bottom: 10px;
+.payment-progress-row .payment-row-label {
+  margin-bottom: 10px; color: #606266; font-size: 14px;
 }
 .mt20 { margin-top: 20px; }
 .mb20 { margin-bottom: 20px; }
@@ -1061,4 +1094,48 @@ loadStatusCounts()
   padding: 16px; text-align: center; color: #909399; font-size: 13px;
   background: #fff; border: 1px dashed #e4e7ed; border-radius: 6px;
 }
+
+/* 领取历史时间轴 */
+.flow-history-block {
+  margin-top: 12px; padding: 10px 12px; background: #fafafa;
+  border: 1px solid #ebeef5; border-radius: 6px;
+}
+.flow-history-title {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 14px; font-weight: 600; color: #303133;
+  padding-left: 6px; border-left: 3px solid #409eff;
+  cursor: pointer; user-select: none;
+}
+.flow-count {
+  display: inline-block; margin-left: 6px; padding: 0 6px;
+  background: #e4e7ed; color: #606266; border-radius: 10px; font-size: 12px; font-weight: 400;
+}
+.flow-toggle-arrow {
+  display: inline-block; width: 0; height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #909399;
+  transition: transform 0.2s;
+}
+.flow-toggle-arrow.expanded { transform: rotate(180deg); }
+.flow-history-content { padding-top: 10px; }
+.dialog-top-divider { height: 1px; background: #dcdfe6; margin: 0 0 12px; }
+.flow-dialog-body { max-height: 60vh; overflow-y: auto; padding-right: 8px; }
+.flow-timeline { padding-left: 8px; }
+.flow-card { border: none !important; background: #fff; }
+.flow-card-head {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  font-size: 13px; margin-bottom: 4px;
+}
+.flow-type { font-weight: 600; color: #409eff; }
+.flow-user { color: #606266; }
+.flow-guarantor { color: #e6a23c; }
+.flow-remark { margin: 6px 0 0; color: #606266; font-size: 13px; line-height: 1.5; }
+.flow-snapshot {
+  display: flex; flex-wrap: wrap; gap: 12px; margin: 6px 0;
+  padding: 6px 8px; background: #f5f7fa; border-radius: 4px;
+  font-size: 12px; color: #606266;
+}
+.flow-snap-item::before { content: '·'; margin-right: 4px; color: #c0c4cc; }
+.flow-snap-item:first-child::before { content: ''; margin-right: 0; }
 </style>

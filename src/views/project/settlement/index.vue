@@ -302,7 +302,7 @@
             <div v-for="leader in leaderList" :key="leader.userId" class="leader-card">
                <div class="leader-card-header">
                   <span class="leader-name">{{ leader.nickName }}</span>
-                  <span class="leader-mini-total">内部：{{ formatMoney(leaderInternalOutput(leader.userId)) }} · 外部：{{ formatMoney(leaderExternalOutput(leader.userId)) }}</span>
+                  <span class="leader-mini-total">内部：{{ formatMoney(leaderInternalOutput(leader.userId)) }}</span>
                </div>
 
                <!-- 内部快速录入栏 -->
