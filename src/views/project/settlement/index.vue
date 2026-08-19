@@ -19,6 +19,22 @@
          <span class="status-capsule" :class="{ active: selectedStatuses.includes('closed') && selectedStatuses.includes('archived') }" @click="onStatusCapsuleClick(['closed','archived'])">已办结 + 已归档</span>
       </div> -->
 
+      <!-- Row 2b: 录入状态胶囊（工作量 + 到账，本地筛选） -->
+      <div class="status-capsule-row entry-capsules">
+         <span class="capsule-group-label">工作量</span>
+         <span class="status-capsule" :class="{ active: workloadFilter === 'all' }" @click="setWorkloadFilter('all')">全部 <em>{{ treeData.length }}</em></span>
+         <span class="status-capsule" :class="{ active: workloadFilter === 'done' }" @click="setWorkloadFilter('done')">已录入 <em>{{ workloadDoneCount }}</em></span>
+         <span class="status-capsule" :class="{ active: workloadFilter === 'undone' }" @click="setWorkloadFilter('undone')">未录入 <em>{{ workloadUndoneCount }}</em></span>
+         <span class="capsule-sep" />
+         <span class="capsule-group-label">到账</span>
+         <span class="status-capsule" :class="{ active: paymentFilter === 'all' }" @click="setPaymentFilter('all')">全部 <em>{{ treeData.length }}</em></span>
+         <span class="status-capsule" :class="{ active: paymentFilter === 'done' }" @click="setPaymentFilter('done')">已录入 <em>{{ paymentDoneCount }}</em></span>
+         <span class="status-capsule" :class="{ active: paymentFilter === 'undone' }" @click="setPaymentFilter('undone')">未录入 <em>{{ paymentUndoneCount }}</em></span>
+         <span class="capsule-sep" />
+         <span class="capsule-group-label">发票</span>
+         <span class="status-capsule capsule-warn" :class="{ active: invoiceUnpaidFilter }" @click="toggleInvoiceUnpaidFilter()">已开未付 <em>{{ invoiceUnpaidCount }}</em></span>
+      </div>
+
       <!-- Row 3: 高级筛选 -->
       <div class="advanced-toggle-row" @click="advancedVisible = !advancedVisible">
          <span>{{ advancedVisible ? '▲' : '▼' }} 高级筛选</span>
@@ -80,17 +96,17 @@
 
       <!-- Row 5: 操作按钮行 -->
       <el-row :gutter="10" class="mb8">
-         <el-col :span="1.5">
+         <el-col :span="1.5" v-if="false">
             <el-button type="warning" size="small" plain icon="Download" @click="handleExport" v-hasPermi="['project:settlement:export']">导出</el-button>
          </el-col>
          <el-col :span="1.5" style="margin-left:auto">
-            <right-toolbar v-model:showSearch="showSearch" :columns="columns" storage-key="settlement-list-columns" @queryTable="getList" />
+            <right-toolbar size="small" v-model:showSearch="showSearch" :columns="columns" storage-key="settlement-list-columns" @queryTable="getList" />
          </el-col>
       </el-row>
 
       <el-table
          v-loading="loading"
-         :data="treeData"
+         :data="filteredTreeData"
          row-key="id"
          stripe border
          highlight-current-row
@@ -191,10 +207,8 @@
                         </el-table-column>
                         <el-table-column label="开票状态" align="center" width="100">
                            <template #default="s">
-                              <el-tag v-if="s.row.invoiceStatus === '已开'" type="success" size="small">已开</el-tag>
-                              <el-tag v-else-if="s.row.invoiceStatus === '已作废'" type="danger" size="small">已作废</el-tag>
-                              <el-tag v-else-if="s.row.invoiceStatus === '未开'" type="info" size="small">未开</el-tag>
-                              <span v-else class="cell-placeholder">-</span>
+                              <el-tag v-if="s.row.invoiceStatus === '已作废'" type="danger" size="small">已作废</el-tag>
+                              <el-tag v-else-if="s.row.invoiceStatus === '已开'" type="success" size="small">已开</el-tag>
                            </template>
                         </el-table-column>
                         <el-table-column label="发票号码" align="center" prop="invoiceNo" width="130" >
@@ -221,9 +235,9 @@
                <span v-if="col.key === 'projectCode' && scope.row.projectCode" style="font-weight:bold">{{ scope.row.projectCode }}</span>
                <!-- 开票状态：标签 -->
                <template v-else-if="col.key === 'invoiceStatus'">
-                  <el-tag v-if="scope.row.invoiceStatus === '未开'" type="info">未开</el-tag>
-                  <el-tag v-else-if="scope.row.invoiceStatus === '已开'" type="success">已开</el-tag>
-                  <el-tag v-else-if="scope.row.invoiceStatus === '已作废'" type="danger">已作废</el-tag>
+                  <el-tag v-if="scope.row.invoicePaymentStatus === 'voided'" type="danger" size="small">已作废</el-tag>
+                  <el-tag v-else-if="scope.row.invoicePaymentStatus === 'invoiced_unpaid'" type="warning" size="small">已开未付</el-tag>
+                  <el-tag v-else-if="scope.row.invoicePaymentStatus === 'invoiced_paid'" type="success" size="small">已开已付</el-tag>
                </template>
                <!-- 金额字段 -->
                <span v-else-if="col.type === 'money'"><span v-if="scope.row[col.prop] != null">{{ formatMoney(scope.row[col.prop]) }}</span></span>
@@ -239,14 +253,10 @@
                <el-tag :type="effectiveStatusMeta(scope.row).type" effect="light">{{ effectiveStatusMeta(scope.row).text }}</el-tag>
             </template>
          </el-table-column>
-         <el-table-column v-if="checkPermi(['project:settlement:edit'])" label="操作" align="center" width="80" fixed="right">
+         <el-table-column v-if="checkPermi(['project:settlement:edit'])" label="操作" align="center" width="140" fixed="right">
             <template #default="scope">
-               <el-button
-                  v-if="scope.row.projectId"
-                  link type="primary"
-                  size="small"
-                  @click="handleEdit(scope.row)"
-               >编辑</el-button>
+               <el-button v-if="scope.row.projectId" link type="primary" size="small" @click="handleEditWorkload(scope.row)">工作量</el-button>
+               <el-button v-if="scope.row.projectId" link type="success" size="small" @click="handleEditPayment(scope.row)">到账信息</el-button>
             </template>
          </el-table-column>
       </el-table>
@@ -271,146 +281,145 @@
          <el-tag :type="effectiveStatusMeta(currentRow).type" effect="dark">{{ effectiveStatusMeta(currentRow).text }}</el-tag>
       </div>
 
-      <!-- 编辑结算弹窗 -->
-      <el-dialog 
-         :title="'费用结算 — ' + editProjectCode" 
-         :model-value="editOpen" 
-         @update:model-value="editOpen = $event" 
-         width="80%" 
-         append-to-body 
+      <!-- 工作量明细弹窗 -->
+      <el-dialog
+         :model-value="workloadOpen"
+         @update:model-value="workloadOpen = $event"
+         append-to-body
          destroy-on-close
          :close-on-click-modal="false"
+         width="80%"
+         draggable
       >
-         <el-form ref="settlementRef" :model="editForm" label-width="100px">
-            <!-- ① 工程信息（只读） -->
-            <el-divider content-position="left">工程信息</el-divider>
-            <el-row :gutter="20">
-               <el-col :span="8">
-                  <el-form-item label="工程编号">
-                     <el-input :model-value="editProjectCode" disabled />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="委托单位">
-                     <el-input :model-value="editClientUnit" disabled />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="工程地点">
-                     <el-input :model-value="editProjectLocation" disabled />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-
-            <!-- ② 工作量明细（先算产值） -->
+         <el-form :model="workloadForm" label-width="90px">
+            <!-- 内部工作量区 -->
             <el-divider content-position="left">
-               工作量明细
-               <el-button type="primary" link icon="Plus" @click="addWorkloadRow" style="margin-left:10px">添加行</el-button>
+               <span class="section-title-internal">内部工作量</span>
+               <span class="section-output-mini">产值合计：{{ formatMoney(internalOutputTotal) }}</span>
             </el-divider>
-            <el-table :data="editForm.workloads" border :row-class-name="workloadRowClass">
-               <el-table-column label="负责人" align="center" min-width="110">
-                  <template #default="scope">
-                     <el-select v-model="scope.row.userId" filterable placeholder="选择负责人" style="width:100%">
-                        <el-option v-for="u in leaderOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
-                     </el-select>
-                  </template>
-               </el-table-column>
-               <el-table-column label="项目类别" align="center" min-width="140">
-                  <template #default="scope">
-                     <el-tree-select
-                        v-model="scope.row.categoryId"
-                        :data="categoryOptions"
-                        :props="{ value: 'id', label: 'name', children: 'children' }"
-                        value-key="id"
-                        placeholder="类别（小类）"
-                        :check-strictly="false"
-                        style="width:100%"
-                        @change="(val) => onCategoryChange(val, scope.row)"
-                     />
-                  </template>
-               </el-table-column>
-               <el-table-column label="类型" align="center" width="72">
-                  <template #default="scope">
-                     <el-tag v-if="scope.row.billingType === 'internal'" type="info" size="small" effect="dark">内部</el-tag>
-                     <el-tag v-else-if="scope.row.billingType === 'external'" type="warning" size="small" effect="dark">外部</el-tag>
-                     <span v-else class="cell-placeholder">—</span>
-                  </template>
-               </el-table-column>
-               <el-table-column label="计费方式" align="center" min-width="180">
-                  <template #default="scope">
-                     <el-select
-                        v-model="scope.row.billingKey"
-                        placeholder="先选类别"
-                        style="width:100%"
-                        :disabled="!scope.row.categoryId"
-                        @change="(val) => onBillingChange(val, scope.row)"
-                     >
-                        <el-option-group v-for="g in billingGroups(scope.row.categoryId)" :key="g.label" :label="g.label">
-                           <el-option v-for="o in g.options" :key="o.value" :label="o.label" :value="o.value" />
-                        </el-option-group>
-                     </el-select>
-                  </template>
-               </el-table-column>
-               <el-table-column label="工作量" align="center" width="150">
-                  <template #default="scope">
-                     <el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" style="width:100%" @change="calcRow(scope.row)" />
-                     <div v-if="scope.row.priceUnit" class="cell-sub">
-                        {{ scope.row.priceUnit }}
-                        <span v-if="minQtyHit(scope.row)" class="min-qty-hit">按起步量取整：{{ scope.row.workload }} → {{ ceilWorkload(scope.row) }}</span>
-                     </div>
-                  </template>
-               </el-table-column>
-               <el-table-column label="单价（元）" align="center" width="140">
-                  <template #default="scope">
-                     <el-input-number v-model="scope.row.unitPrice" :min="0" :precision="2" controls-position="right" style="width:100%" @change="onUnitPriceChange(scope.row)" />
-                     <div v-if="scope.row.priceSource && scope.row.unitPrice != null" class="cell-sub">
-                        <el-tag :type="priceSourceMeta(scope.row.priceSource).type" size="small" effect="plain">{{ priceSourceMeta(scope.row.priceSource).text }}</el-tag>
-                     </div>
-                  </template>
-               </el-table-column>
-               <el-table-column label="产值" align="center" min-width="140">
-                  <template #default="scope">
-                     <span v-if="scope.row.output != null && scope.row.billingType" :class="['output-dot', scope.row.billingType]"></span>
-                     <span class="row-output">{{ scope.row.output != null ? formatMoney(scope.row.output) : '-' }}</span>
-                     <div v-if="calcExpr(scope.row)" class="cell-sub calc-hint">{{ calcExpr(scope.row) }}</div>
-                  </template>
-               </el-table-column>
-               <el-table-column label="操作" align="center" width="60">
-                  <template #default="scope">
-                     <el-button link type="danger" icon="Delete" @click="removeWorkloadRow(scope.$index)" />
-                  </template>
-               </el-table-column>
-            </el-table>
 
-            <!-- 产值统计条（紧凑单行） -->
-            <div class="output-summary-bar">
-               <span class="sum-inline sum-internal">
-                  <i class="sum-dot" />内部产值
-                  <b>{{ formatMoney(internalOutputTotal) }}</b>
-                  <small>{{ internalRowCount }} 行</small>
-               </span>
-               <span class="sum-sep" />
-               <span class="sum-inline sum-external">
-                  <i class="sum-dot" />外部产值
-                  <b>{{ formatMoney(externalOutputTotal) }}</b>
-                  <small>{{ externalRowCount }} 行</small>
-               </span>
-               <span class="sum-sep" />
-               <span class="sum-inline sum-total">
-                  <i class="sum-dot" />结算总额
-                  <b>{{ formatMoney(externalOutputTotal) }}</b>
-                  <small>= 外部合计</small>
-               </span>
+            <!-- 按负责人卡片 -->
+            <div v-for="leader in leaderList" :key="leader.userId" class="leader-card">
+               <div class="leader-card-header">
+                  <span class="leader-name">{{ leader.nickName }}</span>
+                  <span class="leader-mini-total">内部：{{ formatMoney(leaderInternalOutput(leader.userId)) }} · 外部：{{ formatMoney(leaderExternalOutput(leader.userId)) }}</span>
+               </div>
+
+               <!-- 内部快速录入栏 -->
+               <div class="quick-add-bar">
+                  <span class="qa-label">项目类别</span>
+                  <el-select v-model="leader.quickInternalCat" placeholder="选择项目类别" style="width: 220px" @change="(val) => onQuickCatChange(val, leader, 'internal')">
+                     <el-option v-for="o in internalBillingOptions(leader.userId)" :key="o.value" :label="o.label" :value="o.value" />
+                  </el-select>
+                  <span class="qa-label">工作量</span>
+                  <el-input-number v-model="leader.quickInternalWorkload" :min="0" :precision="2" controls-position="right" style="width: 130px" :disabled="!leader.quickInternalCat" @keyup.enter="quickAddWorkload(leader, 'internal')" />
+                  <span class="qa-label">单价</span>
+                  <el-input-number v-model="leader.quickInternalPrice" :min="0" :precision="2" controls-position="right" style="width: 120px" :disabled="!leader.quickInternalCat" />
+                  <span class="qa-unit" v-if="leader.quickInternalUnit">{{ leader.quickInternalUnit }}</span>
+                  <el-button type="primary" size="small" icon="Plus" :disabled="!leader.quickInternalCat || leader.quickInternalWorkload == null" @click="quickAddWorkload(leader, 'internal')">添加</el-button>
+               </div>
+
+               <!-- 内部已录入行 -->
+               <el-table :data="internalRowsByUser(leader.userId)" border size="small" :row-class-name="() => 'wl-row-internal'">
+                  <el-table-column label="项目类别" prop="billingCategory" align="center" min-width="120" />
+                  <el-table-column label="工作量" align="center" width="120">
+                     <template #default="scope"><el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="calcRow(scope.row)" /></template>
+                  </el-table-column>
+                  <el-table-column label="单价" align="center" width="120">
+                     <template #default="scope"><el-input-number v-model="scope.row.unitPrice" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="onUnitPriceChange(scope.row)" /></template>
+                  </el-table-column>
+                  <el-table-column label="单位" prop="priceUnit" align="center" width="70" />
+                  <el-table-column label="产值" align="center" min-width="110">
+                     <template #default="scope">
+                        <span class="row-output">{{ scope.row.output != null ? formatMoney(scope.row.output) : '-' }}</span>
+                        <div v-if="calcExpr(scope.row)" class="cell-sub calc-hint" style="display:none">{{ calcExpr(scope.row) }}</div>
+                     </template>
+                  </el-table-column>
+                  <el-table-column label="操作" align="center" width="60">
+                     <template #default="scope"><el-button link type="danger" icon="Delete" @click="removeWorkloadRowByIdx(scope.row, leader.userId, 'internal')" /></template>
+                  </el-table-column>
+               </el-table>
+               <div v-if="!internalRowsByUser(leader.userId).length" class="empty-hint" style="display:none">暂无内部工作量，请在上方录入</div>
             </div>
 
-            <!-- ③ 付款信息 -->
+            <!-- 外部工作量区（不按人录入，直接按项目类别录入） -->
+            <el-divider content-position="left">
+               <span class="section-title-external">外部工作量</span>
+               <span class="section-output-mini">产值合计：{{ formatMoney(externalOutputTotal) }}</span>
+            </el-divider>
+
+            <div class="leader-card">
+               <!-- 外部快速录入栏（统一，不挂负责人） -->
+               <div class="quick-add-bar">
+                  <span class="qa-label">项目类别</span>
+                  <el-select v-model="quickExternalCat" placeholder="选择项目类别" style="width: 220px" @change="(val) => onQuickCatChange(val, null, 'external')">
+                     <el-option v-for="o in externalBillingOptions()" :key="o.value" :label="o.label" :value="o.value" />
+                  </el-select>
+                  <span class="qa-label">工作量</span>
+                  <el-input-number v-model="quickExternalWorkload" :min="0" :precision="2" controls-position="right" style="width: 130px" :disabled="!quickExternalCat" @keyup.enter="quickAddWorkload(null, 'external')" />
+                  <span class="qa-label">单价</span>
+                  <el-input-number v-model="quickExternalPrice" :min="0" :precision="2" controls-position="right" style="width: 120px" :disabled="!quickExternalCat" />
+                  <span class="qa-unit" v-if="quickExternalUnit">{{ quickExternalUnit }}</span>
+                  <el-button type="primary" size="small" icon="Plus" :disabled="!quickExternalCat || quickExternalWorkload == null" @click="quickAddWorkload(null, 'external')">添加</el-button>
+               </div>
+
+               <!-- 外部已录入行（统一表格，显示所有外部工作量） -->
+               <el-table :data="externalRows" border size="small" :row-class-name="() => 'wl-row-external'">
+                  <el-table-column label="项目类别" prop="billingCategory" align="center" min-width="120" />
+                  <el-table-column label="工作量" align="center" width="120">
+                     <template #default="scope"><el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="calcRow(scope.row)" /></template>
+                  </el-table-column>
+                  <el-table-column label="单价" align="center" width="120">
+                     <template #default="scope"><el-input-number v-model="scope.row.unitPrice" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="onUnitPriceChange(scope.row)" /></template>
+                  </el-table-column>
+                  <el-table-column label="单位" prop="priceUnit" align="center" width="70" />
+                  <el-table-column label="产值" align="center" min-width="110">
+                     <template #default="scope">
+                        <span class="row-output">{{ scope.row.output != null ? formatMoney(scope.row.output) : '-' }}</span>
+                        <div v-if="calcExpr(scope.row)" class="cell-sub calc-hint" style="display:none">{{ calcExpr(scope.row) }}</div>
+                     </template>
+                  </el-table-column>
+                  <el-table-column label="操作" align="center" width="60">
+                     <template #default="scope"><el-button link type="danger" icon="Delete" @click="removeWorkloadRowByIdx(scope.row, null, 'external')" /></template>
+                  </el-table-column>
+               </el-table>
+               <div v-if="!externalRows.length" class="empty-hint" style="display:none">暂无外部工作量，请在上方录入</div>
+            </div>
+
+            <!-- 产值统计条 -->
+            <div class="output-summary-bar">
+               <span class="sum-inline sum-internal"><i class="sum-dot" />内部产值<b>{{ formatMoney(internalOutputTotal) }}</b><small>{{ internalRowCount }} 行</small></span>
+               <span class="sum-sep" />
+               <span class="sum-inline sum-external"><i class="sum-dot" />外部产值<b>{{ formatMoney(externalOutputTotal) }}</b><small>{{ externalRowCount }} 行</small></span>
+               <span class="sum-sep" />
+               <span class="sum-inline sum-total"><i class="sum-dot" />结算总额<b>{{ formatMoney(externalOutputTotal) }}</b><small>= 外部合计</small></span>
+            </div>
+         </el-form>
+         <template #footer>
+            <el-button @click="workloadOpen = false">取消</el-button>
+            <el-button type="primary" @click="saveWorkloadData" :loading="workloadSaving">保 存</el-button>
+         </template>
+      </el-dialog>
+
+      <!-- 到账信息弹窗 -->
+      <el-dialog
+         :model-value="paymentOpen"
+         @update:model-value="paymentOpen = $event"
+         append-to-body
+         destroy-on-close
+         :close-on-click-modal="false"
+         width="80%"
+         draggable
+      >
+         <el-form ref="paymentRef" :model="paymentForm" label-width="100px">
+            <!-- 付款信息（保持原有结构） -->
             <el-divider content-position="left">付款信息</el-divider>
             <div class="settle-panel">
-               <!-- 付款单位（预付款与尾款共用，与下方三列对齐） -->
+               <!-- 付款单位 -->
                <el-row :gutter="20">
                   <el-col :span="8">
                      <el-form-item label="付款单位">
-                        <el-select v-model="editForm.payUnit" filterable clearable allow-create placeholder="请选择或输入付款单位" style="width: 100%">
+                        <el-select v-model="paymentForm.payUnit" filterable clearable allow-create placeholder="请选择或输入付款单位" style="width: 100%">
                            <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
                         </el-select>
                      </el-form-item>
@@ -422,17 +431,17 @@
                      <el-col :span="8">
                         <el-form-item>
                            <template #label><span class="pay-label pay-label-advance">① 预付款</span></template>
-                           <el-input-number v-model="editForm.prepayAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="金额" />
+                           <el-input-number v-model="paymentForm.prepayAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="金额" />
                         </el-form-item>
                      </el-col>
                      <el-col :span="8">
                         <el-form-item label="付款时间">
-                           <el-date-picker v-model="editForm.prepayDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                           <el-date-picker v-model="paymentForm.prepayDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
                         </el-form-item>
                      </el-col>
                      <el-col :span="8">
                         <el-form-item label="付款方式">
-                           <el-select v-model="editForm.prepayMethod" clearable placeholder="选择" style="width:100%">
+                           <el-select v-model="paymentForm.prepayMethod" clearable placeholder="选择" style="width:100%">
                               <el-option v-for="m in payMethodOptions" :key="m" :label="m" :value="m" />
                            </el-select>
                         </el-form-item>
@@ -445,17 +454,17 @@
                      <el-col :span="8">
                         <el-form-item>
                            <template #label><span class="pay-label pay-label-tail">② 尾款</span></template>
-                           <el-input-number v-model="editForm.tailAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="金额" />
+                           <el-input-number v-model="paymentForm.tailAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="金额" />
                         </el-form-item>
                      </el-col>
                      <el-col :span="8">
                         <el-form-item label="尾款时间">
-                           <el-date-picker v-model="editForm.tailDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                           <el-date-picker v-model="paymentForm.tailDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
                         </el-form-item>
                      </el-col>
                      <el-col :span="8">
                         <el-form-item label="付款方式">
-                           <el-select v-model="editForm.tailMethod" clearable placeholder="选择" style="width:100%">
+                           <el-select v-model="paymentForm.tailMethod" clearable placeholder="选择" style="width:100%">
                               <el-option v-for="m in payMethodOptions" :key="m" :label="m" :value="m" />
                            </el-select>
                         </el-form-item>
@@ -469,7 +478,7 @@
                      <span class="refund-total">退款合计：<b class="refund-total-num">{{ formatMoney(refundTotal) }}</b></span>
                      <el-button type="primary" link icon="Plus" @click="addRefundRow">添加退款</el-button>
                   </div>
-                  <div v-for="(rf, idx) in editForm.refunds" :key="idx" class="pay-row refund-row">
+                  <div v-for="(rf, idx) in paymentForm.refunds" :key="idx" class="pay-row refund-row">
                      <el-row :gutter="20">
                         <el-col :span="6">
                            <el-form-item :label="`第${idx + 1}笔金额`">
@@ -498,74 +507,49 @@
                         </el-col>
                      </el-row>
                   </div>
-                  <div v-if="!editForm.refunds.length" class="refund-empty">暂无退款记录，点击「添加退款」录入</div>
+                  <div v-if="!paymentForm.refunds.length" class="refund-empty">暂无退款记录，点击「添加退款」录入</div>
                </div>
                <!-- 备注 -->
                <el-form-item label="备注">
-                  <el-input v-model="editForm.remark" placeholder="备注" maxlength="500" />
+                  <el-input v-model="paymentForm.remark" placeholder="备注" maxlength="500" />
                </el-form-item>
             </div>
 
-            <!-- ④ 结算金额核对区（结算总额=外部产值，只读自动） -->
-            <el-divider content-position="left">结算金额</el-divider>
-            <div class="settle-check-row">
-               <div class="settle-cell">
-                  <span class="settle-label">结算总额</span>
-                  <span class="settle-value">{{ formatMoney(externalOutputTotal) }}</span>
-                  <span class="settle-hint">（自动 = 外部产值合计，不可改）</span>
-               </div>
-               <div class="settle-divider" />
-               <div class="settle-cell">
-                  <span class="settle-label">已收</span>
-                  <span class="settle-value">{{ formatMoney(receivedAmount) }}</span>
-                  <span class="settle-hint">（预付款 + 尾款 − 退款，自动汇总）</span>
-               </div>
-               <div class="settle-divider" />
-               <div class="settle-cell" v-if="refundTotal > 0">
-                  <span class="settle-label">退款合计</span>
-                  <span class="settle-value" style="color:var(--el-color-danger)">-{{ formatMoney(refundTotal) }}</span>
-               </div>
-               <div class="settle-divider" v-if="refundTotal > 0" />
-               <div class="settle-cell">
-                  <span class="settle-label">待收差额</span>
-                  <span class="settle-value" :class="balanceTextClass">{{ settleStatus === 'settled' ? '¥0.00' : formatMoney(Math.abs(balanceAmount)) }}</span>
-                  <el-tag :type="settleTagType" size="small" effect="light" style="margin-left:8px">{{ settleTagText }}</el-tag>
-               </div>
-            </div>
-
-            <!-- ⑤ 开票信息 -->
+            <!-- 开票信息（保持原有结构） -->
             <el-divider content-position="left">开票信息</el-divider>
             <div class="settle-panel">
                <!-- 开票方式 -->
                <div class="invoice-mode-row">
                   <span class="pay-options-label">开票方式：</span>
-                  <el-radio-group v-model="editForm.invoiceMode">
+                  <el-radio-group v-model="paymentForm.invoiceMode">
                      <el-radio-button value="unified">统一开票</el-radio-button>
                      <el-radio-button value="split">分笔开票</el-radio-button>
                   </el-radio-group>
                </div>
                <!-- 统一开票：一组发票 -->
-               <el-row v-if="editForm.invoiceMode === 'unified'" :gutter="20">
+               <el-row v-if="paymentForm.invoiceMode === 'unified'" :gutter="20">
                   <el-col :span="6">
                      <el-form-item label="开票状态">
-                        <el-select v-model="editForm.invoiceStatus" placeholder="开票状态" clearable style="width:100%">
-                           <el-option v-for="s in invoiceStatusOptions" :key="s" :label="s" :value="s" />
-                        </el-select>
+                        <div class="invoice-status-cell">
+                           <el-tag v-if="paymentForm.invoiceStatus === '已作废'" type="danger" size="small">已作废</el-tag>
+                           <el-tag v-else-if="paymentForm.invoiceDate || (paymentForm.invoiceAmount != null && paymentForm.invoiceAmount > 0)" type="success" size="small">已开票</el-tag>
+                           <el-checkbox :model-value="paymentForm.invoiceStatus === '已作废'" @change="(v) => paymentForm.invoiceStatus = v ? '已作废' : null">标记作废</el-checkbox>
+                        </div>
                      </el-form-item>
                   </el-col>
                   <el-col :span="6">
                      <el-form-item label="发票号码">
-                        <el-input v-model="editForm.invoiceNo" placeholder="发票号码" maxlength="100" />
+                        <el-input v-model="paymentForm.invoiceNo" placeholder="发票号码" maxlength="100" />
                      </el-form-item>
                   </el-col>
                   <el-col :span="6">
                      <el-form-item label="开票日期">
-                        <el-date-picker v-model="editForm.invoiceDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                        <el-date-picker v-model="paymentForm.invoiceDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
                      </el-form-item>
                   </el-col>
                   <el-col :span="6">
                      <el-form-item label="开票金额">
-                        <el-input-number v-model="editForm.invoiceAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="开票金额" />
+                        <el-input-number v-model="paymentForm.invoiceAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="开票金额" />
                      </el-form-item>
                   </el-col>
                </el-row>
@@ -576,24 +560,26 @@
                      <el-row :gutter="20">
                         <el-col :span="6">
                            <el-form-item label="开票状态">
-                              <el-select v-model="editForm.invoiceStatus" placeholder="开票状态" clearable style="width:100%">
-                                 <el-option v-for="s in invoiceStatusOptions" :key="s" :label="s" :value="s" />
-                              </el-select>
+                              <div class="invoice-status-cell">
+                                 <el-tag v-if="paymentForm.invoiceStatus === '已作废'" type="danger" size="small">已作废</el-tag>
+                                 <el-tag v-else-if="paymentForm.invoiceDate || (paymentForm.invoiceAmount != null && paymentForm.invoiceAmount > 0)" type="success" size="small">已开票</el-tag>
+                                 <el-checkbox :model-value="paymentForm.invoiceStatus === '已作废'" @change="(v) => paymentForm.invoiceStatus = v ? '已作废' : null">标记作废</el-checkbox>
+                              </div>
                            </el-form-item>
                         </el-col>
                         <el-col :span="6">
                            <el-form-item label="发票号码">
-                              <el-input v-model="editForm.invoiceNo" placeholder="发票号码" maxlength="100" />
+                              <el-input v-model="paymentForm.invoiceNo" placeholder="发票号码" maxlength="100" />
                            </el-form-item>
                         </el-col>
                         <el-col :span="6">
                            <el-form-item label="开票日期">
-                              <el-date-picker v-model="editForm.invoiceDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                              <el-date-picker v-model="paymentForm.invoiceDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
                            </el-form-item>
                         </el-col>
                         <el-col :span="6">
                            <el-form-item label="开票金额">
-                              <el-input-number v-model="editForm.invoiceAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="开票金额" />
+                              <el-input-number v-model="paymentForm.invoiceAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="开票金额" />
                            </el-form-item>
                         </el-col>
                      </el-row>
@@ -603,24 +589,26 @@
                      <el-row :gutter="20">
                         <el-col :span="6">
                            <el-form-item label="开票状态">
-                              <el-select v-model="editForm.tailInvoiceStatus" placeholder="开票状态" clearable style="width:100%">
-                                 <el-option v-for="s in invoiceStatusOptions" :key="s" :label="s" :value="s" />
-                              </el-select>
+                              <div class="invoice-status-cell">
+                                 <el-tag v-if="paymentForm.tailInvoiceStatus === '已作废'" type="danger" size="small">已作废</el-tag>
+                                 <el-tag v-else-if="paymentForm.tailInvoiceDate || (paymentForm.tailInvoiceAmount != null && paymentForm.tailInvoiceAmount > 0)" type="success" size="small">已开票</el-tag>
+                                 <el-checkbox :model-value="paymentForm.tailInvoiceStatus === '已作废'" @change="(v) => paymentForm.tailInvoiceStatus = v ? '已作废' : null">标记作废</el-checkbox>
+                              </div>
                            </el-form-item>
                         </el-col>
                         <el-col :span="6">
                            <el-form-item label="发票号码">
-                              <el-input v-model="editForm.tailInvoiceNo" placeholder="发票号码" maxlength="100" />
+                              <el-input v-model="paymentForm.tailInvoiceNo" placeholder="发票号码" maxlength="100" />
                            </el-form-item>
                         </el-col>
                         <el-col :span="6">
                            <el-form-item label="开票日期">
-                              <el-date-picker v-model="editForm.tailInvoiceDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                              <el-date-picker v-model="paymentForm.tailInvoiceDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
                            </el-form-item>
                         </el-col>
                         <el-col :span="6">
                            <el-form-item label="开票金额">
-                              <el-input-number v-model="editForm.tailInvoiceAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="开票金额" />
+                              <el-input-number v-model="paymentForm.tailInvoiceAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="开票金额" />
                            </el-form-item>
                         </el-col>
                      </el-row>
@@ -629,10 +617,8 @@
             </div>
          </el-form>
          <template #footer>
-            <div class="dialog-footer">
-               <el-button type="primary" @click="submitSettlement" :loading="saveLoading">保 存</el-button>
-               <el-button @click="editOpen = false">取 消</el-button>
-            </div>
+            <el-button @click="paymentOpen = false">取消</el-button>
+            <el-button type="primary" @click="savePaymentData" :loading="paymentSaving">保 存</el-button>
          </template>
       </el-dialog>
    </div>
@@ -640,7 +626,7 @@
 
 <script setup name="Settlement">
 import { ElMessageBox } from 'element-plus'
-import { treeListSettlement, getSettlementDetail, saveSettlement, getSettlementColumns } from "@/api/project/settlement"
+import { treeListSettlement, getSettlementDetail, saveSettlement, saveWorkload, savePayment, getSettlementColumns } from "@/api/project/settlement"
 import { categoryTreeselectFull, listBilling } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { getDistinctValues } from "@/api/project/project"
@@ -734,6 +720,28 @@ function colWidth(col) {
   return 130
 }
 
+/** 录入状态胶囊：工作量/到账 本地筛选（依赖后端 workloadCount/paymentCount/invoicePaymentStatus） */
+const workloadFilter = ref('all')
+const paymentFilter = ref('all')
+const invoiceUnpaidFilter = ref(false)
+const workloadDoneCount = computed(() => treeData.value.filter(r => (Number(r.workloadCount) || 0) > 0).length)
+const workloadUndoneCount = computed(() => treeData.value.length - workloadDoneCount.value)
+const paymentDoneCount = computed(() => treeData.value.filter(r => (Number(r.paymentCount) || 0) > 0).length)
+const paymentUndoneCount = computed(() => treeData.value.length - paymentDoneCount.value)
+const invoiceUnpaidCount = computed(() => treeData.value.filter(r => r.invoicePaymentStatus === 'invoiced_unpaid').length)
+const filteredTreeData = computed(() => {
+  return treeData.value.filter(r => {
+    const wlDone = (Number(r.workloadCount) || 0) > 0
+    const pmDone = (Number(r.paymentCount) || 0) > 0
+    if (workloadFilter.value === 'done' && !wlDone) return false
+    if (workloadFilter.value === 'undone' && wlDone) return false
+    if (paymentFilter.value === 'done' && !pmDone) return false
+    if (paymentFilter.value === 'undone' && pmDone) return false
+    if (invoiceUnpaidFilter.value && r.invoicePaymentStatus !== 'invoiced_unpaid') return false
+    return true
+  })
+})
+
 const selectedStatuses = ref(['closed', 'archived'])
 const editOpen = ref(false)
 const saveLoading = ref(false)
@@ -741,6 +749,42 @@ const editProjectCode = ref("")
 const editClientUnit = ref("")
 const editProjectLocation = ref("")
 const editProjectId = ref(null)
+const workloadOpen = ref(false)
+const paymentOpen = ref(false)
+const workloadSaving = ref(false)
+const paymentSaving = ref(false)
+const editEngineeringProject = ref('')
+const leaderList = ref([])
+// 外部工作量快速录入栏（不按负责人，顶层变量）
+const quickExternalCat = ref(null)
+const quickExternalWorkload = ref(null)
+const quickExternalPrice = ref(null)
+const quickExternalUnit = ref('')
+
+/** 工作量表单：仅含 workloads（工作量弹窗使用） */
+const workloadForm = ref({ workloads: [] })
+/** 到账信息表单：付款 + 开票字段（到账信息弹窗使用） */
+const paymentForm = ref({
+   prepayAmount: null,
+   prepayDate: null,
+   payUnit: null,
+   prepayMethod: null,
+   tailMethod: null,
+   tailAmount: null,
+   tailDate: null,
+   refunds: [],
+   remark: null,
+   invoiceMode: 'unified',
+   invoiceStatus: null,
+   invoiceNo: null,
+   invoiceDate: null,
+   invoiceAmount: null,
+   tailInvoiceStatus: null,
+   tailInvoiceNo: null,
+   tailInvoiceDate: null,
+   tailInvoiceAmount: null
+})
+const paymentRef = ref(null)
 const userOptions = ref([])
 const leaderOptions = ref([])   // 当前项目负责人（编辑弹窗里用）
 const categoryOptions = ref([])
@@ -794,7 +838,7 @@ const { queryParams, editForm } = toRefs(data)
 // 内部产值合计（按行 billingType 分组求和）
 const internalOutputTotal = computed(() => {
   let sum = 0
-  editForm.value.workloads.forEach(row => {
+  workloadForm.value.workloads.forEach(row => {
     if (row.billingType === 'internal' && row.output) sum += Number(row.output)
   })
   return sum
@@ -803,26 +847,28 @@ const internalOutputTotal = computed(() => {
 // 外部产值合计（= 结算总额）
 const externalOutputTotal = computed(() => {
   let sum = 0
-  editForm.value.workloads.forEach(row => {
+  workloadForm.value.workloads.forEach(row => {
     if (row.billingType === 'external' && row.output) sum += Number(row.output)
   })
   return sum
 })
 
 // 内部计费行数
-const internalRowCount = computed(() => editForm.value.workloads.filter(r => r.billingType === 'internal').length)
+const internalRowCount = computed(() => workloadForm.value.workloads.filter(r => r.billingType === 'internal').length)
 // 外部计费行数
-const externalRowCount = computed(() => editForm.value.workloads.filter(r => r.billingType === 'external').length)
+const externalRowCount = computed(() => workloadForm.value.workloads.filter(r => r.billingType === 'external').length)
+// 外部工作量行（不按人分组，统一展示）
+const externalRows = computed(() => workloadForm.value.workloads.filter(r => r.billingType === 'external'))
 
 // 退款合计（多笔求和）
 const refundTotal = computed(() => {
-  return editForm.value.refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  return paymentForm.value.refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0)
 })
 
 // 已收 = 预付款 + 尾款 - 退款合计（实时联动）
 const receivedAmount = computed(() => {
-  const a = Number(editForm.value.prepayAmount) || 0
-  const b = Number(editForm.value.tailAmount) || 0
+  const a = Number(paymentForm.value.prepayAmount) || 0
+  const b = Number(paymentForm.value.tailAmount) || 0
   return a + b - refundTotal.value
 })
 
@@ -1127,6 +1173,21 @@ function onStatusCapsuleClick(statuses) {
   getList()
 }
 
+/** 录入状态胶囊：工作量筛选（本地筛选，无需重新请求） */
+function setWorkloadFilter(val) {
+  workloadFilter.value = val
+}
+
+/** 录入状态胶囊：到账筛选（本地筛选，无需重新请求） */
+function setPaymentFilter(val) {
+  paymentFilter.value = val
+}
+
+/** 已开未付快捷胶囊：切换筛选（重点跟进提前开票未回款项目） */
+function toggleInvoiceUnpaidFilter() {
+  invoiceUnpaidFilter.value = !invoiceUnpaidFilter.value
+}
+
 /** 状态筛选变更 */
 function onStatusChange(val) {
   getList()
@@ -1300,6 +1361,388 @@ function handleEdit(row) {
     })
 }
 
+/** 打开工作量弹窗 */
+function handleEditWorkload(row) {
+  editProjectId.value = row.projectId
+  editProjectCode.value = row.projectCode
+  editClientUnit.value = row.clientUnit || ""
+  editProjectLocation.value = row.projectLocation || ""
+  editEngineeringProject.value = row.engineeringProject || ""
+
+  // 加载基础数据
+  Promise.all([categoryTreeselectFull(), listUserOptions({ pageNum: 1, pageSize: 1000 }), getSettlementDetail(row.projectId), listBilling()])
+    .then(([catRes, userRes, detailRes, billingRes]) => {
+      categoryOptions.value = catRes.data
+      userOptions.value = userRes.rows || []
+
+      // 计费方式映射：categoryId -> 启用中的计费方式列表
+      const bMap = {}
+      ;(billingRes.data || []).forEach(b => {
+        if (b.status === '1') return
+        if (!bMap[b.categoryId]) bMap[b.categoryId] = []
+        bMap[b.categoryId].push(b)
+      })
+      billingMap.value = bMap
+
+      const detail = detailRes.data
+      const workloads = detail.workloads || []
+
+      // 解析合同单价映射
+      const contractPrices = detail.contractPrices || []
+      const cpMap = {}
+      contractPrices.forEach(cp => { if (cp.categoryId) cpMap[cp.categoryId] = cp })
+      contractPriceMap.value = cpMap
+
+      // 填充工作量
+      workloadForm.value.workloads = workloads.map(w => {
+        const output = w.internalOutput != null ? w.internalOutput : w.externalOutput
+        return {
+          workloadId: w.id,
+          userId: w.userId,
+          categoryId: w.categoryId,
+          billingKey: w.billingType ? (w.billingType + '#' + w.billingCategory) : null,
+          billingType: w.billingType || null,
+          billingCategory: w.billingCategory || null,
+          priceUnit: w.priceUnit || null,
+          minQuantity: w.minQuantity != null ? Number(w.minQuantity) : null,
+          unitPrice: w.unitPrice != null ? w.unitPrice : (w.internalPrice != null ? w.internalPrice : w.externalPrice),
+          priceSource: w.priceSource || 'dict',
+          workload: w.workload,
+          internalPrice: w.internalPrice,
+          externalPrice: w.externalPrice,
+          internalOutput: w.internalOutput,
+          externalOutput: w.externalOutput,
+          output: output != null ? Number(output) : null
+        }
+      })
+
+      // 负责人列表：项目负责人 + 已有工作量行的负责人
+      const leaderIdSet = new Set((detailRes.data.leaderIds || []).map(id => Number(id)))
+      workloadForm.value.workloads.forEach(w => { if (w.userId != null) leaderIdSet.add(Number(w.userId)) })
+      let filtered = userOptions.value.filter(u => leaderIdSet.has(Number(u.userId)))
+      const leaderSource = filtered.length > 0 ? filtered : userOptions.value
+      leaderOptions.value = leaderSource
+
+      // 构建负责人卡片列表（含快速录入栏状态）
+      leaderList.value = leaderSource.map(u => ({
+        userId: u.userId,
+        nickName: u.nickName,
+        quickInternalCat: null,
+        quickInternalWorkload: null,
+        quickInternalPrice: null,
+        quickInternalUnit: ''
+      }))
+
+      workloadOpen.value = true
+    })
+}
+
+/** 打开到账信息弹窗 */
+function handleEditPayment(row) {
+  editProjectId.value = row.projectId
+  editProjectCode.value = row.projectCode
+  editClientUnit.value = row.clientUnit || ""
+  editProjectLocation.value = row.projectLocation || ""
+  editEngineeringProject.value = row.engineeringProject || ""
+
+  // 加载明细（同步工作量，用于显示结算总额 = 外部产值合计）
+  Promise.all([getSettlementDetail(row.projectId)])
+    .then(([detailRes]) => {
+      const detail = detailRes.data
+      const payments = detail.payments || []
+      const workloads = detail.workloads || []
+
+      // 用 workloadForm 同步外部产值，使 externalOutputTotal 正确计算
+      workloadForm.value.workloads = workloads.map(w => ({
+        workloadId: w.id,
+        billingType: w.billingType || null,
+        externalOutput: w.externalOutput != null ? Number(w.externalOutput) : null,
+        output: w.externalOutput != null ? Number(w.externalOutput) : (w.internalOutput != null ? Number(w.internalOutput) : null)
+      }))
+
+      // 填充付款信息
+      const prepay = payments.find(p => p.paymentType === "advance")
+      const tail = payments.find(p => p.paymentType === "final")
+      paymentForm.value.prepayAmount = prepay ? prepay.amount : null
+      paymentForm.value.prepayDate = prepay ? prepay.payTime : null
+      paymentForm.value.payUnit = prepay ? prepay.payUnit : (tail ? tail.payUnit : null)
+      paymentForm.value.prepayMethod = prepay ? prepay.payMethod : null
+      paymentForm.value.tailMethod = tail ? tail.payMethod : null
+      paymentForm.value.tailAmount = tail ? tail.amount : null
+      paymentForm.value.tailDate = tail ? tail.payTime : null
+      paymentForm.value.remark = prepay ? prepay.remark : (tail ? tail.remark : null)
+
+      // 退款回填
+      const refunds = detail.refunds || payments.filter(p => p.paymentType === 'refund')
+      paymentForm.value.refunds = refunds.map(r => ({
+        amount: r.amount != null ? Number(r.amount) : null,
+        payTime: r.payTime || null,
+        payMethod: r.payMethod || null,
+        remark: r.remark || null
+      }))
+
+      // 开票信息：尾款存在发票数据 → 分笔开票；否则统一开票
+      const tailHasInvoice = tail && (tail.invoiceStatus || tail.invoiceNo || tail.invoiceDate || tail.invoiceAmount != null)
+      paymentForm.value.invoiceMode = tailHasInvoice ? 'split' : 'unified'
+      const invSrc = prepay || tail
+      paymentForm.value.invoiceStatus = invSrc ? invSrc.invoiceStatus : null
+      paymentForm.value.invoiceNo = invSrc ? invSrc.invoiceNo : null
+      paymentForm.value.invoiceDate = invSrc ? invSrc.invoiceDate : null
+      paymentForm.value.invoiceAmount = invSrc ? invSrc.invoiceAmount : null
+      paymentForm.value.tailInvoiceStatus = tail ? tail.invoiceStatus : null
+      paymentForm.value.tailInvoiceNo = tail ? tail.invoiceNo : null
+      paymentForm.value.tailInvoiceDate = tail ? tail.invoiceDate : null
+      paymentForm.value.tailInvoiceAmount = tail ? tail.invoiceAmount : null
+
+      paymentOpen.value = true
+    })
+}
+
+/** 某负责人内部产值 */
+function leaderInternalOutput(userId) {
+  let sum = 0
+  workloadForm.value.workloads.forEach(row => {
+    if (Number(row.userId) === Number(userId) && row.billingType === 'internal' && row.output) {
+      sum += Number(row.output)
+    }
+  })
+  return sum
+}
+
+/** 某负责人外部产值 */
+function leaderExternalOutput(userId) {
+  let sum = 0
+  workloadForm.value.workloads.forEach(row => {
+    if (Number(row.userId) === Number(userId) && row.billingType === 'external' && row.output) {
+      sum += Number(row.output)
+    }
+  })
+  return sum
+}
+
+/** 某负责人内部行 */
+function internalRowsByUser(userId) {
+  return workloadForm.value.workloads.filter(r => Number(r.userId) === Number(userId) && r.billingType === 'internal')
+}
+
+/** 某负责人外部行 */
+function externalRowsByUser(userId) {
+  return workloadForm.value.workloads.filter(r => Number(r.userId) === Number(userId) && r.billingType === 'external')
+}
+
+/** 内部计费方式下拉选项（聚合所有类别下的内部计费方式） */
+function internalBillingOptions(userId) {
+  const opts = []
+  const seen = new Set()
+  Object.keys(billingMap.value).forEach(catId => {
+    const list = billingMap.value[catId] || []
+    list.filter(b => b.billingType === 'internal').forEach(b => {
+      const val = b.billingType + '#' + b.billingCategory
+      if (!seen.has(val)) {
+        seen.add(val)
+        const label = b.billingCategory + '（¥' + formatMoney(b.unitPrice) + '/' + (b.priceUnit || '项') + (Number(b.minQuantity) > 1 ? ('，起步' + b.minQuantity) : '') + '）'
+        opts.push({ value: val, label: label, raw: b, categoryId: catId })
+      }
+    })
+  })
+  return opts
+}
+
+/** 外部计费方式下拉选项（聚合所有类别下的外部计费方式） */
+function externalBillingOptions() {
+  const opts = []
+  const seen = new Set()
+  Object.keys(billingMap.value).forEach(catId => {
+    const list = billingMap.value[catId] || []
+    list.filter(b => b.billingType === 'external').forEach(b => {
+      const val = b.billingType + '#' + b.billingCategory
+      if (!seen.has(val)) {
+        seen.add(val)
+        const label = b.billingCategory + '（¥' + formatMoney(b.unitPrice) + '/' + (b.priceUnit || '项') + (Number(b.minQuantity) > 1 ? ('，起步' + b.minQuantity) : '') + '）'
+        opts.push({ value: val, label: label, raw: b, categoryId: catId })
+      }
+    })
+  })
+  return opts
+}
+
+/** 快速录入栏选择项目类别后带出单价（外部不依赖负责人） */
+function onQuickCatChange(val, leader, type) {
+  if (type === 'external') {
+    const options = externalBillingOptions()
+    const opt = options.find(o => o.value === val)
+    if (!opt || !opt.raw) {
+      quickExternalPrice.value = null
+      quickExternalUnit.value = ''
+      return
+    }
+    const b = opt.raw
+    const cp = contractPriceMap.value[opt.categoryId]
+    if (cp && cp.price != null) {
+      quickExternalPrice.value = cp.price
+    } else {
+      quickExternalPrice.value = b.unitPrice
+    }
+    quickExternalUnit.value = b.priceUnit || ''
+    return
+  }
+  // 内部：按负责人
+  const options = internalBillingOptions(leader.userId)
+  const opt = options.find(o => o.value === val)
+  if (!opt || !opt.raw) {
+    leader.quickInternalPrice = null
+    leader.quickInternalUnit = ''
+    return
+  }
+  const b = opt.raw
+  leader.quickInternalPrice = b.unitPrice
+  leader.quickInternalUnit = b.priceUnit || ''
+}
+
+/** 快速添加工作量行（外部不依赖负责人，userId为null） */
+function quickAddWorkload(leader, type) {
+  const isExternal = type === 'external'
+  const cat = isExternal ? quickExternalCat.value : leader.quickInternalCat
+  const workload = isExternal ? quickExternalWorkload.value : leader.quickInternalWorkload
+  const price = isExternal ? quickExternalPrice.value : leader.quickInternalPrice
+  if (!cat || workload == null) return
+
+  const options = isExternal ? externalBillingOptions() : internalBillingOptions(leader.userId)
+  const opt = options.find(o => o.value === cat)
+  if (!opt || !opt.raw) return
+
+  const b = opt.raw
+  const cp = contractPriceMap.value[opt.categoryId]
+  let finalPrice = price
+  let priceSource = 'manual'
+  if (isExternal && cp && cp.price != null) {
+    finalPrice = cp.price
+    priceSource = 'contract'
+  } else if (finalPrice === b.unitPrice) {
+    priceSource = 'dict'
+  }
+
+  const newRow = {
+    workloadId: null,
+    userId: isExternal ? 0 : leader.userId,
+    categoryId: opt.categoryId,
+    billingKey: cat,
+    billingType: b.billingType,
+    billingCategory: b.billingCategory,
+    priceUnit: b.priceUnit,
+    minQuantity: b.minQuantity != null ? Number(b.minQuantity) : null,
+    unitPrice: finalPrice,
+    priceSource: priceSource,
+    workload: workload,
+    internalPrice: isExternal ? null : finalPrice,
+    externalPrice: isExternal ? finalPrice : null,
+    internalOutput: null,
+    externalOutput: null,
+    output: null
+  }
+  calcRow(newRow)
+  workloadForm.value.workloads.push(newRow)
+
+  // 清空快速录入栏
+  if (isExternal) {
+    quickExternalCat.value = null
+    quickExternalWorkload.value = null
+    quickExternalPrice.value = null
+    quickExternalUnit.value = ''
+  } else {
+    leader.quickInternalCat = null
+    leader.quickInternalWorkload = null
+    leader.quickInternalPrice = null
+    leader.quickInternalUnit = ''
+  }
+}
+
+/** 删除工作量行（按行对象引用） */
+function removeWorkloadRowByIdx(row, userId, type) {
+  const idx = workloadForm.value.workloads.indexOf(row)
+  if (idx >= 0) workloadForm.value.workloads.splice(idx, 1)
+}
+
+/** 保存工作量 */
+function saveWorkloadData() {
+  workloadSaving.value = true
+  const payload = {
+    projectId: editProjectId.value,
+    workloads: workloadForm.value.workloads
+  }
+  saveWorkload(payload).then(() => {
+    proxy.$modal.msgSuccess("保存成功")
+    workloadOpen.value = false
+    workloadSaving.value = false
+    getList()
+  }).catch(() => {
+    workloadSaving.value = false
+  })
+}
+
+/** 保存到账信息 */
+function savePaymentData() {
+  paymentSaving.value = true
+  const payload = {
+    projectId: editProjectId.value,
+    remark: paymentForm.value.remark
+  }
+  const invoiceMode = paymentForm.value.invoiceMode
+
+  const hasPrepayInvoice = paymentForm.value.invoiceNo || paymentForm.value.invoiceDate
+    || (paymentForm.value.invoiceAmount != null && paymentForm.value.invoiceAmount > 0)
+    || paymentForm.value.invoiceStatus === '已作废'
+  if (paymentForm.value.prepayAmount != null || paymentForm.value.prepayDate || hasPrepayInvoice) {
+    payload.prepay = {
+      amount: paymentForm.value.prepayAmount,
+      payTime: paymentForm.value.prepayDate,
+      payUnit: paymentForm.value.payUnit,
+      payMethod: paymentForm.value.prepayMethod,
+      invoiceStatus: paymentForm.value.invoiceStatus,
+      invoiceNo: paymentForm.value.invoiceNo,
+      invoiceDate: paymentForm.value.invoiceDate,
+      invoiceAmount: paymentForm.value.invoiceAmount
+    }
+  }
+
+  const hasTailInvoice = invoiceMode === 'split' && (paymentForm.value.tailInvoiceNo || paymentForm.value.tailInvoiceDate
+    || (paymentForm.value.tailInvoiceAmount != null && paymentForm.value.tailInvoiceAmount > 0)
+    || paymentForm.value.tailInvoiceStatus === '已作废')
+  if (paymentForm.value.tailAmount != null || paymentForm.value.tailDate || hasTailInvoice) {
+    const tail = {
+      amount: paymentForm.value.tailAmount,
+      payTime: paymentForm.value.tailDate,
+      payUnit: paymentForm.value.payUnit,
+      payMethod: paymentForm.value.tailMethod
+    }
+    if (invoiceMode === 'split') {
+      tail.invoiceStatus = paymentForm.value.tailInvoiceStatus
+      tail.invoiceNo = paymentForm.value.tailInvoiceNo
+      tail.invoiceDate = paymentForm.value.tailInvoiceDate
+      tail.invoiceAmount = paymentForm.value.tailInvoiceAmount
+    }
+    payload.tail = tail
+  }
+
+  payload.refunds = paymentForm.value.refunds
+    .filter(rf => rf && (rf.amount != null || rf.payTime))
+    .map(rf => ({
+      amount: rf.amount != null ? Number(rf.amount) : null,
+      payTime: rf.payTime || null,
+      payMethod: rf.payMethod || null,
+      remark: rf.remark || ''
+    }))
+
+  savePayment(payload).then(() => {
+    proxy.$modal.msgSuccess("保存成功")
+    paymentOpen.value = false
+    paymentSaving.value = false
+    getList()
+  }).catch(() => {
+    paymentSaving.value = false
+  })
+}
+
 /** 行样式：内部行淡蓝底，外部行淡橙底 */
 function workloadRowClass({ row }) {
   if (row.billingType === 'internal') return 'wl-row-internal'
@@ -1336,12 +1779,12 @@ function removeWorkloadRow(index) {
 
 /** 添加退款行 */
 function addRefundRow() {
-  editForm.value.refunds.push({ amount: null, payTime: null, payMethod: null, remark: null })
+  paymentForm.value.refunds.push({ amount: null, payTime: null, payMethod: null, remark: null })
 }
 
 /** 删除退款行 */
 function removeRefundRow(index) {
-  editForm.value.refunds.splice(index, 1)
+  paymentForm.value.refunds.splice(index, 1)
 }
 
 /** 提交结算：已收 ≠ 结算总额时先弹确认 */
@@ -1488,6 +1931,38 @@ loadDistinctValues()
 }
 .status-capsule:hover { background: #e8e8e8; }
 .status-capsule.active { background: #409eff; color: #fff; }
+/* 录入胶囊：分组标签/分隔符/警告色 */
+.capsule-group-label {
+  font-size: 12px;
+  color: #909399;
+  align-self: center;
+  margin-right: 2px;
+  user-select: none;
+}
+.capsule-sep {
+  width: 1px;
+  height: 18px;
+  background: #dcdfe6;
+  align-self: center;
+  margin: 0 4px;
+}
+.entry-capsules { align-items: center; }
+.capsule-warn { background: #fdf6ec; color: #e6a23c; border: 1px solid #f5dab1; }
+.capsule-warn:hover { background: #faecd8; }
+.capsule-warn.active { background: #e6a23c; color: #fff; border-color: #e6a23c; }
+.status-capsule em {
+  font-style: normal;
+  font-weight: bold;
+  margin-left: 2px;
+}
+/* 开票状态单元格：状态标签 + 标记作废勾选 横排 */
+.invoice-status-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.invoice-status-cell .el-checkbox { margin-right: 0; }
 
 .advanced-toggle-row {
   cursor: pointer;
@@ -1793,4 +2268,17 @@ loadDistinctValues()
 .bar-label { font-size: 12px; color: #909399; }
 .bar-value { font-size: 16px; font-weight: bold; color: #303133; font-family: "JetBrains Mono", Consolas, monospace; }
 .bar-divider { width: 1px; height: 20px; background: #d9ecff; }
+
+/* ===== 工作量弹窗：负责人卡片 / 快速录入栏 ===== */
+.leader-card { margin-bottom: 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; overflow: hidden; }
+.leader-card-header { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--el-fill-color-light); font-size: 14px; }
+.leader-name { font-weight: 600; color: var(--el-text-color-primary); }
+.leader-mini-total { font-size: 12px; color: var(--el-text-color-secondary); }
+.quick-add-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--el-fill-color-lighter); border-bottom: 1px solid var(--el-border-color-lighter); flex-wrap: wrap; }
+.qa-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
+.qa-unit { font-size: 11px; color: var(--el-text-color-placeholder); }
+.empty-hint { text-align: center; color: var(--el-text-color-placeholder); font-size: 12px; padding: 12px 0; }
+.section-title-internal { color: var(--el-color-primary); font-weight: 600; }
+.section-title-external { color: var(--el-color-warning); font-weight: 600; }
+.section-output-mini { margin-left: 12px; font-size: 12px; font-weight: 400; color: var(--el-text-color-secondary); }
 </style>

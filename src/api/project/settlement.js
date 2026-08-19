@@ -34,6 +34,24 @@ export function saveSettlement(data) {
   })
 }
 
+// 保存工作量明细（独立保存，不涉及付款）
+export function saveWorkload(data) {
+  return request({
+    url: '/project/settlement/workload',
+    method: 'put',
+    data: data
+  })
+}
+
+// 保存到账信息（付款+开票，独立保存，不涉及工作量）
+export function savePayment(data) {
+  return request({
+    url: '/project/settlement/payment',
+    method: 'put',
+    data: data
+  })
+}
+
 // 查询费用结算可显隐列的元数据（显隐列面板 + 表格动态渲染用）
 export function getSettlementColumns() {
   return request({
