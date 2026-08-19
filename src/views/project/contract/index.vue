@@ -134,7 +134,7 @@
                </span>
                <!-- 关联项目数：点击查看关联项目 -->
                <span v-else-if="col.key === 'projectCount'">
-                  <el-button link type="primary" @click="handleShowProjects(scope.row)">
+                  <el-button link type="primary" size="small" @click="handleShowProjects(scope.row)">
                      {{ scope.row.projectCount || 0 }} 个项目 ▸
                   </el-button>
                </span>

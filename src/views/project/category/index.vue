@@ -21,8 +21,8 @@
             </el-select>
          </el-form-item>
          <el-form-item>
-            <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
-            <el-button icon="Refresh" @click="resetQuery">重置</el-button>
+            <el-button type="primary" icon="Search" size="small" @click="handleQuery">搜索</el-button>
+            <el-button icon="Refresh" size="small" @click="resetQuery">重置</el-button>
          </el-form-item>
       </el-form>
 
@@ -32,6 +32,7 @@
                type="primary"
                plain
                icon="Plus"
+               size="small"
                @click="handleAdd"
                v-hasPermi="['project:category:add']"
             >新增大类</el-button>
@@ -41,6 +42,7 @@
                type="info"
                plain
                icon="Sort"
+               size="small"
                @click="toggleExpandAll"
             >展开/折叠</el-button>
          </el-col>
@@ -110,9 +112,9 @@
          </el-table-column>
          <el-table-column label="操作" align="center" class-name="small-padding fixed-width">
             <template #default="scope">
-               <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['project:category:edit']">修改</el-button>
-               <el-button v-if="scope.row.level === 1" link type="primary" icon="Plus" @click="handleAdd(scope.row)" v-hasPermi="['project:category:add']">新增小类</el-button>
-               <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['project:category:remove']">删除</el-button>
+               <el-button link type="primary" icon="Edit" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:category:edit']">修改</el-button>
+               <el-button v-if="scope.row.level === 1" link type="primary" icon="Plus" size="small" @click="handleAdd(scope.row)" v-hasPermi="['project:category:add']">新增小类</el-button>
+               <el-button link type="primary" icon="Delete" size="small" @click="handleDelete(scope.row)" v-hasPermi="['project:category:remove']">删除</el-button>
             </template>
          </el-table-column>
       </el-table>

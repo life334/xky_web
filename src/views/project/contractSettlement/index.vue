@@ -9,15 +9,15 @@
         <el-input v-model="queryParams.contractNo" placeholder="请输入" clearable style="width: 180px" @keyup.enter="handleQuery" />
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
-        <el-button icon="Refresh" @click="resetQuery">重置</el-button>
+        <el-button type="primary" icon="Search" size="small" @click="handleQuery">搜索</el-button>
+        <el-button icon="Refresh" size="small" @click="resetQuery">重置</el-button>
       </el-form-item>
     </el-form>
 
     <!-- 操作栏 -->
     <el-row :gutter="10" class="mb8">
       <el-col :span="1.5">
-        <el-button type="warning" plain icon="Download" @click="handleExport" v-hasPermi="['project:contractSettlement:export']">导出</el-button>
+        <el-button type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:contractSettlement:export']">导出</el-button>
       </el-col>
       <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
@@ -163,7 +163,7 @@
 
       <el-table-column label="操作" align="center" width="100" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="handleEdit(scope.row)" v-hasPermi="['project:contractSettlement:edit']">编辑</el-button>
+          <el-button link type="primary" size="small" @click="handleEdit(scope.row)" v-hasPermi="['project:contractSettlement:edit']">编辑</el-button>
         </template>
       </el-table-column>
     </el-table>

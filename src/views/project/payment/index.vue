@@ -15,23 +15,23 @@
             <el-input v-model="queryParams.payUnit" placeholder="请输入付款单位" clearable maxlength="200" style="width: 180px" />
          </el-form-item>
          <el-form-item>
-            <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
-            <el-button icon="Refresh" @click="resetQuery">重置</el-button>
+            <el-button type="primary" icon="Search" size="small" @click="handleQuery">搜索</el-button>
+            <el-button icon="Refresh" size="small" @click="resetQuery">重置</el-button>
          </el-form-item>
       </el-form>
 
       <el-row :gutter="10" class="mb8">
          <el-col :span="1.5">
-            <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['project:payment:add']">新增</el-button>
+            <el-button type="primary" plain icon="Plus" size="small" @click="handleAdd" v-hasPermi="['project:payment:add']">新增</el-button>
          </el-col>
          <el-col :span="1.5">
-            <el-button type="success" plain icon="Edit" :disabled="single" @click="handleUpdate" v-hasPermi="['project:payment:edit']">修改</el-button>
+            <el-button type="success" plain icon="Edit" size="small" :disabled="single" @click="handleUpdate" v-hasPermi="['project:payment:edit']">修改</el-button>
          </el-col>
          <el-col :span="1.5">
-            <el-button type="danger" plain icon="Delete" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:payment:remove']">删除</el-button>
+            <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:payment:remove']">删除</el-button>
          </el-col>
          <el-col :span="1.5">
-            <el-button type="warning" plain icon="Download" @click="handleExport" v-hasPermi="['project:payment:export']">导出</el-button>
+            <el-button type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:payment:export']">导出</el-button>
          </el-col>
          <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar>
       </el-row>
@@ -81,8 +81,8 @@
          </el-table-column>
          <el-table-column label="操作" align="center" width="150" class-name="small-padding fixed-width">
             <template #default="scope">
-               <el-button link type="primary" @click="handleUpdate(scope.row)" v-hasPermi="['project:payment:edit']">修改</el-button>
-               <el-button link type="primary" @click="handleDelete(scope.row)" v-hasPermi="['project:payment:remove']">删除</el-button>
+               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:payment:edit']">修改</el-button>
+               <el-button link type="primary" size="small" @click="handleDelete(scope.row)" v-hasPermi="['project:payment:remove']">删除</el-button>
             </template>
          </el-table-column>
       </el-table>

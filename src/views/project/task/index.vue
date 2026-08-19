@@ -20,20 +20,20 @@
             </el-select>
          </el-form-item>
          <el-form-item>
-            <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
-            <el-button icon="Refresh" @click="resetQuery">重置</el-button>
+            <el-button type="primary" icon="Search" size="small" @click="handleQuery">搜索</el-button>
+            <el-button icon="Refresh" size="small" @click="resetQuery">重置</el-button>
          </el-form-item>
       </el-form>
 
       <el-row :gutter="10" class="mb8">
          <el-col :span="1.5">
-            <el-button type="success" plain icon="Edit" :disabled="single" @click="handleUpdate" v-hasPermi="['project:task:edit']">修改</el-button>
+            <el-button type="success" plain icon="Edit" size="small" :disabled="single" @click="handleUpdate" v-hasPermi="['project:task:edit']">修改</el-button>
          </el-col>
          <el-col :span="1.5">
-            <el-button type="danger" plain icon="Delete" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:task:remove']">删除</el-button>
+            <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:task:remove']">删除</el-button>
          </el-col>
          <el-col :span="1.5">
-            <el-button type="warning" plain icon="Download" @click="handleExport" v-hasPermi="['project:task:export']">导出</el-button>
+            <el-button type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:task:export']">导出</el-button>
          </el-col>
          <!-- <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar> -->
          <el-col :span="6" style="display: flex; align-items: center; justify-content: flex-end; ">
@@ -108,9 +108,9 @@
          <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width">
             <template #default="scope">
                <template v-if="!isGroupRow(scope.row)">
-                  <el-button link type="primary" icon="View" @click="handleView(scope.row)">详情</el-button>
-                  <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['project:task:edit']">修改</el-button>
-                  <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['project:task:remove']">删除</el-button>
+                  <el-button link type="primary" icon="View" size="small" @click="handleView(scope.row)">详情</el-button>
+                  <el-button link type="primary" icon="Edit" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:task:edit']">修改</el-button>
+                  <el-button link type="primary" icon="Delete" size="small" @click="handleDelete(scope.row)" v-hasPermi="['project:task:remove']">删除</el-button>
                </template>
                <span v-else style="color: #c0c4cc">-</span>
             </template>

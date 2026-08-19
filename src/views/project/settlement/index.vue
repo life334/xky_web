@@ -244,6 +244,7 @@
                <el-button
                   v-if="scope.row.projectId"
                   link type="primary"
+                  size="small"
                   @click="handleEdit(scope.row)"
                >编辑</el-button>
             </template>

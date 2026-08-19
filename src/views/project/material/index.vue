@@ -217,9 +217,9 @@
          </el-table-column>
          <el-table-column label="操作" align="center" min-width="200" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
-               <el-button v-if="scope.row.status === 'pending' || scope.row.status === 'returned'" link type="warning" @click="handleBorrow(scope.row)" v-hasPermi="['project:material:borrow']">领取</el-button>
-               <el-button link type="primary" @click="handleUpdate(scope.row)" v-hasPermi="['project:material:edit']">修改</el-button>
-               <el-button link type="info" @click="handleFlow(scope.row)">领取记录</el-button>
+               <el-button v-if="scope.row.status === 'pending' || scope.row.status === 'returned'" link type="warning" size="small" @click="handleBorrow(scope.row)" v-hasPermi="['project:material:borrow']">领取</el-button>
+               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:material:edit']">修改</el-button>
+               <el-button link type="info" size="small" @click="handleFlow(scope.row)">领取记录</el-button>
             </template>
          </el-table-column>
       </el-table>
