@@ -205,7 +205,7 @@
                      </el-table-column>
                      <el-table-column label="起步量" width="150" align="center">
                         <template #default="s">
-                           <el-input-number v-model="s.row.minQuantity" controls-position="right" :precision="4" :min="0" style="width: 125px" />
+                           <el-input-number v-model="s.row.minQuantity" controls-position="right" :precision="2" :min="0" style="width: 125px" />
                         </template>
                      </el-table-column>
                      <el-table-column label="操作" width="60" align="center">

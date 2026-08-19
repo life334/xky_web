@@ -2182,8 +2182,9 @@ loadDistinctValues()
 .refund-total {
   font-size: 13px;
   color: #909399;
-  .refund-total-num { color: #f56c6c; font-weight: 600; }
 }
+.refund-total-num { color: #f56c6c; font-weight: 600; }
+
 .refund-empty {
   padding: 8px 0 6px;
   font-size: 12px;
