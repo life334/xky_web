@@ -1,5 +1,7 @@
-﻿<template>
+<template>
   <div class="app-container import-page">
+    <el-tabs v-model="activeTab" class="import-tabs">
+      <el-tab-pane label="产值数据导入" name="output">
     <!-- 顶部步骤条 -->
     <el-steps :active="step" finish-status="success" align-center style="margin-bottom: 20px">
       <el-step title="上传 Excel" description="读取历史数据文件" />
@@ -220,6 +222,181 @@
         </el-tab-pane>
       </el-tabs>
     </el-dialog>
+      </el-tab-pane>
+
+      <el-tab-pane label="合同数据导入" name="contract">
+        <!-- 合同导入步骤条 -->
+        <el-steps :active="cStep" finish-status="success" align-center style="margin-bottom: 20px">
+          <el-step title="上传 Excel" description="读取合同登记表" />
+          <el-step title="预览确认" description="查看合同数据" />
+          <el-step title="结果摘要" description="成功/跳过/失败明细" />
+        </el-steps>
+
+        <!-- 合同 Step1 上传 -->
+        <div v-if="cStep === 0" class="step-box">
+          <el-upload
+            ref="cUploadRef"
+            class="upload-demo"
+            drag
+            :auto-upload="false"
+            :limit="1"
+            :on-exceed="handleCExceed"
+            :on-change="handleCFileChange"
+            accept=".xls,.xlsx"
+          >
+            <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+            <div class="el-upload__text">将文件拖到此处，或<em>点击选择</em></div>
+            <template #tip>
+              <div class="el-upload__tip">支持 .xls / .xlsx 格式（多Sheet页自动解析）</div>
+            </template>
+          </el-upload>
+          <div class="upload-actions">
+            <el-button type="primary" :disabled="!cUploadFile" :loading="cParsing" @click="doCPreview">开始解析预览</el-button>
+          </div>
+        </div>
+
+        <!-- 合同 Step2 预览 -->
+        <div v-if="cStep === 1" class="step-box">
+          <div class="stat-row">
+            <div class="stat-pill stat-total">总行数 <b>{{ cPreview.totalRows ?? 0 }}</b></div>
+            <div class="stat-pill stat-ready">可导入 <b>{{ cPreview.readyCount ?? 0 }}</b></div>
+            <div class="stat-pill stat-dup">已存在 <b>{{ cPreview.duplicateCount ?? 0 }}</b></div>
+            <div class="stat-pill stat-err">无法导入 <b>{{ cPreview.errorCount ?? 0 }}</b></div>
+            <div style="flex:1"></div>
+            <el-button @click="cStep = 0; resetCAll()">重选文件</el-button>
+            <el-button type="primary" :disabled="(cPreview.readyCount ?? 0) === 0" :loading="cCommitting" @click="doCCommit">
+              确认导入（{{ cPreview.readyCount ?? 0 }}行）
+            </el-button>
+          </div>
+
+          <!-- 问题摘要 -->
+          <div v-if="cHasProblems" class="problem-section">
+            <div v-if="cPreview.duplicateCount > 0" class="problem-card problem-dup">
+              <div class="problem-icon">🚫</div>
+              <div class="problem-body">
+                <div class="problem-title">{{ cPreview.duplicateCount }} 行合同编号已存在</div>
+                <div class="problem-desc">将自动跳过</div>
+              </div>
+              <el-button size="small" type="info" plain @click="downloadCProblemFile('duplicate')">下载明细</el-button>
+            </div>
+            <div v-if="cPreview.errorCount > 0" class="problem-card problem-err">
+              <div class="problem-icon">❌</div>
+              <div class="problem-body">
+                <div class="problem-title">{{ cPreview.errorCount }} 行无法导入</div>
+                <div class="problem-desc">缺少必填字段或单价解析失败</div>
+              </div>
+              <el-button size="small" type="danger" plain @click="downloadCProblemFile('error')">下载明细</el-button>
+            </div>
+          </div>
+
+          <!-- 问题明细表格 -->
+          <el-collapse v-if="cHasProblems" v-model="cProblemCollapse" class="problem-collapse">
+            <el-collapse-item name="problems">
+              <template #title>
+                <span class="collapse-title">问题明细（{{ (cPreview.problemRows || []).length }} 行）</span>
+              </template>
+              <el-table :data="cPreview.problemRows" border stripe size="small" max-height="40vh">
+                <el-table-column prop="excelRow" label="Excel行" width="75" align="center" />
+                <el-table-column prop="contractNo" label="合同编号" min-width="180" show-overflow-tooltip />
+                <el-table-column prop="clientUnit" label="委托单位" min-width="150" show-overflow-tooltip />
+                <el-table-column label="问题类型" width="100" align="center">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="row.isDuplicate ? 'info' : 'danger'">{{ row.isDuplicate ? '已存在' : '无法导入' }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="问题详情" min-width="240" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <span v-if="row.errors && row.errors.length">{{ row.errors.join('；') }}</span>
+                    <span v-else>{{ row.isDuplicate ? '合同编号已存在' : '-' }}</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-collapse-item>
+          </el-collapse>
+
+          <!-- 可导入数据表格 -->
+          <div v-if="(cPreview.readyCount ?? 0) > 0" class="ready-section">
+            <div class="section-title">可导入合同预览（只读）</div>
+            <el-table :data="cPreview.rows" border stripe size="small" height="50vh">
+              <el-table-column type="index" label="序" width="50" />
+              <el-table-column prop="excelRow" label="Excel行" width="75" />
+              <el-table-column prop="contractNo" label="合同编号" min-width="180" show-overflow-tooltip />
+              <el-table-column prop="clientUnit" label="委托单位" min-width="150" show-overflow-tooltip />
+              <el-table-column prop="contractName" label="合同名称" min-width="200" show-overflow-tooltip />
+              <el-table-column label="签署日期" width="110">
+                <template #default="{ row }">{{ formatDate(row.signDate) }}</template>
+              </el-table-column>
+              <el-table-column label="合同金额" width="120" align="right">
+                <template #default="{ row }">{{ row.contractAmount != null ? fmt(row.contractAmount) : '-' }}</template>
+              </el-table-column>
+              <el-table-column label="合同类型" width="100" align="center">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.contractType === '单价合同' ? 'warning' : ''">{{ row.contractType }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="单价明细" min-width="280">
+                <template #default="{ row }">
+                  <div v-if="row.priceItems && row.priceItems.length">
+                    <div v-for="(p, i) in row.priceItems" :key="i" style="font-size:12px;line-height:1.6">
+                      {{ p.billingCategory }}: {{ fmt(p.unitPrice) }} / {{ p.priceUnit }}
+                      <el-tag v-if="p.warning" size="small" type="danger" style="margin-left:4px">{{ p.warning }}</el-tag>
+                    </div>
+                  </div>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+            </el-table>
+          </div>
+        </div>
+
+        <!-- 合同 Step3 结果摘要 -->
+        <div v-if="cStep === 2" class="step-box">
+          <el-row :gutter="16" class="result-summary">
+            <el-col :span="8">
+              <el-card shadow="never" class="sum-card sum-ok">
+                <div class="sum-label">导入成功</div>
+                <div class="sum-num">{{ cResult.successCount ?? 0 }}</div>
+              </el-card>
+            </el-col>
+            <el-col :span="8">
+              <el-card shadow="never" class="sum-card sum-skip">
+                <div class="sum-label">跳过（已存在）</div>
+                <div class="sum-num">{{ cResult.skippedCount ?? 0 }}</div>
+                <el-button v-if="cResult.skippedCount > 0" link type="primary" size="small" @click="downloadCResultFile('skipped')">下载跳过明细</el-button>
+              </el-card>
+            </el-col>
+            <el-col :span="8">
+              <el-card shadow="never" class="sum-card sum-fail">
+                <div class="sum-label">失败</div>
+                <div class="sum-num">{{ cResult.failedCount ?? 0 }}</div>
+                <el-button v-if="cResult.failedCount > 0" link type="primary" size="small" @click="downloadCResultFile('failed')">下载失败明细</el-button>
+              </el-card>
+            </el-col>
+          </el-row>
+          <el-collapse v-if="(cResult.failedDetails && cResult.failedDetails.length) || (cResult.skippedDetails && cResult.skippedDetails.length)" class="mt20">
+            <el-collapse-item v-if="cResult.failedDetails && cResult.failedDetails.length" name="fail" :title="'失败明细（' + cResult.failedDetails.length + '行）'">
+              <el-table :data="cResult.failedDetails" size="small" border stripe max-height="300">
+                <el-table-column label="Excel行号" prop="excelRow" width="100" align="center" />
+                <el-table-column label="合同编号" prop="projectCode" width="180" />
+                <el-table-column label="失败原因" prop="reason" show-overflow-tooltip />
+              </el-table>
+            </el-collapse-item>
+            <el-collapse-item v-if="cResult.skippedDetails && cResult.skippedDetails.length" name="skip" :title="'跳过明细（' + cResult.skippedDetails.length + '行）'">
+              <el-table :data="cResult.skippedDetails" size="small" border stripe max-height="300">
+                <el-table-column label="Excel行号" prop="excelRow" width="100" align="center" />
+                <el-table-column label="合同编号" prop="projectCode" width="180" />
+                <el-table-column label="跳过原因" prop="reason" show-overflow-tooltip />
+              </el-table>
+            </el-collapse-item>
+          </el-collapse>
+          <el-divider />
+          <div class="result-actions">
+            <el-button @click="cStep = 0; resetCAll()">继续导入新文件</el-button>
+          </div>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
@@ -232,6 +409,9 @@ import {
   previewImport, commitImport,
   downloadProblems, downloadImportFailures, downloadImportSkipped
 } from '@/api/project/import'
+import {
+  previewContractImport, commitContractImport, downloadContractProblems
+} from '@/api/project/contractImport'
 import saveAs from 'file-saver'
 
 const step = ref(0)
@@ -382,6 +562,120 @@ function resetAll() {
     problemSummary: null, rows: [], problemRows: []
   })
   Object.assign(result, { logId: null, successCount: 0, skippedCount: 0, failedCount: 0 })
+}
+
+// ============ 合同导入 ============
+const activeTab = ref('output')
+const cStep = ref(0)
+const cParsing = ref(false)
+const cCommitting = ref(false)
+const cUploadFile = ref(null)
+const cUploadRef = ref(null)
+const cProblemCollapse = ref([])
+
+const cPreview = reactive({
+  token: '', totalRows: 0, readyCount: 0, duplicateCount: 0, errorCount: 0,
+  rows: [], problemRows: []
+})
+const cResult = reactive({ logId: null, successCount: 0, skippedCount: 0, failedCount: 0, failedDetails: [], skippedDetails: [] })
+
+const cHasProblems = computed(() => (cPreview.duplicateCount > 0) || (cPreview.errorCount > 0))
+
+function handleCFileChange(file) {
+  const name = file.name.toLowerCase()
+  if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+    ElMessage.error('请选择 .xls 或 .xlsx 文件')
+    cUploadFile.value = null
+    return
+  }
+  cUploadFile.value = file.raw
+}
+function handleCExceed() {
+  ElMessage.warning('仅允许选择 1 个文件，如需更换请先移除当前文件')
+}
+
+async function doCPreview() {
+  if (!cUploadFile.value) return
+  cParsing.value = true
+  try {
+    const res = await previewContractImport(cUploadFile.value)
+    if (res.code !== 200) throw new Error(res.msg)
+    const d = res.data
+    cPreview.token = d.token
+    cPreview.totalRows = d.totalRows
+    cPreview.readyCount = d.readyCount
+    cPreview.duplicateCount = d.duplicateCount
+    cPreview.errorCount = d.errorCount
+    cPreview.rows = d.rows || []
+    cPreview.problemRows = d.problemRows || []
+    cProblemCollapse.value = []
+    cStep.value = 1
+    const msg = `解析完成：${d.totalRows}行总计，${d.readyCount}行可导入`
+      + (d.duplicateCount > 0 ? `，${d.duplicateCount}行已存在` : '')
+      + (d.errorCount > 0 ? `，${d.errorCount}行无法导入` : '')
+    ElMessage.success(msg)
+  } catch (e) {
+    ElMessage.error('解析失败：' + (e.message || e))
+  } finally {
+    cParsing.value = false
+  }
+}
+
+async function doCCommit() {
+  try {
+    await ElMessageBox.confirm(
+      `确认导入 ${cPreview.readyCount} 行合同数据？（已存在/无法导入的行将自动跳过）`,
+      '确认导入', { type: 'warning' }
+    )
+  } catch { return }
+  cCommitting.value = true
+  try {
+    const res = await commitContractImport({ token: cPreview.token, rows: cPreview.rows })
+    if (res.code !== 200) throw new Error(res.msg)
+    const d = res.data
+    cResult.logId = d.logId
+    cResult.successCount = d.successCount
+    cResult.skippedCount = d.skippedCount
+    cResult.failedCount = d.failedCount
+    cResult.failedDetails = Array.isArray(d.failedDetails) ? d.failedDetails : []
+    cResult.skippedDetails = Array.isArray(d.skippedDetails) ? d.skippedDetails : []
+    cStep.value = 2
+    ElMessage.success('导入完成')
+  } catch (e) {
+    ElMessage.error('导入失败：' + (e.message || e))
+  } finally {
+    cCommitting.value = false
+  }
+}
+
+function downloadCProblemFile(type) {
+  if (!cPreview.token) return
+  const name = type === 'duplicate' ? '已存在明细' : '无法导入明细'
+  blobDownload(downloadContractProblems(cPreview.token, type), name + '.xlsx')
+}
+function downloadCResultFile(type) {
+  if (!cResult.logId) return
+  if (type === 'skipped') {
+    blobDownload(downloadImportSkipped(cResult.logId), '跳过明细_' + cResult.logId + '.xlsx')
+  } else {
+    blobDownload(downloadImportFailures(cResult.logId), '失败明细_' + cResult.logId + '.xlsx')
+  }
+}
+
+function formatDate(d) {
+  if (!d) return '-'
+  if (typeof d === 'string') return d.substring(0, 10)
+  return d
+}
+
+function resetCAll() {
+  cUploadFile.value = null
+  if (cUploadRef.value) cUploadRef.value.clearFiles()
+  Object.assign(cPreview, {
+    token: '', totalRows: 0, readyCount: 0, duplicateCount: 0, errorCount: 0,
+    rows: [], problemRows: []
+  })
+  Object.assign(cResult, { logId: null, successCount: 0, skippedCount: 0, failedCount: 0, failedDetails: [], skippedDetails: [] })
 }
 </script>
 
