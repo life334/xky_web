@@ -158,7 +158,7 @@
                               <el-tag size="small" :type="paymentTypeTag(pay.paymentType)">{{ paymentTypeLabel(pay.paymentType) }}</el-tag>
                               <span class="pay-amount">¥{{ fmtWan(pay.amount) }}</span>
                               <span class="pay-unit">{{ pay.payUnit }}</span>
-                              <span class="pay-project">{{ pay.projectCode || '-' }}</span>
+                              <span class="pay-project">{{ pay.projectCode }}</span>
                            </div>
                            <div class="popover-summary" v-if="scope.row.contractAmount">
                               合计 ¥{{ fmtWan(scope.row.paidTotal) }} / 合同总额 ¥{{ fmtWan(scope.row.contractAmount) }}（{{ paymentPercent(scope.row) }}%）
@@ -166,7 +166,6 @@
                         </div>
                      </el-popover>
                   </template>
-                  <span v-else style="color:#c0c4cc;font-size:13px">—</span>
                </span>
                <!-- 附件：popover 预览 -->
                <span v-else-if="col.type === 'attachment'">
@@ -240,126 +239,126 @@
       <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
          <el-tabs v-model="activeTab">
             <el-tab-pane label="基本信息" name="info">
-         <el-form ref="contractRef" :model="form" :rules="rules" label-width="90px">
-            <el-row :gutter="20">
-               <el-col :span="8">
-                  <el-form-item label="合同编号" prop="contractNo">
-                     <el-input v-model="form.contractNo" placeholder="请输入编号（不含前缀）" maxlength="50">
-                        <template #prepend>{{ contractPrefix }}</template>
-                     </el-input>
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="合同名称" prop="contractName">
-                     <el-input v-model="form.contractName" placeholder="请输入合同名称" maxlength="200" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="合同类型" prop="contractType">
-                     <el-select v-model="form.contractType" placeholder="请选择合同类型" style="width: 100%">
-                        <el-option v-for="d in proj_contract_type" :key="d.value" :label="d.label" :value="d.value" />
-                     </el-select>
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <el-row :gutter="20">
-               <el-col :span="8">
-                  <el-form-item label="合同金额" prop="contractAmount">
-                     <el-input-number v-model="form.contractAmount" placeholder="请输入合同金额" :precision="2" :min="0" controls-position="right" style="width: 100%" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="委托单位" prop="clientUnit">
-                     <el-select v-model="form.clientUnit" filterable clearable allow-create placeholder="请选择或输入委托单位" style="width: 100%">
-                        <el-option v-for="item in clientUnitOptions" :key="item" :label="item" :value="item" />
-                     </el-select>
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="合同期限" prop="contractPeriod">
-                     <el-input v-model="form.contractPeriod" placeholder="请输入合同期限" maxlength="100" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <el-row :gutter="20">
-               <el-col :span="8">
-                  <el-form-item label="联系人" prop="contactName">
-                     <el-input v-model="form.contactName" placeholder="请输入联系人" maxlength="50" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="联系电话" prop="contactPhone">
-                     <el-input v-model="form.contactPhone" placeholder="请输入联系电话" maxlength="30" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="签署日期" prop="signDate">
-                     <el-date-picker v-model="form.signDate" type="date" placeholder="选择签署日期" value-format="YYYY-MM-DD" style="width: 100%" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <el-row :gutter="20">
-               <el-col :span="8">
-                  <el-form-item label="登记时间" prop="entrustDate">
-                     <el-date-picker v-model="form.entrustDate" type="date" placeholder="选择委托时间" value-format="YYYY-MM-DD" style="width: 100%" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="审核日期" prop="auditDate">
-                     <el-date-picker v-model="form.auditDate" type="date" placeholder="选择审核日期" value-format="YYYY-MM-DD" style="width: 100%" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="返回日期" prop="returnDate">
-                     <el-date-picker v-model="form.returnDate" type="date" placeholder="选择用户返回日期" value-format="YYYY-MM-DD" style="width: 100%" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <el-row :gutter="20">
-               <el-col :span="8">
-                  <el-form-item label="完成日期" prop="finishDate">
-                     <el-date-picker v-model="form.finishDate" type="date" placeholder="选择完成日期" value-format="YYYY-MM-DD" style="width: 100%" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="归档日期" prop="archiveDate">
-                     <el-date-picker v-model="form.archiveDate" type="date" placeholder="选择归档日期" value-format="YYYY-MM-DD" style="width: 100%" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="8">
-                  <el-form-item label="存储目录" prop="archivePath">
-                     <el-input v-model="form.archivePath" placeholder="请输入存储目录路径" maxlength="500" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <el-row :gutter="20" v-if="form.status">
-               <el-col :span="8">
-                  <el-form-item label="当前状态">
-                     <dict-tag :options="d('proj_contract_status')" :value="form.status" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <el-row :gutter="20">
-               <el-col :span="24">
-                  <el-form-item label="支付条件" prop="paymentTerms">
-                     <el-input v-model="form.paymentTerms" type="textarea" placeholder="请输入支付条件" maxlength="2000" :rows="3" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <el-row :gutter="20">
-               <el-col :span="24">
-                  <el-form-item label="备注" prop="remark">
-                     <el-input v-model="form.remark" type="textarea" placeholder="请输入备注" maxlength="500" :rows="2" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-         </el-form>
+               <el-form ref="contractRef" :model="form" :rules="rules" label-width="90px">
+                  <el-row :gutter="20">
+                     <el-col :span="8">
+                        <el-form-item label="合同编号" prop="contractNo">
+                           <el-input v-model="form.contractNo" placeholder="请输入编号（不含前缀）" maxlength="50">
+                              <template #prepend v-if="contractPrefix">{{ contractPrefix }}</template>
+                           </el-input>
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="合同名称" prop="contractName">
+                           <el-input v-model="form.contractName" placeholder="请输入合同名称" maxlength="200" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="合同类型" prop="contractType">
+                           <el-select v-model="form.contractType" placeholder="请选择合同类型" style="width: 100%">
+                              <el-option v-for="d in proj_contract_type" :key="d.value" :label="d.label" :value="d.value" />
+                           </el-select>
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+                  <el-row :gutter="20">
+                     <el-col :span="8">
+                        <el-form-item label="合同金额" prop="contractAmount">
+                           <el-input-number v-model="form.contractAmount" placeholder="请输入合同金额" :precision="2" :min="0" controls-position="right" style="width: 100%" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="委托单位" prop="clientUnit">
+                           <el-select v-model="form.clientUnit" filterable clearable allow-create placeholder="请选择或输入委托单位" style="width: 100%">
+                              <el-option v-for="item in clientUnitOptions" :key="item" :label="item" :value="item" />
+                           </el-select>
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="合同期限" prop="contractPeriod">
+                           <el-input v-model="form.contractPeriod" placeholder="请输入合同期限" maxlength="100" />
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+                  <el-row :gutter="20">
+                     <el-col :span="8">
+                        <el-form-item label="联系人" prop="contactName">
+                           <el-input v-model="form.contactName" placeholder="请输入联系人" maxlength="50" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="联系电话" prop="contactPhone">
+                           <el-input v-model="form.contactPhone" placeholder="请输入联系电话" maxlength="30" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="签署日期" prop="signDate">
+                           <el-date-picker v-model="form.signDate" type="date" placeholder="选择签署日期" value-format="YYYY-MM-DD" style="width: 100%" />
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+                  <el-row :gutter="20">
+                     <el-col :span="8">
+                        <el-form-item label="登记时间" prop="entrustDate">
+                           <el-date-picker v-model="form.entrustDate" type="date" placeholder="选择委托时间" value-format="YYYY-MM-DD" style="width: 100%" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="审核日期" prop="auditDate">
+                           <el-date-picker v-model="form.auditDate" type="date" placeholder="选择审核日期" value-format="YYYY-MM-DD" style="width: 100%" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="返回日期" prop="returnDate">
+                           <el-date-picker v-model="form.returnDate" type="date" placeholder="选择用户返回日期" value-format="YYYY-MM-DD" style="width: 100%" />
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+                  <el-row :gutter="20">
+                     <el-col :span="8">
+                        <el-form-item label="完成日期" prop="finishDate">
+                           <el-date-picker v-model="form.finishDate" type="date" placeholder="选择完成日期" value-format="YYYY-MM-DD" style="width: 100%" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="归档日期" prop="archiveDate">
+                           <el-date-picker v-model="form.archiveDate" type="date" placeholder="选择归档日期" value-format="YYYY-MM-DD" style="width: 100%" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="存储目录" prop="archivePath">
+                           <el-input v-model="form.archivePath" placeholder="请输入存储目录路径" maxlength="500" />
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+                  <el-row :gutter="20" v-if="form.status">
+                     <el-col :span="8">
+                        <el-form-item label="当前状态">
+                           <dict-tag :options="d('proj_contract_status')" :value="form.status" />
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+                  <el-row :gutter="20">
+                     <el-col :span="24">
+                        <el-form-item label="支付条件" prop="paymentTerms">
+                           <el-input v-model="form.paymentTerms" type="textarea" placeholder="请输入支付条件" maxlength="2000" :rows="3" />
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+                  <el-row :gutter="20">
+                     <el-col :span="24">
+                        <el-form-item label="备注" prop="remark">
+                           <el-input v-model="form.remark" type="textarea" placeholder="请输入备注" maxlength="500" :rows="2" />
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+               </el-form>
             </el-tab-pane>
 
             <!-- 合同单价 Tab -->
             <el-tab-pane label="合同单价" name="price">
                <div style="margin-bottom: 8px; color: #909399; font-size: 13px;">
-                  仅小类（二级）需要填写单价，单价保存随合同一起提交
+                  仅展示外部计费方式，按计费类别填写合同单价，保存随合同一起提交
                </div>
                <el-table
                   v-loading="priceLoading"
@@ -370,29 +369,40 @@
                   stripe
                   size="default"
                   default-expand-all
-                  max-height="500"
+                  max-height="430"
                >
-                  <el-table-column prop="categoryName" label="项目类别" min-width="200" />
+                  <el-table-column prop="categoryName" label="项目类别 / 计费类别" min-width="220">
+                     <template #default="scope">
+                        <span v-if="scope.row.categoryLevel === 1" style="font-weight: 600;">{{ scope.row.categoryName }}</span>
+                        <span v-else-if="scope.row.categoryLevel === 2" style="padding-left: 12px;">{{ scope.row.categoryName }}</span>
+                        <span v-else style="padding-left: 28px; color: #606266;">{{ scope.row.billingCategory }}</span>
+                     </template>
+                  </el-table-column>
                   <el-table-column prop="categoryLevel" label="层级" width="70" align="center">
                      <template #default="scope">
-                        <el-tag :type="scope.row.categoryLevel === 1 ? '' : 'info'" size="small" disable-transitions>
-                           {{ scope.row.categoryLevel === 1 ? '大类' : '小类' }}
-                        </el-tag>
+                        <el-tag v-if="scope.row.categoryLevel === 1" size="small" disable-transitions>大类</el-tag>
+                        <el-tag v-else-if="scope.row.categoryLevel === 2" type="info" size="small" disable-transitions>小类</el-tag>
+                        <el-tag v-else type="warning" size="small" disable-transitions>计费</el-tag>
                      </template>
                   </el-table-column>
-                  <el-table-column prop="dictInternalPrice" label="字典内部单价" width="130" align="right">
+                  <el-table-column prop="dictUnitPrice" label="字典单价" width="120" align="right">
                      <template #default="scope">
-                        <span v-if="scope.row.categoryLevel === 2">{{ scope.row.dictInternalPrice }}</span>
+                        <span v-if="scope.row.billingId">{{ scope.row.dictUnitPrice }}</span>
                      </template>
                   </el-table-column>
-                  <el-table-column prop="dictExternalPrice" label="字典外部单价" width="130" align="right">
+                  <el-table-column prop="priceUnit" label="计价单位" width="120" align="center">
                      <template #default="scope">
-                        <span v-if="scope.row.categoryLevel === 2">{{ scope.row.dictExternalPrice }}</span>
+                        <span v-if="scope.row.billingId">{{ scope.row.priceUnit }}</span>
+                     </template>
+                  </el-table-column>
+                  <el-table-column prop="minQuantity" label="起步量" width="100" align="right">
+                     <template #default="scope">
+                        <span v-if="scope.row.billingId">{{ scope.row.minQuantity }}</span>
                      </template>
                   </el-table-column>
                   <el-table-column label="合同单价" width="180" align="center">
                      <template #default="scope">
-                        <template v-if="scope.row.categoryLevel === 2">
+                        <template v-if="scope.row.billingId">
                            <el-input-number
                               v-model="scope.row.price"
                               :min="0"
@@ -543,6 +553,13 @@
                   <el-table :data="detailPriceList" border size="small" max-height="400">
                      <el-table-column label="大类" align="center" prop="parentName" min-width="120" :show-overflow-tooltip="true" />
                      <el-table-column label="项目类别" align="center" prop="categoryName" min-width="140" :show-overflow-tooltip="true" />
+                     <el-table-column label="计费类别" align="center" prop="billingCategory" min-width="120" :show-overflow-tooltip="true" />
+                     <el-table-column label="字典单价" align="right" prop="dictUnitPrice" min-width="100">
+                        <template #default="scope">
+                           <span v-if="scope.row.dictUnitPrice">¥{{ Number(scope.row.dictUnitPrice).toFixed(2) }}</span>
+                        </template>
+                     </el-table-column>
+                     <el-table-column label="计价单位" align="center" prop="priceUnit" min-width="100" />
                      <el-table-column label="合同单价" align="center" min-width="120">
                         <template #default="scope">
                            <span style="font-weight: 600; color: #409EFF;">¥{{ Number(scope.row.price).toFixed(2) }}</span>
@@ -1172,34 +1189,79 @@ function loadContractPrice(contractId) {
   })
 }
 
-/** 扁平列表 → 树形结构（大类包小类） */
+/** 扁平列表 → 三层树形结构（大类 → 小类 → 外部计费方式明细行） */
 function buildPriceTree(list) {
-  const map = {}
+  const catMap = {}
   const roots = []
+
+  // 第一遍：收集类别节点（大类/小类）和计费方式明细行
+  // 类别节点不携带计费方式字段（billingId/dictUnitPrice/priceUnit/minQuantity/billingCategory）
+  // 这些字段只属于计费方式明细行（categoryLevel=3）
+  const billingFields = ['billingId', 'billingType', 'billingCategory', 'dictUnitPrice', 'priceUnit', 'minQuantity']
+  function stripBilling(obj) {
+    const o = { ...obj }
+    billingFields.forEach(f => { o[f] = null })
+    return o
+  }
   list.forEach(item => {
-    map[item.categoryId] = { ...item, children: [] }
-  })
-  list.forEach(item => {
-    const node = map[item.categoryId]
-    if (item.parentId && map[item.parentId]) {
-      map[item.parentId].children.push(node)
+    const cid = item.categoryId
+    const bid = item.billingId
+
+    if (bid) {
+      // 计费方式明细行：归到所属小类的 children 下
+      if (!catMap[cid]) {
+        catMap[cid] = { ...stripBilling(item), children: [] }
+      }
+      catMap[cid].children.push({
+        ...item,
+        categoryId: 'billing_' + bid,
+        billingId: bid,
+        categoryName: item.billingCategory,
+        categoryLevel: 3,
+        children: []
+      })
     } else {
+      // 类别行（大类或小类）
+      if (!catMap[cid]) {
+        catMap[cid] = { ...item, children: [] }
+      } else {
+        Object.assign(catMap[cid], item, { children: catMap[cid].children })
+      }
+    }
+  })
+
+  // 第二遍：大类 → 小类 挂载
+  list.forEach(item => {
+    const cid = item.categoryId
+    const node = catMap[cid]
+    if (!node) return
+    if (item.parentId && catMap[item.parentId]) {
+      if (!catMap[item.parentId].children.find(c => c.categoryId === cid)) {
+        catMap[item.parentId].children.push(node)
+      }
+    } else if (!roots.find(r => r.categoryId === cid)) {
       roots.push(node)
     }
   })
+
   return roots
 }
 
-/** 收集单价列表（只取小类行） */
+/** 收集单价列表（只取计费方式明细行，按 billingId 维度） */
 function collectPriceList(contractId) {
   const priceList = []
   priceTableData.value.forEach(group => {
     ;(group.children || []).forEach(child => {
-      priceList.push({
-        id: child.id || null,
-        contractId: contractId,
-        categoryId: child.categoryId,
-        price: child.price
+      ;(child.children || []).forEach(billing => {
+        if (billing.billingId) {
+          priceList.push({
+            id: billing.id || null,
+            contractId: contractId,
+            categoryId: child.categoryId,
+            billingId: billing.billingId,
+            price: billing.price
+          })
+        }
       })
     })
   })
@@ -1366,9 +1428,9 @@ function handleView(row) {
       // 按 categoryId 建索引，方便查大类名
       const catMap = {}
       all.forEach(item => { catMap[item.categoryId] = item })
-      // 只保留有合同单价的记录（小类），并附上大类名
+      // 只保留有合同单价的计费方式明细行（billingId不为空），并附上大类名
       detailPriceList.value = all
-        .filter(item => item.price != null)
+        .filter(item => item.price != null && item.billingId)
         .map(item => ({
           ...item,
           parentName: catMap[item.parentId]?.categoryName || ''
@@ -1388,38 +1450,43 @@ function handleView(row) {
 /** 提交（先保存合同基本信息，拿到ID后再保存合同单价） */
 function submitForm() {
   proxy.$refs["contractRef"].validate(valid => {
-    if (valid) {
-      const isAdd = form.value.id == undefined
-      // 提交前拼接前缀 + 用户输入的后缀
-      const suffix = form.value.contractNo || ""
-      form.value.contractNo = contractPrefix.value + suffix
-
-      const saveContract = isAdd ? addContract(form.value) : updateContract(form.value)
-
-      saveContract.then(response => {
-        // 新增时后端返回合同ID，修改时用已有ID
-        const contractId = isAdd ? response.data : form.value.id
-        // 收集单价列表
-        const priceList = collectPriceList(contractId)
-        // 如果没有小类数据（比如类别树为空），直接关闭
-        if (priceList.length === 0) {
-          proxy.$modal.msgSuccess(isAdd ? "新增成功" : "修改成功")
-          open.value = false
-          getList()
-          return
-        }
-        // 保存单价
-        priceSaving.value = true
-        saveContractPrice(priceList).then(() => {
-          proxy.$modal.msgSuccess(isAdd ? "新增成功" : "修改成功")
-          priceSaving.value = false
-          open.value = false
-          getList()
-        }).catch(() => {
-          priceSaving.value = false
-        })
-      })
+    if (!valid) {
+      proxy.$modal.msgWarning("请先完成基本信息中的必填项（合同编号、合同名称）")
+      activeTab.value = "info"
+      return
     }
+    const isAdd = form.value.id == undefined
+    // 提交前拼接前缀 + 用户输入的后缀
+    const suffix = form.value.contractNo || ""
+    form.value.contractNo = contractPrefix.value + suffix
+
+    const saveContract = isAdd ? addContract(form.value) : updateContract(form.value)
+
+    saveContract.then(response => {
+      // 新增时后端返回合同ID，修改时用已有ID
+      const contractId = isAdd ? response.data : form.value.id
+      // 收集单价列表
+      const priceList = collectPriceList(contractId)
+      // 如果没有计费方式数据（比如类别树为空），直接关闭
+      if (priceList.length === 0) {
+        proxy.$modal.msgSuccess(isAdd ? "新增成功" : "修改成功")
+        open.value = false
+        getList()
+        return
+      }
+      // 保存单价
+      priceSaving.value = true
+      saveContractPrice(priceList).then(() => {
+        proxy.$modal.msgSuccess(isAdd ? "新增成功" : "修改成功")
+        priceSaving.value = false
+        open.value = false
+        getList()
+      }).catch(() => {
+        priceSaving.value = false
+      })
+    }).catch(() => {
+      // 合同基本信息保存失败
+    })
   })
 }
 

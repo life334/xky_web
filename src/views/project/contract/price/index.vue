@@ -28,7 +28,7 @@
       <div slot="header">
         <span>合同单价配置</span>
         <span style="color: #909399; font-size: 13px; margin-left: 12px;">
-          仅小类（二级）需要填写单价
+          仅展示外部计费方式，按计费类别填写合同单价
         </span>
       </div>
 
@@ -42,29 +42,41 @@
         size="default"
         default-expand-all
       >
-        <el-table-column prop="categoryName" label="项目类别" min-width="200" />
-        <el-table-column prop="categoryLevel" label="层级" width="70" align="center">
+        <el-table-column prop="categoryName" label="项目类别 / 计费类别" min-width="220">
           <template slot-scope="scope">
-            <el-tag :type="scope.row.categoryLevel === 1 ? '' : 'info'" size="small" disable-transitions>
-              {{ scope.row.categoryLevel === 1 ? '大类' : '小类' }}
-            </el-tag>
+            <span v-if="scope.row.categoryLevel === 1" style="font-weight: 600;">{{ scope.row.categoryName }}</span>
+            <span v-else-if="scope.row.categoryLevel === 2" style="padding-left: 12px;">{{ scope.row.categoryName }}</span>
+            <span v-else style="padding-left: 28px; color: #606266;">{{ scope.row.billingCategory }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="dictInternalPrice" label="字典内部单价" width="130" align="right">
+        <el-table-column prop="categoryLevel" label="层级" width="70" align="center">
           <template slot-scope="scope">
-            <span v-if="scope.row.categoryLevel === 2">{{ scope.row.dictInternalPrice }}</span>
+            <el-tag v-if="scope.row.categoryLevel === 1" type="" size="small" disable-transitions>大类</el-tag>
+            <el-tag v-else-if="scope.row.categoryLevel === 2" type="info" size="small" disable-transitions>小类</el-tag>
+            <el-tag v-else type="warning" size="small" disable-transitions>计费</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="dictUnitPrice" label="字典单价" width="120" align="right">
+          <template slot-scope="scope">
+            <span v-if="scope.row.billingId">{{ scope.row.dictUnitPrice }}</span>
             <span v-else style="color: #c0c4cc">—</span>
           </template>
         </el-table-column>
-        <el-table-column prop="dictExternalPrice" label="字典外部单价" width="130" align="right">
+        <el-table-column prop="priceUnit" label="计价单位" width="120" align="center">
           <template slot-scope="scope">
-            <span v-if="scope.row.categoryLevel === 2">{{ scope.row.dictExternalPrice }}</span>
+            <span v-if="scope.row.billingId">{{ scope.row.priceUnit }}</span>
+            <span v-else style="color: #c0c4cc">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="minQuantity" label="起步量" width="100" align="right">
+          <template slot-scope="scope">
+            <span v-if="scope.row.billingId">{{ scope.row.minQuantity }}</span>
             <span v-else style="color: #c0c4cc">—</span>
           </template>
         </el-table-column>
         <el-table-column label="合同单价" width="180" align="center">
           <template slot-scope="scope">
-            <template v-if="scope.row.categoryLevel === 2">
+            <template v-if="scope.row.billingId">
               <el-input-number
                 v-model="scope.row.price"
                 :min="0"
@@ -99,10 +111,11 @@
 </template>
 
 <script setup name="ContractPrice">
-import { ref, reactive } from 'vue'
+import { ref, reactive, getCurrentInstance } from 'vue'
 import { listContractPrice, saveContractPrice } from '@/api/project/contractPrice'
 import { listContract } from '@/api/project/contract'
 
+const { proxy } = getCurrentInstance()
 const loading = ref(false)
 const saving = ref(false)
 const contractOptions = ref([])
@@ -128,7 +141,6 @@ function handleContractChange(contractId) {
   loading.value = true
   listContractPrice(contractId).then(res => {
     const flatList = res.data || []
-    // 转为树形（大类包小类）
     tableData.value = buildTree(flatList)
     loading.value = false
   }).catch(() => {
@@ -136,20 +148,50 @@ function handleContractChange(contractId) {
   })
 }
 
-/** 扁平列表 → 树形结构 */
+/** 扁平列表 → 三层树形结构（大类 → 小类 → 计费方式明细行） */
 function buildTree(list) {
   const map = {}
   const roots = []
 
+  // 第一遍：按 categoryId 和 billingId 建立节点
   list.forEach(item => {
-    map[item.categoryId] = { ...item, children: [] }
+    const cid = item.categoryId
+    const bid = item.billingId
+
+    if (bid) {
+      // 计费方式明细行：归到所属小类的 children 下
+      if (!map[cid]) map[cid] = { ...item, categoryId: cid, children: [] }
+      const billingNode = {
+        ...item,
+        categoryId: 'billing_' + bid,
+        billingId: bid,
+        categoryName: item.billingCategory,
+        categoryLevel: 3,
+        children: []
+      }
+      map[cid].children.push(billingNode)
+    } else {
+      // 类别行（大类或小类）
+      if (!map[cid]) {
+        map[cid] = { ...item, children: [] }
+      } else {
+        // 已有占位节点，补充类别信息
+        Object.assign(map[cid], item)
+      }
+    }
   })
 
+  // 第二遍：大类 → 小类 挂载
   list.forEach(item => {
-    const node = map[item.categoryId]
+    const cid = item.categoryId
+    const node = map[cid]
+    if (!node) return
     if (item.parentId && map[item.parentId]) {
-      map[item.parentId].children.push(node)
-    } else {
+      // 避免重复添加
+      if (!map[item.parentId].children.find(c => c.categoryId === cid)) {
+        map[item.parentId].children.push(node)
+      }
+    } else if (!roots.find(r => r.categoryId === cid)) {
       roots.push(node)
     }
   })
@@ -161,23 +203,27 @@ function buildTree(list) {
 function handleSave() {
   if (!queryForm.contractId) return
 
-  // 收集所有小类的单价数据
+  // 收集所有计费方式明细行的单价数据
   const priceList = []
   tableData.value.forEach(group => {
     ;(group.children || []).forEach(child => {
-      priceList.push({
-        id: child.id || null,
-        contractId: queryForm.contractId,
-        categoryId: child.categoryId,
-        price: child.price
+      ;(child.children || []).forEach(billing => {
+        if (billing.billingId) {
+          priceList.push({
+            id: billing.id || null,
+            contractId: queryForm.contractId,
+            categoryId: child.categoryId,
+            billingId: billing.billingId,
+            price: billing.price
+          })
+        }
       })
     })
   })
 
   saving.value = true
   saveContractPrice(priceList).then(() => {
-    this.$modal.msgSuccess('保存成功')
-    // 刷新
+    proxy.$modal.msgSuccess('保存成功')
     handleContractChange(queryForm.contractId)
     saving.value = false
   }).catch(() => {
