@@ -566,8 +566,6 @@ const COLUMNS_STORAGE_KEY = 'project-list-columns'
 const FALLBACK_COLUMNS = [
   { key: 'projectCode', label: '工程编号', type: 'text', group: 'business', prop: 'projectCode', defaultVisible: true },
   { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
-  { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
-  { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
   { key: 'engineeringProject', label: '工程项目', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
   { key: 'relatedProjectCode', label: '关联工程编号', type: 'text', group: 'business', prop: 'relatedProjectCode', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
@@ -578,6 +576,8 @@ const FALLBACK_COLUMNS = [
   { key: 'assignDate', label: '安排日期', type: 'date', group: 'business', prop: 'assignDate', defaultVisible: true },
   { key: 'durationRequire', label: '工期要求', type: 'duration', group: 'business', prop: 'durationRequire', defaultVisible: true },
   { key: 'totalDuration', label: '总时长', type: 'total', group: 'business', prop: 'totalDuration', defaultVisible: true },
+  { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
+  { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
   { key: 'remark', label: '备注', type: 'text', group: 'business', prop: 'remark', defaultVisible: false },
   { key: 'createTime', label: '创建时间', type: 'date', group: 'system', prop: 'createTime', defaultVisible: false },
   { key: 'updateTime', label: '更新时间', type: 'date', group: 'system', prop: 'updateTime', defaultVisible: false }
