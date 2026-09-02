@@ -260,7 +260,7 @@
               <div class="problem-icon">❌</div>
               <div class="problem-body">
                 <div class="problem-title">{{ cPreview.errorCount }} 行无法导入</div>
-                <div class="problem-desc">缺少必填字段或单价解析失败</div>
+                <div class="problem-desc">缺少必填字段（合同编号为空）</div>
               </div>
               <el-button size="small" type="danger" plain @click="downloadCProblemFile('error')">下载明细</el-button>
             </div>
@@ -311,18 +311,9 @@
                   <el-tag size="small" :type="row.contractType === '单价合同' ? 'warning' : ''">{{ row.contractType }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="单价明细" min-width="280">
-                <template #default="{ row }">
-                  <div v-if="row.priceItems && row.priceItems.length">
-                    <div v-for="(p, i) in row.priceItems" :key="i" style="font-size:12px;line-height:1.6">
-                      {{ p.billingCategory }}: {{ fmt(p.unitPrice) }} / {{ p.priceUnit }}
-                      <el-tag v-if="p.warning" size="small" type="danger" style="margin-left:4px">{{ p.warning }}</el-tag>
-                    </div>
-                  </div>
-                  <span v-else>-</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="projectType" label="项目类型" min-width="110" show-overflow-tooltip />
+              <el-table-column prop="surveyAddress" label="测绘地址" min-width="160" show-overflow-tooltip />
+              <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
             </el-table>
           </div>
         </div>

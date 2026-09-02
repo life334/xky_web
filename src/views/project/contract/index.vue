@@ -282,6 +282,18 @@
                   </el-row>
                   <el-row :gutter="20">
                      <el-col :span="8">
+                        <el-form-item label="项目类型" prop="projectType">
+                           <el-input v-model="form.projectType" placeholder="请输入项目类型" maxlength="100" />
+                        </el-form-item>
+                     </el-col>
+                     <el-col :span="8">
+                        <el-form-item label="测绘地址" prop="surveyAddress">
+                           <el-input v-model="form.surveyAddress" placeholder="请输入测绘地址" maxlength="200" />
+                        </el-form-item>
+                     </el-col>
+                  </el-row>
+                  <el-row :gutter="20">
+                     <el-col :span="8">
                         <el-form-item label="联系人" prop="contactName">
                            <el-input v-model="form.contactName" placeholder="请输入联系人" maxlength="50" />
                         </el-form-item>
@@ -530,6 +542,8 @@
                   </el-descriptions-item>
                   <el-descriptions-item label="合同金额">{{ detail.contractAmount != null ? formatAmount(detail.contractAmount, amountUnit) : '' }}</el-descriptions-item>
                   <el-descriptions-item label="委托单位">{{ detail.clientUnit }}</el-descriptions-item>
+                  <el-descriptions-item label="项目类型">{{ detail.extraData ? detail.extraData.projectType : '' }}</el-descriptions-item>
+                  <el-descriptions-item label="测绘地址">{{ detail.extraData ? detail.extraData.surveyAddress : '' }}</el-descriptions-item>
                   <el-descriptions-item label="合同期限">{{ detail.contractPeriod }}</el-descriptions-item>
                   <el-descriptions-item label="联系人">{{ detail.contactName }}</el-descriptions-item>
                   <el-descriptions-item label="联系电话">{{ detail.contactPhone }}</el-descriptions-item>
@@ -1000,14 +1014,27 @@ function getDictLabel(dictList, value) {
 }
 
 /** 查询合同列表（含关联项目数） */
+/** 解析 extra_data JSON 字符串 → 对象（前端统一用对象访问动态字段） */
+function parseExtraData(v) {
+  if (!v) return {}
+  if (typeof v === 'object') return v
+  try {
+    const o = JSON.parse(v)
+    return o && typeof o === 'object' ? o : {}
+  } catch (e) {
+    return {}
+  }
+}
+
 function getList() {
   loading.value = true
   listContract(queryParams.value).then(response => {
     contractList.value = response.rows || []
     total.value = response.total
     loading.value = false
-    // 加载附件计数
+    // 解析动态字段 + 加载附件计数
     contractList.value.forEach(row => {
+      row.extraData = parseExtraData(row.extraData)
       if (row.id) {
         listAttachments(row.id).then(res => {
           const atts = res.data || []
@@ -1049,6 +1076,8 @@ function reset() {
     contractPeriod: undefined,
     paymentTerms: undefined,
     status: undefined,
+    projectType: undefined,
+    surveyAddress: undefined,
     remark: undefined
   }
   proxy.resetForm("contractRef")
@@ -1404,6 +1433,10 @@ function handleUpdate(row) {
   const id = row.id || ids.value[0]
   getContract(id).then(response => {
     form.value = response.data
+    // 解析动态字段到表单顶层字段
+    const extra = parseExtraData(form.value.extraData)
+    form.value.projectType = extra.projectType
+    form.value.surveyAddress = extra.surveyAddress
     // 拆出后缀：如果编号以配置前缀开头则去掉前缀，否则原样展示
     if (form.value.contractNo && contractPrefix.value && form.value.contractNo.startsWith(contractPrefix.value)) {
       form.value.contractNo = form.value.contractNo.substring(contractPrefix.value.length)
@@ -1421,6 +1454,7 @@ function handleUpdate(row) {
 function handleView(row) {
   getContract(row.id).then(response => {
     detail.value = response.data
+    detail.value.extraData = parseExtraData(detail.value.extraData)
     detailOpen.value = true
     // 加载合同单价
     listContractPrice(row.id).then(res => {
@@ -1459,6 +1493,12 @@ function submitForm() {
     // 提交前拼接前缀 + 用户输入的后缀
     const suffix = form.value.contractNo || ""
     form.value.contractNo = contractPrefix.value + suffix
+
+    // 组装动态字段 extraData（后端 extra_data 为 jsonb，需 JSON 字符串）
+    const extra = {}
+    if (form.value.projectType) extra.projectType = form.value.projectType
+    if (form.value.surveyAddress) extra.surveyAddress = form.value.surveyAddress
+    form.value.extraData = Object.keys(extra).length ? JSON.stringify(extra) : null
 
     const saveContract = isAdd ? addContract(form.value) : updateContract(form.value)
 
