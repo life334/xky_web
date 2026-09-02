@@ -39,7 +39,9 @@ export function updateProject(data) {
 export function delProject(id) {
   return request({
     url: '/project/project/' + id,
-    method: 'delete'
+    method: 'delete',
+    // 批量删除需级联清理多张关联表，放宽超时（覆盖全局 10s）
+    timeout: 120000
   })
 }
 
@@ -91,6 +93,23 @@ export function getDistinctValues(field) {
     url: '/project/project/distinctValues',
     method: 'get',
     params: { field }
+  })
+}
+
+// 负责人下拉选项：在职项目经理 ∪ 项目已有负责人（含离职，status='1'）
+export function getLeaderOptions() {
+  return request({
+    url: '/project/project/leaderOptions',
+    method: 'get'
+  })
+}
+
+// 按姓名获取/创建负责人档案（不存在则自动创建停用影子用户，返回 userId）
+export function ensureLeader(name) {
+  return request({
+    url: '/project/project/ensureLeader',
+    method: 'post',
+    params: { name }
   })
 }
 

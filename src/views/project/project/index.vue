@@ -47,7 +47,9 @@
                <div class="filter-item">
                   <div class="filter-item-label">负责人</div>
                   <el-select v-model="queryParams.leaderId" filterable clearable placeholder="全部负责人" style="width: 100%">
-                     <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
+                     <el-option v-for="u in leaderOptions" :key="u.userId" :label="leaderLabel(u)" :value="u.userId">
+                        <span :class="{ 'leader-dimissed': u.status === '1' }">{{ leaderLabel(u) }}</span>
+                     </el-option>
                   </el-select>
                </div>
                <div class="filter-item">
@@ -258,13 +260,16 @@
                </el-col>
                <el-col :span="8">
                   <el-form-item label="负责人" prop="leaderIds">
-                     <el-select v-model="form.leaderIds" multiple filterable placeholder="请选择项目负责人" style="width: 100%" @change="onLeaderChange">
-                        <el-option
-                           v-for="user in leaderOptions"
-                           :key="user.userId"
-                           :label="user.nickName"
-                           :value="user.userId"
-                        />
+                     <el-select
+                        v-model="form.leaderIds"
+                        multiple filterable allow-create default-first-option
+                        placeholder="选择或输入负责人姓名（不存在将自动建档）"
+                        style="width: 100%"
+                        @change="onLeaderChange"
+                     >
+                        <el-option v-for="user in leaderOptions" :key="user.userId" :label="leaderLabel(user)" :value="user.userId">
+                           <span :class="{ 'leader-dimissed': user.status === '1' }">{{ leaderLabel(user) }}</span>
+                        </el-option>
                      </el-select>
                   </el-form-item>
                </el-col>
@@ -530,10 +535,9 @@
 </template>
 
 <script setup name="Project">
-import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues, getProjectColumns, getRelatedCandidates } from "@/api/project/project"
+import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues, getProjectColumns, getRelatedCandidates, getLeaderOptions, ensureLeader } from "@/api/project/project"
 import cache from '@/plugins/cache'
 import { categoryTreeselectFull } from "@/api/project/category"
-import { listUserOptions } from "@/api/system/user"
 import { listTask } from "@/api/project/task"
 import { listContract } from "@/api/project/contract"
 import ExcelImportDialog from "@/components/ExcelImportDialog"
@@ -660,7 +664,6 @@ const relatedFieldVisible = computed(() => {
 const relatedFieldRequired = computed(() => {
   return currentSubCategory.value && currentSubCategory.value.linkRule === 2
 })
-const userOptions = ref([])
 const leaderOptions = ref([])
 const contractOptions = ref([])
 const contractLoading = ref(false)
@@ -1036,18 +1039,16 @@ function loadCategoryTree() {
   })
 }
 
-/** 加载用户列表（搜索栏用，全量） */
-function loadUserList() {
-  listUserOptions({ pageNum: 1, pageSize: 1000 }).then(response => {
-    userOptions.value = response.rows || []
-  })
+/** 加载项目负责人下拉选项：在职项目经理 ∪ 项目已有负责人（含离职，打标记） */
+function loadLeaderList() {
+  getLeaderOptions().then(res => {
+    leaderOptions.value = res.data || []
+  }).catch(() => {})
 }
 
-/** 加载项目负责人列表（仅"项目经理"岗位） */
-function loadLeaderList() {
-  listUserOptions({ pageNum: 1, pageSize: 1000, params: { postName: '项目经理' } }).then(response => {
-    leaderOptions.value = response.rows || []
-  })
+/** 负责人选项文案：离职用户追加「已离职」标记 */
+function leaderLabel(u) {
+  return u.status === '1' ? `${u.nickName}（已离职）` : u.nickName
 }
 
 /** 负责人变化联动安排日期：首次选人填当前日期（仅空时填，不覆盖手填）；清空负责人则清空安排日期 */
@@ -1154,7 +1155,6 @@ function toggleRow(row) {
 /** 新增按钮操作 */
 function handleAdd() {
   reset()
-  loadUserList()
   loadLeaderList()
   open.value = true
   title.value = "新增项目"
@@ -1163,7 +1163,6 @@ function handleAdd() {
 /** 修改按钮操作 */
 function handleUpdate(row) {
   reset()
-  loadUserList()
   loadLeaderList()
   const id = row.id || ids.value[0]
   getProject(id).then(response => {
@@ -1298,7 +1297,7 @@ function submitPasteData() {
 
 /** 提交按钮 */
 function submitForm() {
-  proxy.$refs["projectRef"].validate(valid => {
+  proxy.$refs["projectRef"].validate(async valid => {
     if (valid) {
       // 总时长由后端自动计算：进行中项目提交时不携带，后端按"安排日期→今天"重算；
       // 办结/归档项目保留固定值（后端跳过重算）
@@ -1306,22 +1305,54 @@ function submitForm() {
       if (st !== 'closed' && st !== 'archived') {
         form.value.totalDuration = null
       }
+      // 手动输入的新负责人（字符串姓名）→ 调后端建档换取 userId
+      await resolveNewLeaders()
       const savedId = form.value.id
       if (savedId != undefined) {
         updateProject(form.value).then(response => {
           proxy.$modal.msgSuccess("修改成功")
           open.value = false
+          loadLeaderList()
           refreshListStayOnRow(savedId)
         })
       } else {
         addProject(form.value).then(response => {
           proxy.$modal.msgSuccess("新增成功")
           open.value = false
+          loadLeaderList()
           refreshListStayOnRow(undefined)
         })
       }
     }
   })
+}
+
+/** 把 leaderIds 中手动输入的姓名项（allow-create 产生的字符串）建档换为 userId，并去重 */
+async function resolveNewLeaders() {
+  const raw = form.value.leaderIds || []
+  const newNames = [...new Set(raw.filter(v => typeof v === 'string' && v.trim()).map(v => v.trim()))]
+  if (newNames.length === 0) {
+    // 仍做一次数字去重（防御）
+    form.value.leaderIds = [...new Set(raw)]
+    return
+  }
+  // 姓名若与已有选项同名则直接复用其 userId，避免重复建档
+  const nameToId = new Map()
+  newNames.forEach(name => {
+    const hit = leaderOptions.value.find(u => u.nickName === name)
+    if (hit) nameToId.set(name, hit.userId)
+  })
+  const unresolved = newNames.filter(n => !nameToId.has(n))
+  if (unresolved.length > 0) {
+    try {
+      const results = await Promise.all(unresolved.map(n => ensureLeader(n)))
+      unresolved.forEach((n, i) => nameToId.set(n, results[i].userId))
+    } catch (e) {
+      proxy.$modal.msgError("负责人建档失败：" + (e.msg || e.message || "未知错误"))
+      throw e
+    }
+  }
+  form.value.leaderIds = [...new Set(raw.map(v => typeof v === 'string' ? nameToId.get(v.trim()) : v).filter(v => v != null))]
 }
 
 /** 保存后刷新列表并定位到刚保存的项目所在页：
@@ -1344,10 +1375,15 @@ function handleDelete(row) {
   const idsToDelete = row.id ? [row.id] : ids.value
   const name = row.id ? row.projectName : "所选项目"
   proxy.$modal.confirm('是否确认删除"' + name + '"?').then(function() {
-    return delProject(idsToDelete.join(","))
-  }).then(() => {
-    getList()
-    proxy.$modal.msgSuccess("删除成功")
+    // 全屏遮罩锁页，防止删除过程中重复点击/操作
+    proxy.$modal.loading("正在删除，请稍候...")
+    delProject(idsToDelete.join(",")).then(() => {
+      proxy.$modal.closeLoading()
+      getList()
+      proxy.$modal.msgSuccess("删除成功")
+    }).catch(() => {
+      proxy.$modal.closeLoading()
+    })
   }).catch(() => {})
 }
 
@@ -1366,7 +1402,7 @@ if (searchMemory.projectCode && !queryParams.value.projectCode) {
 loadColumns()
 loadSavedSchemes()
 loadCategoryTree()
-loadUserList()
+loadLeaderList()
 loadDistinctValues()
 </script>
 
@@ -1399,6 +1435,10 @@ loadDistinctValues()
   font-size: 13px;
   color: #606266;
   margin-right: 4px;
+}
+/* 负责人下拉中的离职用户选项：灰色弱化显示 */
+.leader-dimissed {
+  color: #909399;
 }
 .status-capsule {
   display: inline-flex;

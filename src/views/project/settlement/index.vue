@@ -146,6 +146,14 @@
                         <el-table-column label="项目类别" align="center" prop="categoryName" width="200" show-overflow-tooltip>
                            <template #default="s"><span v-if="!s.row.categoryName" class="cell-placeholder">-</span>{{ s.row.categoryName }}</template>
                         </el-table-column>
+                        <el-table-column label="子项" align="center" width="100">
+                           <template #default="s">
+                              <span v-if="s.row._isSummary"></span>
+                              <span v-else-if="expandDetails[scope.row.projectId].hasMultipleSubItems && s.row.subItemNo > 0">{{ '第' + s.row.subItemNo + '条' }}</span>
+                              <span v-else-if="s.row.subItemName">{{ s.row.subItemName }}</span>
+                              <span v-else class="cell-placeholder">-</span>
+                           </template>
+                        </el-table-column>
                         <el-table-column label="计费方式" align="center" width="200">
                            <template #default="s">
                               <template v-if="s.row._isSummary">
@@ -299,48 +307,55 @@
                <span class="section-output-mini">产值合计：{{ formatMoney(internalOutputTotal) }}</span>
             </el-divider>
 
-            <!-- 按负责人卡片 -->
+            <!-- 按负责人卡片，内部按记录分栏 -->
             <div v-for="leader in leaderList" :key="leader.userId" class="leader-card">
                <div class="leader-card-header">
                   <span class="leader-name">{{ leader.nickName }}</span>
                   <span class="leader-mini-total">内部：{{ formatMoney(leaderInternalOutput(leader.userId)) }}</span>
+                  <el-button type="primary" v-if="false" size="small" icon="Plus" plain style="margin-left: auto" @click="addInternalRecord(leader)">新增记录</el-button>
                </div>
 
-               <!-- 内部快速录入栏 -->
-               <div class="quick-add-bar">
-                  <span class="qa-label">项目类别</span>
-                  <el-select v-model="leader.quickInternalCat" placeholder="选择项目类别" style="width: 220px" @change="(val) => onQuickCatChange(val, leader, 'internal')">
-                     <el-option v-for="o in internalBillingOptions(leader.userId)" :key="o.value" :label="o.label" :value="o.value" />
-                  </el-select>
-                  <span class="qa-label">工作量</span>
-                  <el-input-number v-model="leader.quickInternalWorkload" :min="0" :precision="2" controls-position="right" style="width: 130px" :disabled="!leader.quickInternalCat" @keyup.enter="quickAddWorkload(leader, 'internal')" />
-                  <span class="qa-label">单价</span>
-                  <el-input-number v-model="leader.quickInternalPrice" :min="0" :precision="2" controls-position="right" style="width: 120px" :disabled="!leader.quickInternalCat" />
-                  <span class="qa-unit" v-if="leader.quickInternalUnit">{{ leader.quickInternalUnit }}</span>
-                  <el-button type="primary" size="small" icon="Plus" :disabled="!leader.quickInternalCat || leader.quickInternalWorkload == null" @click="quickAddWorkload(leader, 'internal')">添加</el-button>
-               </div>
+               <!-- 按记录分栏：每条记录一个子卡片 -->
+               <div v-for="rec in leader.records" :key="leader.userId + '-' + rec.subItemNo" class="record-card">
+                  <div v-if="leader.records.length > 1" class="record-card-header">
+                     <span class="record-name">第 {{ rec.subItemNo }} 条</span>
+                  </div>
 
-               <!-- 内部已录入行 -->
-               <el-table :data="internalRowsByUser(leader.userId)" border size="small" :row-class-name="() => 'wl-row-internal'">
-                  <el-table-column label="项目类别" prop="billingCategory" align="center" min-width="120" />
-                  <el-table-column label="工作量" align="center" width="120">
-                     <template #default="scope"><el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="calcRow(scope.row)" /></template>
-                  </el-table-column>
-                  <el-table-column label="单价" align="center" width="120">
-                     <template #default="scope"><el-input-number v-model="scope.row.unitPrice" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="onUnitPriceChange(scope.row)" /></template>
-                  </el-table-column>
-                  <el-table-column label="单位" prop="priceUnit" align="center" width="70" />
-                  <el-table-column label="产值" align="center" min-width="110">
-                     <template #default="scope">
-                        <span class="row-output">{{ scope.row.output != null ? formatMoney(scope.row.output) : '-' }}</span>
-                        <div v-if="calcExpr(scope.row)" class="cell-sub calc-hint" style="display:none">{{ calcExpr(scope.row) }}</div>
-                     </template>
-                  </el-table-column>
-                  <el-table-column label="操作" align="center" width="60">
-                     <template #default="scope"><el-button link type="danger" icon="Delete" @click="removeWorkloadRowByIdx(scope.row, leader.userId, 'internal')" /></template>
-                  </el-table-column>
-               </el-table>
-               <div v-if="!internalRowsByUser(leader.userId).length" class="empty-hint" style="display:none">暂无内部工作量，请在上方录入</div>
+                  <!-- 内部快速录入栏（归属该记录） -->
+                  <div class="quick-add-bar">
+                     <span class="qa-label">项目类别</span>
+                     <el-select v-model="rec.quickInternalCat" placeholder="选择项目类别" style="width: 220px" @change="(val) => onQuickCatChange(val, rec, 'internal')">
+                        <el-option v-for="o in internalBillingOptions(rec.userId, rec.subItemNo)" :key="o.value" :label="o.label" :value="o.value" />
+                     </el-select>
+                     <span class="qa-label">工作量</span>
+                     <el-input-number v-model="rec.quickInternalWorkload" :min="0" :precision="2" controls-position="right" style="width: 130px" :disabled="!rec.quickInternalCat" @keyup.enter="quickAddWorkload(rec, 'internal')" />
+                     <span class="qa-label">单价</span>
+                     <el-input-number v-model="rec.quickInternalPrice" :min="0" :precision="2" controls-position="right" style="width: 120px" :disabled="!rec.quickInternalCat" />
+                     <span class="qa-unit" v-if="rec.quickInternalUnit">{{ rec.quickInternalUnit }}</span>
+                     <el-button type="primary" size="small" icon="Plus" :disabled="!rec.quickInternalCat || rec.quickInternalWorkload == null" @click="quickAddWorkload(rec, 'internal')">添加</el-button>
+                  </div>
+
+                  <!-- 该记录内部已录入行 -->
+                  <el-table :data="internalRowsByUserAndSub(rec.userId, rec.subItemNo)" border size="small" :row-class-name="() => 'wl-row-internal'">
+                     <el-table-column label="项目类别" prop="billingCategory" align="center" min-width="120" />
+                     <el-table-column label="工作量" align="center" width="120">
+                        <template #default="scope"><el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="calcRow(scope.row)" /></template>
+                     </el-table-column>
+                     <el-table-column label="单价" align="center" width="120">
+                        <template #default="scope"><el-input-number v-model="scope.row.unitPrice" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="onUnitPriceChange(scope.row)" /></template>
+                     </el-table-column>
+                     <el-table-column label="单位" prop="priceUnit" align="center" width="70" />
+                     <el-table-column label="产值" align="center" min-width="110">
+                        <template #default="scope">
+                           <span class="row-output">{{ scope.row.output != null ? formatMoney(scope.row.output) : '-' }}</span>
+                           <div v-if="calcExpr(scope.row)" class="cell-sub calc-hint" style="display:none">{{ calcExpr(scope.row) }}</div>
+                        </template>
+                     </el-table-column>
+                     <el-table-column label="操作" align="center" width="60">
+                        <template #default="scope"><el-button link type="danger" icon="Delete" @click="removeWorkloadRowByIdx(scope.row, leader.userId, 'internal')" /></template>
+                     </el-table-column>
+                  </el-table>
+               </div>
             </div>
 
             <!-- 外部工作量区（不按人录入，直接按项目类别录入） -->
@@ -350,41 +365,51 @@
             </el-divider>
 
             <div class="leader-card">
-               <!-- 外部快速录入栏（统一，不挂负责人） -->
-               <div class="quick-add-bar">
-                  <span class="qa-label">项目类别</span>
-                  <el-select v-model="quickExternalCat" placeholder="选择项目类别" style="width: 220px" @change="(val) => onQuickCatChange(val, null, 'external')">
-                     <el-option v-for="o in externalBillingOptions()" :key="o.value" :label="o.label" :value="o.value" />
-                  </el-select>
-                  <span class="qa-label">工作量</span>
-                  <el-input-number v-model="quickExternalWorkload" :min="0" :precision="2" controls-position="right" style="width: 130px" :disabled="!quickExternalCat" @keyup.enter="quickAddWorkload(null, 'external')" />
-                  <span class="qa-label">单价</span>
-                  <el-input-number v-model="quickExternalPrice" :min="0" :precision="2" controls-position="right" style="width: 120px" :disabled="!quickExternalCat" />
-                  <span class="qa-unit" v-if="quickExternalUnit">{{ quickExternalUnit }}</span>
-                  <el-button type="primary" size="small" icon="Plus" :disabled="!quickExternalCat || quickExternalWorkload == null" @click="quickAddWorkload(null, 'external')">添加</el-button>
+               <div style="padding: 10px 12px 0; display: flex; justify-content: flex-end">
+                  <el-button v-if="false" type="primary" size="small" icon="Plus" plain @click="addExternalRecord">新增记录</el-button>
                </div>
 
-               <!-- 外部已录入行（统一表格，显示所有外部工作量） -->
-               <el-table :data="externalRows" border size="small" :row-class-name="() => 'wl-row-external'">
-                  <el-table-column label="项目类别" prop="billingCategory" align="center" min-width="120" />
-                  <el-table-column label="工作量" align="center" width="120">
-                     <template #default="scope"><el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="calcRow(scope.row)" /></template>
-                  </el-table-column>
-                  <el-table-column label="单价" align="center" width="120">
-                     <template #default="scope"><el-input-number v-model="scope.row.unitPrice" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="onUnitPriceChange(scope.row)" /></template>
-                  </el-table-column>
-                  <el-table-column label="单位" prop="priceUnit" align="center" width="70" />
-                  <el-table-column label="产值" align="center" min-width="110">
-                     <template #default="scope">
-                        <span class="row-output">{{ scope.row.output != null ? formatMoney(scope.row.output) : '-' }}</span>
-                        <div v-if="calcExpr(scope.row)" class="cell-sub calc-hint" style="display:none">{{ calcExpr(scope.row) }}</div>
-                     </template>
-                  </el-table-column>
-                  <el-table-column label="操作" align="center" width="60">
-                     <template #default="scope"><el-button link type="danger" icon="Delete" @click="removeWorkloadRowByIdx(scope.row, null, 'external')" /></template>
-                  </el-table-column>
-               </el-table>
-               <div v-if="!externalRows.length" class="empty-hint" style="display:none">暂无外部工作量，请在上方录入</div>
+               <!-- 外部按记录分栏：每条记录一个子卡片 -->
+               <div v-for="rec in externalRecords" :key="'ext-' + rec.subItemNo" class="record-card">
+                  <div v-if="externalRecords.length > 1" class="record-card-header">
+                     <span class="record-name">第 {{ rec.subItemNo }} 条</span>
+                  </div>
+
+                  <!-- 外部快速录入栏（归属该记录） -->
+                  <div class="quick-add-bar">
+                     <span class="qa-label">项目类别</span>
+                     <el-select v-model="rec.quickExternalCat" placeholder="选择项目类别" style="width: 220px" @change="(val) => onQuickCatChange(val, rec, 'external')">
+                        <el-option v-for="o in externalBillingOptions(rec.subItemNo)" :key="o.value" :label="o.label" :value="o.value" />
+                     </el-select>
+                     <span class="qa-label">工作量</span>
+                     <el-input-number v-model="rec.quickExternalWorkload" :min="0" :precision="2" controls-position="right" style="width: 130px" :disabled="!rec.quickExternalCat" @keyup.enter="quickAddWorkload(rec, 'external')" />
+                     <span class="qa-label">单价</span>
+                     <el-input-number v-model="rec.quickExternalPrice" :min="0" :precision="2" controls-position="right" style="width: 120px" :disabled="!rec.quickExternalCat" />
+                     <span class="qa-unit" v-if="rec.quickExternalUnit">{{ rec.quickExternalUnit }}</span>
+                     <el-button type="primary" size="small" icon="Plus" :disabled="!rec.quickExternalCat || rec.quickExternalWorkload == null" @click="quickAddWorkload(rec, 'external')">添加</el-button>
+                  </div>
+
+                  <!-- 该记录外部已录入行 -->
+                  <el-table :data="externalRowsBySub(rec.subItemNo)" border size="small" :row-class-name="() => 'wl-row-external'">
+                     <el-table-column label="项目类别" prop="billingCategory" align="center" min-width="120" />
+                     <el-table-column label="工作量" align="center" width="120">
+                        <template #default="scope"><el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="calcRow(scope.row)" /></template>
+                     </el-table-column>
+                     <el-table-column label="单价" align="center" width="120">
+                        <template #default="scope"><el-input-number v-model="scope.row.unitPrice" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="onUnitPriceChange(scope.row)" /></template>
+                     </el-table-column>
+                     <el-table-column label="单位" prop="priceUnit" align="center" width="70" />
+                     <el-table-column label="产值" align="center" min-width="110">
+                        <template #default="scope">
+                           <span class="row-output">{{ scope.row.output != null ? formatMoney(scope.row.output) : '-' }}</span>
+                           <div v-if="calcExpr(scope.row)" class="cell-sub calc-hint" style="display:none">{{ calcExpr(scope.row) }}</div>
+                        </template>
+                     </el-table-column>
+                     <el-table-column label="操作" align="center" width="60">
+                        <template #default="scope"><el-button link type="danger" icon="Delete" @click="removeWorkloadRowByIdx(scope.row, null, 'external')" /></template>
+                     </el-table-column>
+                  </el-table>
+               </div>
             </div>
 
             <!-- 产值统计条 -->
@@ -756,11 +781,8 @@ const workloadSaving = ref(false)
 const paymentSaving = ref(false)
 const editEngineeringProject = ref('')
 const leaderList = ref([])
-// 外部工作量快速录入栏（不按负责人，顶层变量）
-const quickExternalCat = ref(null)
-const quickExternalWorkload = ref(null)
-const quickExternalPrice = ref(null)
-const quickExternalUnit = ref('')
+// 外部工作量记录列表（外部不挂负责人，按记录号分栏；每项含快速录入栏状态）
+const externalRecords = ref([])
 
 /** 工作量表单：仅含 workloads（工作量弹窗使用） */
 const workloadForm = ref({ workloads: [] })
@@ -793,6 +815,8 @@ const contractPriceMap = ref({})
 const clientUnitOptions = ref([])
 /** 全量计费方式：categoryId -> [{billingType, billingCategory, unitPrice, priceUnit, minQuantity}] */
 const billingMap = ref({})
+/** 当前编辑项目对应的小类 id（用于下拉只显示该小类下的计费类别） */
+const currentProjectCategoryId = ref(null)
 
 // 新增：智能查询面板
 const assignDateRange = ref([])
@@ -836,12 +860,23 @@ const data = reactive({
 
 const { queryParams, editForm } = toRefs(data)
 
-// 内部产值合计（按行 billingType 分组求和）
+// 内部产值合计（含「管线新测 + 管线修测」保底 6000：差额只进合计，不改变各行产值）
 const internalOutputTotal = computed(() => {
   let sum = 0
+  let reviseSum = 0
+  let hasRevise = false
   workloadForm.value.workloads.forEach(row => {
-    if (row.billingType === 'internal' && row.output) sum += Number(row.output)
+    if (row.billingType !== 'internal' || row.output == null) return
+    const v = Number(row.output)
+    sum += v
+    if (row.billingCategory === '管线新测' || row.billingCategory === '管线修测') {
+      reviseSum += v
+      hasRevise = true
+    }
   })
+  if (hasRevise && reviseSum < 6000) {
+    sum = sum - reviseSum + 6000
+  }
   return sum
 })
 
@@ -858,8 +893,18 @@ const externalOutputTotal = computed(() => {
 const internalRowCount = computed(() => workloadForm.value.workloads.filter(r => r.billingType === 'internal').length)
 // 外部计费行数
 const externalRowCount = computed(() => workloadForm.value.workloads.filter(r => r.billingType === 'external').length)
-// 外部工作量行（不按人分组，统一展示）
-const externalRows = computed(() => workloadForm.value.workloads.filter(r => r.billingType === 'external'))
+/** 某记录的外部行（按记录 subItemNo 归属） */
+function externalRowsBySub(subItemNo) {
+  return workloadForm.value.workloads.filter(r => r.billingType === 'external' && Number(r.subItemNo) === Number(subItemNo))
+}
+// 是否存在多条记录（subItemNo 去重 > 1），用于决定是否显示「第N条」记录头
+const hasMultipleSubItems = computed(() => {
+  const set = new Set()
+  workloadForm.value.workloads.forEach(r => {
+    if (r.subItemNo != null && Number(r.subItemNo) > 0) set.add(Number(r.subItemNo))
+  })
+  return set.size > 1
+})
 
 // 退款合计（多笔求和）
 const refundTotal = computed(() => {
@@ -1082,16 +1127,23 @@ function loadExpandDetail(row) {
   expandDetails[row.projectId] = { loading: true, workloads: [], payments: [] }
   getSettlementDetail(row.projectId).then(res => {
     const detail = res.data || {}
+    const rawWorkloads = detail.workloads || []
+    const subSet = new Set()
+    rawWorkloads.forEach(w => { if (w.subItemNo != null && Number(w.subItemNo) > 0) subSet.add(Number(w.subItemNo)) })
     expandDetails[row.projectId] = {
       loading: false,
+      hasMultipleSubItems: subSet.size > 1,
       workloads: (() => {
-        const sorted = (detail.workloads || [])
+        const sorted = rawWorkloads
           .map(w => ({
             ...w,
             output: w.internalOutput != null ? w.internalOutput : (w.externalOutput != null ? w.externalOutput : null)
           }))
           .sort((a, b) => {
-            // 外部在前、内部在后
+            // 先按子项（记录）排序，同一记录内外部在前、内部在后
+            const an = Number(a.subItemNo) || 0
+            const bn = Number(b.subItemNo) || 0
+            if (an !== bn) return an - bn
             const order = { external: 0, internal: 1 }
             return (order[a.billingType] ?? 2) - (order[b.billingType] ?? 2)
           })
@@ -1137,7 +1189,7 @@ function loadExpandDetail(row) {
       })
     }
   }).catch(() => {
-    expandDetails[row.projectId] = { loading: false, workloads: [], payments: [] }
+    expandDetails[row.projectId] = { loading: false, hasMultipleSubItems: false, workloads: [], payments: [] }
     proxy.$modal.msgError("加载结算明细失败")
   })
 }
@@ -1282,6 +1334,7 @@ function handleEdit(row) {
       billingMap.value = bMap
 
       const detail = detailRes.data
+      currentProjectCategoryId.value = detail.project ? detail.project.projectCategoryId : null
       const payments = detail.payments || []
       const workloads = detail.workloads || []
 
@@ -1386,6 +1439,7 @@ function handleEditWorkload(row) {
       billingMap.value = bMap
 
       const detail = detailRes.data
+      currentProjectCategoryId.value = detail.project ? detail.project.projectCategoryId : null
       const workloads = detail.workloads || []
 
       // 解析合同单价映射
@@ -1413,7 +1467,9 @@ function handleEditWorkload(row) {
           externalPrice: w.externalPrice,
           internalOutput: w.internalOutput,
           externalOutput: w.externalOutput,
-          output: output != null ? Number(output) : null
+          output: output != null ? Number(output) : null,
+          subItemNo: w.subItemNo != null ? Number(w.subItemNo) : null,
+          subItemName: w.subItemName || null
         }
       })
 
@@ -1424,14 +1480,38 @@ function handleEditWorkload(row) {
       const leaderSource = filtered.length > 0 ? filtered : userOptions.value
       leaderOptions.value = leaderSource
 
-      // 构建负责人卡片列表（含快速录入栏状态）
-      leaderList.value = leaderSource.map(u => ({
-        userId: u.userId,
-        nickName: u.nickName,
-        quickInternalCat: null,
-        quickInternalWorkload: null,
-        quickInternalPrice: null,
-        quickInternalUnit: ''
+      // 构建负责人卡片列表（含按记录分栏的快速录入栏状态）
+      leaderList.value = leaderSource.map(u => {
+        const uid = u.userId
+        // 该负责人内部工作量的 distinct subItemNo（记录号），兜底 [1] 保证可录入
+        const subNos = [...new Set(
+          workloadForm.value.workloads
+            .filter(w => w.billingType === 'internal' && Number(w.userId) === Number(uid))
+            .map(w => w.subItemNo != null ? Number(w.subItemNo) : 0)
+        )].sort((a, b) => a - b)
+        const records = (subNos.length ? subNos : [1]).map(no => ({
+          userId: uid,
+          subItemNo: no,
+          quickInternalCat: null,
+          quickInternalWorkload: null,
+          quickInternalPrice: null,
+          quickInternalUnit: ''
+        }))
+        return { userId: uid, nickName: u.nickName, records }
+      })
+
+      // 构建外部记录列表（外部不挂负责人，按记录号分栏）
+      const extNos = [...new Set(
+        workloadForm.value.workloads
+          .filter(w => w.billingType === 'external')
+          .map(w => w.subItemNo != null ? Number(w.subItemNo) : 0)
+      )].sort((a, b) => a - b)
+      externalRecords.value = (extNos.length ? extNos : [1]).map(no => ({
+        subItemNo: no,
+        quickExternalCat: null,
+        quickExternalWorkload: null,
+        quickExternalPrice: null,
+        quickExternalUnit: ''
       }))
 
       workloadOpen.value = true
@@ -1521,26 +1601,69 @@ function leaderExternalOutput(userId) {
   return sum
 }
 
-/** 某负责人内部行 */
-function internalRowsByUser(userId) {
-  return workloadForm.value.workloads.filter(r => Number(r.userId) === Number(userId) && r.billingType === 'internal')
+/** 某负责人某记录的内部行（按记录 subItemNo 归属） */
+function internalRowsByUserAndSub(userId, subItemNo) {
+  return workloadForm.value.workloads.filter(r => Number(r.userId) === Number(userId) && r.billingType === 'internal' && Number(r.subItemNo) === Number(subItemNo))
 }
 
-/** 某负责人外部行 */
-function externalRowsByUser(userId) {
-  return workloadForm.value.workloads.filter(r => Number(r.userId) === Number(userId) && r.billingType === 'external')
+/** 计算下一条新记录的记录号（内外部共用一个记录号空间，取全局最大 + 1） */
+function nextSubItemNo() {
+  let max = 0
+  workloadForm.value.workloads.forEach(r => {
+    const n = Number(r.subItemNo)
+    if (n > max) max = n
+  })
+  leaderList.value.forEach(l => l.records.forEach(rc => {
+    const n = Number(rc.subItemNo)
+    if (n > max) max = n
+  }))
+  externalRecords.value.forEach(rc => {
+    const n = Number(rc.subItemNo)
+    if (n > max) max = n
+  })
+  return max + 1
 }
 
-/** 内部计费方式下拉选项（聚合所有类别下的内部计费方式，已过滤当前负责人已添加过的类别） */
-function internalBillingOptions(userId) {
+/** 内部区：为指定负责人新增一条空白记录 */
+function addInternalRecord(leader) {
+  leader.records.push({
+    userId: leader.userId,
+    subItemNo: nextSubItemNo(),
+    quickInternalCat: null,
+    quickInternalWorkload: null,
+    quickInternalPrice: null,
+    quickInternalUnit: ''
+  })
+}
+
+/** 外部区：新增一条空白记录 */
+function addExternalRecord() {
+  externalRecords.value.push({
+    subItemNo: nextSubItemNo(),
+    quickExternalCat: null,
+    quickExternalWorkload: null,
+    quickExternalPrice: null,
+    quickExternalUnit: ''
+  })
+}
+
+/** 当前项目小类下计费类别所属的 categoryId 列表（未绑定小类时回退全部类别，保持旧行为） */
+function scopedCategoryIds() {
+  const cid = currentProjectCategoryId.value
+  if (cid != null && billingMap.value[cid]) return [cid]
+  return Object.keys(billingMap.value)
+}
+
+/** 内部计费方式下拉选项（仅当前项目小类下的内部计费方式，已过滤当前负责人当前记录已添加过的类别） */
+function internalBillingOptions(userId, subItemNo) {
   const opts = []
   const seen = new Set()
   const usedKeys = new Set(
     workloadForm.value.workloads
-      .filter(r => Number(r.userId) === Number(userId) && r.billingType === 'internal')
+      .filter(r => Number(r.userId) === Number(userId) && r.billingType === 'internal' && Number(r.subItemNo) === Number(subItemNo))
       .map(r => r.billingKey)
   )
-  Object.keys(billingMap.value).forEach(catId => {
+  scopedCategoryIds().forEach(catId => {
     const list = billingMap.value[catId] || []
     list.filter(b => b.billingType === 'internal').forEach(b => {
       const val = b.billingType + '#' + b.billingCategory
@@ -1555,16 +1678,16 @@ function internalBillingOptions(userId) {
   return opts
 }
 
-/** 外部计费方式下拉选项（聚合所有类别下的外部计费方式，已过滤已添加过的类别） */
-function externalBillingOptions() {
+/** 外部计费方式下拉选项（聚合所有类别下的外部计费方式，已过滤当前记录已添加过的类别） */
+function externalBillingOptions(subItemNo) {
   const opts = []
   const seen = new Set()
   const usedKeys = new Set(
     workloadForm.value.workloads
-      .filter(r => r.billingType === 'external')
+      .filter(r => r.billingType === 'external' && Number(r.subItemNo) === Number(subItemNo))
       .map(r => r.billingKey)
   )
-  Object.keys(billingMap.value).forEach(catId => {
+  scopedCategoryIds().forEach(catId => {
     const list = billingMap.value[catId] || []
     list.filter(b => b.billingType === 'external').forEach(b => {
       const val = b.billingType + '#' + b.billingCategory
@@ -1580,67 +1703,69 @@ function externalBillingOptions() {
 }
 
 /** 快速录入栏选择项目类别后带出单价（外部不依赖负责人） */
-function onQuickCatChange(val, leader, type) {
+function onQuickCatChange(val, rec, type) {
   if (type === 'external') {
-    const options = externalBillingOptions()
+    const options = externalBillingOptions(rec.subItemNo)
     const opt = options.find(o => o.value === val)
     if (!opt || !opt.raw) {
-      quickExternalPrice.value = null
-      quickExternalUnit.value = ''
+      rec.quickExternalPrice = null
+      rec.quickExternalUnit = ''
       return
     }
     const b = opt.raw
     const cp = contractPriceMap.value[opt.categoryId]
     if (cp && cp.price != null) {
-      quickExternalPrice.value = cp.price
+      rec.quickExternalPrice = cp.price
     } else {
-      quickExternalPrice.value = b.unitPrice
+      rec.quickExternalPrice = b.unitPrice
     }
-    quickExternalUnit.value = b.priceUnit || ''
+    rec.quickExternalUnit = b.priceUnit || ''
     return
   }
-  // 内部：按负责人
-  const options = internalBillingOptions(leader.userId)
+  // 内部：按负责人 + 记录
+  const options = internalBillingOptions(rec.userId, rec.subItemNo)
   const opt = options.find(o => o.value === val)
   if (!opt || !opt.raw) {
-    leader.quickInternalPrice = null
-    leader.quickInternalUnit = ''
+    rec.quickInternalPrice = null
+    rec.quickInternalUnit = ''
     return
   }
   const b = opt.raw
-  leader.quickInternalPrice = b.unitPrice
-  leader.quickInternalUnit = b.priceUnit || ''
+  rec.quickInternalPrice = b.unitPrice
+  rec.quickInternalUnit = b.priceUnit || ''
 }
 
-/** 快速添加工作量行（外部不依赖负责人，userId为null）；兜底：若同类别已存在则累加工作量 */
-function quickAddWorkload(leader, type) {
+/** 快速添加工作量行（外部不依赖负责人；内部按记录 rec 归属 subItemNo）；兜底：若同类别已存在则累加工作量 */
+function quickAddWorkload(rec, type) {
   const isExternal = type === 'external'
-  const cat = isExternal ? quickExternalCat.value : leader.quickInternalCat
-  const workload = isExternal ? quickExternalWorkload.value : leader.quickInternalWorkload
-  const price = isExternal ? quickExternalPrice.value : leader.quickInternalPrice
+  const cat = isExternal ? rec.quickExternalCat : rec.quickInternalCat
+  const workload = isExternal ? rec.quickExternalWorkload : rec.quickInternalWorkload
+  const price = isExternal ? rec.quickExternalPrice : rec.quickInternalPrice
   if (!cat || workload == null) return
 
-  const options = isExternal ? externalBillingOptions() : internalBillingOptions(leader.userId)
+  const subItemNo = rec.subItemNo
+  const options = isExternal ? externalBillingOptions(rec.subItemNo) : internalBillingOptions(rec.userId, rec.subItemNo)
   const opt = options.find(o => o.value === cat)
   if (!opt || !opt.raw) return
 
   const existRow = workloadForm.value.workloads.find(r => {
     if (r.billingType !== (isExternal ? 'external' : 'internal') || r.billingKey !== cat) return false
-    return isExternal ? true : Number(r.userId) === Number(leader.userId)
+    if (Number(r.subItemNo) !== Number(subItemNo)) return false
+    return isExternal ? true : Number(r.userId) === Number(rec.userId)
   })
   if (existRow) {
     existRow.workload = (Number(existRow.workload) || 0) + (Number(workload) || 0)
     calcRow(existRow)
     if (isExternal) {
-      quickExternalCat.value = null
-      quickExternalWorkload.value = null
-      quickExternalPrice.value = null
-      quickExternalUnit.value = ''
+      rec.quickExternalCat = null
+      rec.quickExternalWorkload = null
+      rec.quickExternalPrice = null
+      rec.quickExternalUnit = ''
     } else {
-      leader.quickInternalCat = null
-      leader.quickInternalWorkload = null
-      leader.quickInternalPrice = null
-      leader.quickInternalUnit = ''
+      rec.quickInternalCat = null
+      rec.quickInternalWorkload = null
+      rec.quickInternalPrice = null
+      rec.quickInternalUnit = ''
     }
     return
   }
@@ -1656,9 +1781,11 @@ function quickAddWorkload(leader, type) {
     priceSource = 'dict'
   }
 
+  const subName = workloadForm.value.workloads.find(r => Number(r.subItemNo) === Number(subItemNo) && r.subItemName)?.subItemName || ''
+
   const newRow = {
     workloadId: null,
-    userId: isExternal ? 0 : leader.userId,
+    userId: isExternal ? 0 : rec.userId,
     categoryId: opt.categoryId,
     billingKey: cat,
     billingType: b.billingType,
@@ -1672,22 +1799,24 @@ function quickAddWorkload(leader, type) {
     externalPrice: isExternal ? finalPrice : null,
     internalOutput: null,
     externalOutput: null,
-    output: null
+    output: null,
+    subItemNo: subItemNo,
+    subItemName: subName
   }
   calcRow(newRow)
   workloadForm.value.workloads.push(newRow)
 
   // 清空快速录入栏
   if (isExternal) {
-    quickExternalCat.value = null
-    quickExternalWorkload.value = null
-    quickExternalPrice.value = null
-    quickExternalUnit.value = ''
+    rec.quickExternalCat = null
+    rec.quickExternalWorkload = null
+    rec.quickExternalPrice = null
+    rec.quickExternalUnit = ''
   } else {
-    leader.quickInternalCat = null
-    leader.quickInternalWorkload = null
-    leader.quickInternalPrice = null
-    leader.quickInternalUnit = ''
+    rec.quickInternalCat = null
+    rec.quickInternalWorkload = null
+    rec.quickInternalPrice = null
+    rec.quickInternalUnit = ''
   }
 }
 
@@ -1929,6 +2058,11 @@ if (searchMemory.projectCode && !queryParams.value.projectCode) {
   queryParams.value.projectCode = searchMemory.projectCode
 }
 loadDistinctValues()
+
+// keep-alive 缓存下切回本页时刷新列表（否则在项目列表删除项目后，本页仍显示旧数据）
+onActivated(() => {
+  getList()
+})
 </script>
 
 <style scoped>
@@ -2309,6 +2443,9 @@ loadDistinctValues()
 .leader-card-header { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--el-fill-color-light); font-size: 14px; }
 .leader-name { font-weight: 600; color: var(--el-text-color-primary); }
 .leader-mini-total { font-size: 12px; color: var(--el-text-color-secondary); }
+.record-card { margin: 12px; border: 1px dashed var(--el-border-color); border-radius: 6px; overflow: hidden; }
+.record-card-header { display: flex; align-items: center; padding: 6px 12px; background: var(--el-fill-color-lighter); border-bottom: 1px solid var(--el-border-color-lighter); }
+.record-name { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); }
 .quick-add-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--el-fill-color-lighter); border-bottom: 1px solid var(--el-border-color-lighter); flex-wrap: wrap; }
 .qa-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
 .qa-unit { font-size: 11px; color: var(--el-text-color-placeholder); }

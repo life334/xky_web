@@ -82,25 +82,71 @@
             </el-table>
          </el-tab-pane>
 
-         <!-- 工作量录入（只读） -->
+         <!-- 工作量录入（只读）：内部按执行人分组，外部不挂执行人统一列表 -->
          <el-tab-pane label="工作量" name="workload">
-            <el-table v-loading="workloadLoading" :data="workloadList" stripe border style="margin-top: 8px">
-               <el-table-column label="执行人" align="center" prop="userName" min-width="90" />
-               <el-table-column label="项目类别" align="center" prop="categoryName" min-width="120" />
-               <el-table-column label="工作量" align="center" prop="workload" min-width="90" />
-               <el-table-column label="内部单价" align="center" prop="internalPrice" min-width="100">
-                  <template #default="scope"><span v-if="scope.row.internalPrice != null">{{ formatMoney(scope.row.internalPrice) }}</span></template>
-               </el-table-column>
-               <el-table-column label="外部单价" align="center" prop="externalPrice" min-width="100">
-                  <template #default="scope"><span v-if="scope.row.externalPrice != null">{{ formatMoney(scope.row.externalPrice) }}</span></template>
-               </el-table-column>
-               <el-table-column label="内部产值" align="center" prop="internalOutput" min-width="110">
-                  <template #default="scope"><span v-if="scope.row.internalOutput != null" style="color:#67c23a;font-weight:500">{{ formatMoney(scope.row.internalOutput) }}</span></template>
-               </el-table-column>
-               <el-table-column label="外部产值" align="center" prop="externalOutput" min-width="110">
-                  <template #default="scope"><span v-if="scope.row.externalOutput != null" style="color:#e6a23c;font-weight:500">{{ formatMoney(scope.row.externalOutput) }}</span></template>
-               </el-table-column>
-            </el-table>
+            <div v-loading="workloadLoading">
+               <!-- 内部工作量：按执行人分组 -->
+               <template v-if="internalGroups.length">
+                  <div class="workload-section">
+                     <div class="workload-section-title">
+                        <i class="workload-section-dot" style="background:#67c23a"></i>
+                        <span>内部工作量</span>
+                        <span class="workload-section-total">产值合计 {{ formatMoney(internalOutputTotal) }}</span>
+                     </div>
+                     <div v-for="group in internalGroups" :key="group.userId + '-' + group.subItemNo" class="workload-group">
+                        <div class="workload-group-head">
+                           <span class="workload-group-name">{{ group.userName }}{{ subItemSuffix(group.subItemNo) }}</span>
+                           <span class="workload-group-subtotal">内部产值 <b style="color:#67c23a">{{ formatMoney(group.internalOutput) }}</b></span>
+                        </div>
+                        <el-table :data="group.items" stripe border>
+                           <el-table-column label="计费类别" align="center" prop="billingCategory" min-width="150" />
+                           <el-table-column label="工作量" align="right" min-width="110">
+                              <template #default="scope"><span>{{ fmtWorkload(scope.row) }}</span></template>
+                           </el-table-column>
+                           <el-table-column label="起步量" align="right" min-width="90" v-if="false">
+                              <template #default="scope"><span>{{ fmtMinQuantity(scope.row.minQuantity) }}</span></template>
+                           </el-table-column>
+                           <el-table-column label="单价" align="right" min-width="110">
+                              <template #default="scope"><span>{{ formatMoney(pickPrice(scope.row)) }}</span></template>
+                           </el-table-column>
+                           <el-table-column label="产值" align="right" min-width="120">
+                              <template #default="scope"><span style="color:#67c23a;font-weight:500">{{ formatMoney(pickOutput(scope.row)) }}</span></template>
+                           </el-table-column>
+                        </el-table>
+                     </div>
+                  </div>
+               </template>
+
+               <!-- 外部工作量：不挂执行人，按子项分组 -->
+               <template v-if="externalGroups.length">
+                  <div class="workload-section">
+                     <div class="workload-section-title">
+                        <i class="workload-section-dot" style="background:#e6a23c"></i>
+                        <span>外部工作量</span>
+                        <span class="workload-section-total">产值合计 {{ formatMoney(externalOutputTotal) }}</span>
+                     </div>
+                     <div v-for="group in externalGroups" :key="'ext-' + group.subItemNo" class="workload-group">
+                        <el-table :data="group.items" stripe border>
+                           <el-table-column label="计费类别" align="center" prop="billingCategory" min-width="150" />
+                           <el-table-column label="工作量" align="right" min-width="110">
+                              <template #default="scope"><span>{{ fmtWorkload(scope.row) }}</span></template>
+                           </el-table-column>
+                           <el-table-column label="起步量" align="right" min-width="90" v-if="false">
+                              <template #default="scope"><span>{{ fmtMinQuantity(scope.row.minQuantity) }}</span></template>
+                           </el-table-column>
+                           <el-table-column label="单价" align="right" min-width="110">
+                              <template #default="scope"><span>{{ formatMoney(pickPrice(scope.row)) }}</span></template>
+                           </el-table-column>
+                           <el-table-column label="产值" align="right" min-width="120">
+                              <template #default="scope"><span style="color:#ff9900;font-weight:500">{{ formatMoney(pickOutput(scope.row)) }}</span></template>
+                           </el-table-column>
+                        </el-table>
+                     </div>
+                  </div>
+               </template>
+
+               <el-empty v-if="!workloadLoading && workloadList.length === 0" description="暂无工作量数据" />
+            </div>
          </el-tab-pane>
 
          <!-- 付款记录（只读） -->
@@ -491,6 +537,107 @@ function formatMoney(val) {
    return Number(val).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " 元"
 }
 
+/** 数值兜底 */
+function num(v) { return Number(v) || 0 }
+
+/** 采用单价：优先 unitPrice，回退内部/外部单价 */
+function pickPrice(row) {
+   if (row.unitPrice != null) return row.unitPrice
+   return row.billingType === 'internal' ? row.internalPrice : row.externalPrice
+}
+
+/** 产值：按计费类型取内部/外部产值 */
+function pickOutput(row) {
+   return row.billingType === 'internal' ? row.internalOutput : row.externalOutput
+}
+
+/** 工作量 + 计价单位（如 29 千米 / 84 格） */
+function fmtWorkload(row) {
+   const w = row.workload
+   if (w == null || w === "") return ""
+   const s = Number(w)
+   return row.priceUnit ? s + " " + row.priceUnit : String(s)
+}
+
+/** 起步量：>0 显示「≥ x」，否则占位符 */
+function fmtMinQuantity(v) {
+   if (v != null && Number(v) > 0) return "≥ " + Number(v)
+   return "—"
+}
+
+/** 项目是否含多个子项（sub_item_no 种类 > 1 时才显示「第 N 条」） */
+const hasMultipleSubItems = computed(() => {
+   const set = new Set()
+   workloadList.value.forEach(r => {
+      if (r.subItemNo != null && Number(r.subItemNo) > 0) set.add(Number(r.subItemNo))
+   })
+   return set.size > 1
+})
+
+/** 子项序号后缀：多子项时返回「 · 第N条」，否则空串 */
+function subItemSuffix(subItemNo) {
+   if (!hasMultipleSubItems.value) return ""
+   const n = Number(subItemNo) || 0
+   return n > 0 ? " · 第" + n + "条" : ""
+}
+
+/** 内部工作量：按「执行人 + 子项」分组（外部工作量不挂执行人） */
+const internalGroups = computed(() => {
+   const map = new Map()
+   workloadList.value.forEach(row => {
+      if (row.billingType !== 'internal') return
+      const uid = row.userId
+      const subNo = Number(row.subItemNo) || 0
+      const key = uid + "|" + subNo
+      if (!map.has(key)) {
+         map.set(key, { userId: uid, userName: row.userName || '未分配', subItemNo: subNo, items: [], internalOutput: 0 })
+      }
+      const g = map.get(key)
+      g.items.push(row)
+      g.internalOutput += num(row.internalOutput)
+   })
+   const groups = Array.from(map.values())
+   groups.forEach(g => {
+      g.items.sort((a, b) => (a.subItemNo || 0) - (b.subItemNo || 0))
+   })
+   groups.sort((a, b) => {
+      if (a.userId !== b.userId) return (Number(a.userId) || 0) - (Number(b.userId) || 0)
+      return (Number(a.subItemNo) || 0) - (Number(b.subItemNo) || 0)
+   })
+   return groups
+})
+
+/** 外部工作量：不按执行人，按子项分组 */
+const externalGroups = computed(() => {
+   const map = new Map()
+   workloadList.value.forEach(row => {
+      if (row.billingType !== 'external') return
+      const subNo = Number(row.subItemNo) || 0
+      if (!map.has(subNo)) {
+         map.set(subNo, { subItemNo: subNo, items: [], externalOutput: 0 })
+      }
+      const g = map.get(subNo)
+      g.items.push(row)
+      g.externalOutput += num(row.externalOutput)
+   })
+   const groups = Array.from(map.values())
+   groups.forEach(g => {
+      g.items.sort((a, b) => (a.subItemNo || 0) - (b.subItemNo || 0))
+   })
+   groups.sort((a, b) => (Number(a.subItemNo) || 0) - (Number(b.subItemNo) || 0))
+   return groups
+})
+
+/** 内部产值合计 */
+const internalOutputTotal = computed(() => {
+   return workloadList.value.reduce((s, r) => r.billingType === 'internal' ? s + num(r.internalOutput) : s, 0)
+})
+
+/** 外部产值合计 */
+const externalOutputTotal = computed(() => {
+   return workloadList.value.reduce((s, r) => r.billingType === 'external' ? s + num(r.externalOutput) : s, 0)
+})
+
 /** 返回列表 */
 function goBack() {
    proxy.$router.push("/project/list")
@@ -788,6 +935,53 @@ onMounted(() => {
    justify-content: space-between;
    margin-top: 8px;
    font-size: 12px;
+   color: #909399;
+}
+.workload-section {
+   margin-top: 12px;
+}
+.workload-section-title {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   font-size: 14px;
+   font-weight: 600;
+   color: #303133;
+   margin-bottom: 12px;
+}
+.workload-section-dot {
+   width: 8px;
+   height: 8px;
+   border-radius: 50%;
+   display: inline-block;
+   flex: none;
+}
+.workload-section-total {
+   margin-left: auto;
+   font-size: 13px;
+   font-weight: 400;
+   color: #909399;
+}
+.workload-group {
+   background: #fff;
+   border: 1px solid #ebeef5;
+   border-radius: 8px;
+   padding: 12px 16px 16px;
+   margin-top: 12px;
+}
+.workload-group-head {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   margin-bottom: 10px;
+}
+.workload-group-name {
+   font-size: 14px;
+   font-weight: 600;
+   color: #303133;
+}
+.workload-group-subtotal {
+   font-size: 13px;
    color: #909399;
 }
 .mb8 {

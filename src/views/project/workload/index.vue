@@ -55,6 +55,12 @@
                <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
+         <el-table-column label="子项" align="center" prop="subItemName" min-width="140" :show-overflow-tooltip="true">
+            <template #default="scope">
+               <span v-if="scope.row.subItemNo > 0 && scope.row.subItemName">{{ scope.row.subItemName }}</span>
+               <span v-else style="color: #c0c4cc">—</span>
+            </template>
+         </el-table-column>
          <el-table-column label="工作量" align="center" prop="workload" min-width="100" />
          <el-table-column label="内部单价" align="center" prop="internalPrice" min-width="100">
             <template #default="scope">

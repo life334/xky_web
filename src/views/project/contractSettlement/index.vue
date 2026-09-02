@@ -315,7 +315,7 @@
 </template>
 
 <script setup name="ContractSettlement">
-import { ref, reactive, onMounted, computed, unref } from 'vue'
+import { ref, reactive, onMounted, onActivated, computed, unref } from 'vue'
 import { treeListContractSettlement, getPriceDetail, getReceivedDetail, saveContractSettlement } from '@/api/project/contractSettlement'
 import { ElMessage } from 'element-plus'
 
@@ -623,6 +623,11 @@ function fmtPay(val) {
 }
 
 onMounted(() => {
+  getList()
+})
+
+// keep-alive 缓存下切回本页时刷新列表（避免项目删除后仍显示旧数据）
+onActivated(() => {
   getList()
 })
 </script>

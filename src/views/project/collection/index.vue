@@ -647,6 +647,13 @@ function fmtDate(val) {
 getList()
 getStats()
 getUnsettledList()
+
+// keep-alive 缓存下切回本页时刷新列表（避免项目删除后仍显示旧数据）
+onActivated(() => {
+  getList()
+  getStats()
+  getUnsettledList()
+})
 </script>
 
 <style scoped>
