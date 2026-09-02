@@ -107,7 +107,7 @@
             </el-row>
 
             <!-- 项目视图 -->
-            <el-table v-if="viewMode === 'project'" v-loading="loading" :data="pendingList" stripe border>
+            <el-table v-if="viewMode === 'project'" v-loading="loading" :data="pendingList" stripe border v-hover-h-scroll>
                <el-table-column label="工程编号" align="center" prop="projectCode" min-width="120" :show-overflow-tooltip="true" />
                <el-table-column label="项目名称" align="left" prop="projectName" min-width="160" :show-overflow-tooltip="true" />
                <el-table-column label="客户全称" align="left" prop="clientUnit" min-width="160" :show-overflow-tooltip="true" />
@@ -154,7 +154,7 @@
             </el-table>
 
             <!-- 客户视图 -->
-            <el-table v-else v-loading="loading" :data="clientList" stripe border @expand-change="handleClientExpand">
+            <el-table v-else v-loading="loading" :data="clientList" stripe border v-hover-h-scroll @expand-change="handleClientExpand">
                <el-table-column type="expand">
                   <template #default="scope">
                      <el-table :data="scope.row.projectRows || []" size="small" border style="margin: 4px 24px" v-loading="scope.row.expanding">
@@ -233,7 +233,7 @@
                   <el-button type="primary" icon="Search" size="small" @click="getUnsettledList">搜索</el-button>
                </el-form-item>
             </el-form>
-            <el-table v-loading="unsettledLoading" :data="unsettledList" stripe border>
+            <el-table v-loading="unsettledLoading" :data="unsettledList" stripe border v-hover-h-scroll>
                <el-table-column label="工程编号" align="center" prop="projectCode" min-width="120" />
                <el-table-column label="项目名称" align="left" prop="projectName" min-width="180" :show-overflow-tooltip="true" />
                <el-table-column label="工程项目" align="left" prop="engineeringProject" min-width="140" :show-overflow-tooltip="true" />

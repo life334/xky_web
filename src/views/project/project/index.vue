@@ -143,7 +143,7 @@
          </div>
       </el-row>
 
-      <el-table ref="tableRef" v-loading="loading" :data="projectList" stripe border @selection-change="handleSelectionChange">
+      <el-table ref="tableRef" v-loading="loading" v-hover-h-scroll :data="projectList" stripe border @selection-change="handleSelectionChange">
          <el-table-column min-width="70" align="center" label="序号">
             <template #header>
                <el-checkbox :model-value="isAllChecked" :indeterminate="isIndeterminate" @change="handleCheckAll" /> 序号

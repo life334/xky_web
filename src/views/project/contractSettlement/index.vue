@@ -33,8 +33,8 @@
       style="width: 100%"
     >
       <el-table-column label="序号" width="60" align="center" type="index" />
-      <el-table-column label="合同名称" prop="contractName" min-width="160" show-overflow-tooltip />
-      <el-table-column label="合同编号" prop="contractNo" min-width="130" show-overflow-tooltip />
+      <el-table-column label="合同名称" prop="contractName" min-width="160" :show-overflow-tooltip="false" />
+      <el-table-column label="合同编号" prop="contractNo" min-width="130" :show-overflow-tooltip="false" />
       <el-table-column label="合同金额" prop="contractAmount" min-width="110" align="right">
         <template #default="scope">
           {{ scope.row.contractAmount ? formatAmount(scope.row.contractAmount) : '' }}

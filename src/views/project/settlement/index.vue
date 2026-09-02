@@ -106,15 +106,16 @@
 
       <el-table
          v-loading="loading"
-         :data="filteredTreeData"
+         :data="pagedTreeData"
          row-key="id"
+         :expand-row-keys="expandedKeys"
          stripe border
+         v-hover-h-scroll
          highlight-current-row
          @current-change="handleCurrentChange"
-         @expand-change="handleExpandChange"
       >
          <!-- 展开行明细卡列（默认收起，点击箭头懒加载明细） -->
-         <el-table-column type="expand" width="46">
+         <el-table-column type="expand" width="1" class-name="expand-hidden-col">
             <template #default="scope">
                <div class="expand-panel" v-loading="expandDetailLoading(scope.row.projectId)">
                   <template v-if="expandDetails[scope.row.projectId]">
@@ -232,15 +233,21 @@
             </template>
          </el-table-column>
 
-         <el-table-column label="序号" align="center" width="60">
+         <el-table-column label="序号" align="center" width="76">
             <template #default="scope">
-               <span>{{ scope.$index + 1 }}</span>
+               <span class="seq-expand-cell">
+                  <el-icon class="seq-expand-icon" :class="{ expanded: expandedKeys.includes(scope.row.id) }" @click.stop="toggleExpand(scope.row)">
+                     <ArrowRight v-if="!expandedKeys.includes(scope.row.id)" />
+                     <ArrowDown v-else />
+                  </el-icon>
+                  <span class="seq-num">{{ seqNo(scope.$index) }}</span>
+               </span>
             </template>
          </el-table-column>
-         <el-table-column v-for="col in visibleColumns" :key="col.key" :label="col.label" align="center" :prop="col.prop" :show-overflow-tooltip="true" :min-width="colWidth(col)">
+         <el-table-column v-for="col in visibleColumns" :key="col.key" :label="col.label" align="center" :prop="col.prop" :show-overflow-tooltip="false" :min-width="colWidth(col)">
             <template #default="scope">
                <!-- 工程编号：加粗 -->
-               <span v-if="col.key === 'projectCode' && scope.row.projectCode" style="font-weight:bold">{{ scope.row.projectCode }}</span>
+               <span v-if="col.key === 'projectCode' && scope.row.projectCode">{{ scope.row.projectCode }}</span>
                <!-- 开票状态：标签 -->
                <template v-else-if="col.key === 'invoiceStatus'">
                   <el-tag v-if="scope.row.invoicePaymentStatus === 'voided'" type="danger" size="small">已作废</el-tag>
@@ -268,6 +275,16 @@
             </template>
          </el-table-column>
       </el-table>
+
+      <!-- 分页 -->
+      <pagination
+         v-show="total > 0"
+         :total="total"
+         v-model:page="pageNum"
+         v-model:limit="pageSize"
+         :page-sizes="[10, 20, 50, 100]"
+         @pagination="handlePagination"
+      />
 
       <!-- 底部结算核对条（点击选中项目行后固定显示） -->
       <div class="settle-check-bar" v-if="currentRow">
@@ -668,6 +685,11 @@ const loading = ref(false)
 const showSearch = ref(true)
 /** 当前选中行（底部结算核对条用） */
 const currentRow = ref(null)
+/** 展开行 row-key 集合（受控展开，用于合并列箭头方向 + 翻页清空） */
+const expandedKeys = ref([])
+/** 分页状态 */
+const pageNum = ref(1)
+const pageSize = ref(10)
 /** 展开明细缓存：projectId -> { loading, workloads, payments }（懒加载，刷新时清理） */
 const expandDetails = reactive({})
 /** 表格列显隐配置（后端接口动态加载；序号、操作列固定不参与） */
@@ -766,6 +788,22 @@ const filteredTreeData = computed(() => {
     if (invoiceUnpaidFilter.value && r.invoicePaymentStatus !== 'invoiced_unpaid') return false
     return true
   })
+})
+
+/** 总条数 = 筛选后的项目数 */
+const total = computed(() => filteredTreeData.value.length)
+/** 当前页数据（前端分页切片） */
+const pagedTreeData = computed(() => {
+  const start = (pageNum.value - 1) * pageSize.value
+  return filteredTreeData.value.slice(start, start + pageSize.value)
+})
+
+// 筛选/数据变化时：越界回退 + 清空展开与选中
+watch(filteredTreeData, (val) => {
+  const maxPage = Math.max(1, Math.ceil(val.length / pageSize.value))
+  if (pageNum.value > maxPage) pageNum.value = maxPage
+  expandedKeys.value = []
+  currentRow.value = null
 })
 
 const selectedStatuses = ref(['closed', 'archived'])
@@ -1062,6 +1100,7 @@ function onUnitPriceChange(row) {
 /** 查询树形列表 */
 function getList() {
   loading.value = true
+  pageNum.value = 1
   const params = { ...queryParams.value }
   params.projectStatus = selectedStatuses.value.join(',')
   treeListSettlement(params).then(response => {
@@ -1115,11 +1154,27 @@ function expandDetailLoading(projectId) {
   return expandDetails[projectId] ? expandDetails[projectId].loading : false
 }
 
-/** 展开/收起回调：首次展开时懒加载明细 */
-function handleExpandChange(row, expandedRows) {
-  if (expandedRows.includes(row) && !expandDetails[row.projectId]) {
-    loadExpandDetail(row)
+/** 合并列箭头：切换展开/收起（受控 expandedKeys + 首次展开懒加载明细） */
+function toggleExpand(row) {
+  const key = row.id
+  const idx = expandedKeys.value.indexOf(key)
+  if (idx >= 0) {
+    expandedKeys.value.splice(idx, 1)
+  } else {
+    expandedKeys.value.push(key)
+    if (!expandDetails[row.projectId]) loadExpandDetail(row)
   }
+}
+
+/** 分页变化：清空展开与选中，避免跨页残留 */
+function handlePagination() {
+  expandedKeys.value = []
+  currentRow.value = null
+}
+
+/** 全局序号（翻页后连续） */
+function seqNo(index) {
+  return (pageNum.value - 1) * pageSize.value + index + 1
 }
 
 /** 加载展开明细（工作量 + 付款记录） */
@@ -2453,4 +2508,33 @@ onActivated(() => {
 .section-title-internal { color: var(--el-color-primary); font-weight: 600; }
 .section-title-external { color: var(--el-color-warning); font-weight: 600; }
 .section-output-mini { margin-left: 12px; font-size: 12px; font-weight: 400; color: var(--el-text-color-secondary); }
+
+/* ===== 合并展开箭头到序号列 ===== */
+/* 隐藏原生 expand 列箭头（width=1，仅保留其展开行内容渲染能力） */
+:deep(.expand-hidden-col .cell) {
+  padding: 0 !important;
+}
+:deep(.expand-hidden-col .el-table__expand-icon) {
+  display: none;
+}
+.seq-expand-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.seq-expand-icon {
+  cursor: pointer;
+  color: #909399;
+  font-size: 14px;
+  transition: color .2s, transform .2s;
+}
+.seq-expand-icon:hover {
+  color: #409eff;
+}
+.seq-expand-icon.expanded {
+  color: #409eff;
+}
+.seq-num {
+  color: #606266;
+}
 </style>

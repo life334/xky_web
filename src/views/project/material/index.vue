@@ -87,7 +87,7 @@
 
       </el-row>
 
-      <el-table v-loading="loading" :data="materialList" row-key="id" stripe border @selection-change="handleSelectionChange" @expand-change="handleExpandChange">
+      <el-table v-loading="loading" :data="materialList" row-key="id" stripe border v-hover-h-scroll @selection-change="handleSelectionChange" @expand-change="handleExpandChange">
          <el-table-column type="expand">
             <template #default="scope">
                <div class="expand-panel" v-loading="expandDetailLoading(scope.row.projectId)">

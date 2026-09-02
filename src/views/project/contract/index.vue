@@ -114,9 +114,9 @@
          </template>
       </el-dialog>
 
-      <el-table v-loading="loading" :data="contractList" stripe border @selection-change="handleSelectionChange">
+      <el-table v-loading="loading" :data="contractList" stripe border v-hover-h-scroll @selection-change="handleSelectionChange">
          <el-table-column type="selection" width="50" align="center" />
-         <el-table-column v-for="col in visibleColumns" :key="col.key" align="center" :prop="col.prop" :show-overflow-tooltip="true" :min-width="colWidth(col)">
+         <el-table-column v-for="col in visibleColumns" :key="col.key" align="center" :prop="col.prop" :show-overflow-tooltip="false" :min-width="colWidth(col)">
             <template #header>
                <!-- 合同金额列头：万元/元切换 -->
                <span v-if="col.key === 'contractAmount'">
@@ -494,7 +494,7 @@
                                     </el-tag>
                                  </template>
                               </el-table-column>
-                              <el-table-column label="文件名" prop="fileName" min-width="140" show-overflow-tooltip />
+                              <el-table-column label="文件名" prop="fileName" min-width="140" show-overflow-tooltip="false" />
                               <el-table-column label="操作类型" width="80" align="center">
                                  <template #default="scope">
                                     <el-tag size="small" :type="actionTagType(scope.row.action)">{{ actionLabel(scope.row.action) }}</el-tag>
