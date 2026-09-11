@@ -1,9 +1,18 @@
 import request from '@/utils/request'
 
-// 查询费用结算树形列表（仅已办结项目）
+// 查询费用结算树形列表（仅已办结项目，后端分页）
 export function treeListSettlement(query) {
   return request({
     url: '/project/settlement/treeList',
+    method: 'get',
+    params: query
+  })
+}
+
+// 查询费用结算录入状态胶囊的全局计数（工作量/到账/发票，忽略录入状态筛选本身）
+export function getSettlementEntryStatusCounts(query) {
+  return request({
+    url: '/project/settlement/entryStatusCounts',
     method: 'get',
     params: query
   })

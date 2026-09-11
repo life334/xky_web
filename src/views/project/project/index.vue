@@ -57,13 +57,13 @@
                   <el-select
                      v-model="queryParams.contractId"
                      filterable remote reserve-keyword clearable
-                     placeholder="全部合同"
+                     placeholder="输入合同编号/名称搜索"
                      :remote-method="searchContracts"
                      :loading="contractLoading"
                      style="width: 100%"
                      @visible-change="onContractVisibleChange"
                   >
-                     <el-option v-for="c in contractOptions" :key="c.id" :label="c.contractNo + ' — ' + c.contractName" :value="c.id" />
+                     <el-option v-for="c in contractOptions" :key="c.id" :label="fmtContractOption(c)" :value="c.id" />
                   </el-select>
                </div>
                <div class="filter-item">
@@ -143,7 +143,7 @@
          </div>
       </el-row>
 
-      <el-table ref="tableRef" v-loading="loading" v-hover-h-scroll :data="projectList" stripe border @selection-change="handleSelectionChange">
+      <el-table ref="tableRef" row-key="id" v-loading="loading" v-hover-h-scroll :data="projectList" stripe border @selection-change="handleSelectionChange">
          <el-table-column min-width="70" align="center" label="序号">
             <template #header>
                <el-checkbox :model-value="isAllChecked" :indeterminate="isIndeterminate" @change="handleCheckAll" /> 序号
@@ -292,7 +292,7 @@
                         <el-option
                            v-for="item in contractOptions"
                            :key="item.id"
-                           :label="item.contractNo + ' — ' + item.contractName"
+                           :label="fmtContractOption(item)"
                            :value="item.id"
                         />
                      </el-select>
@@ -398,7 +398,7 @@
             <el-descriptions-item label="工程地点">{{ detail.projectLocation || '-' }}</el-descriptions-item>
             <el-descriptions-item label="联系人">{{ detail.contactName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="联系电话">{{ detail.contactPhone || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="合同">{{ detail.contractName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="合同">{{ fmtContractDetail(detail) }}</el-descriptions-item>
             <el-descriptions-item label="状态">
                <dict-tag :options="proj_project_status" :value="detail.status" />
             </el-descriptions-item>
@@ -482,14 +482,17 @@
 
       <!-- 区域粘贴对话框 -->
       <el-dialog title="区域粘贴录入" :model-value="pasteOpen" @update:model-value="pasteOpen = $event" width="950px" append-to-body>
-         <el-alert type="info" :closable="false" style="margin-bottom: 12px">
-            从 Excel 中选中一块区域（Ctrl+C），然后在此处粘贴（Ctrl+V）。点击「解析数据」后可调整列映射。
+         <el-alert v-if="false" type="info" :closable="false" style="margin-bottom: 12px">
+            <div>从 Excel 中选中一块区域（Ctrl+C），然后在此处粘贴（Ctrl+V），点击「解析数据」后可调整列映射。</div>
+            <div>支持分隔符：Tab（Excel 直接复制）、连续空格、单个空格。</div>
+            <div>默认列顺序：① 工程编号 ② 委托单位 ③ 联系人 ④ 联系电话 ⑤ 工程项目 ⑥ 工程地点 ⑦ 作业部门（自动跳过）⑧ 下达日期。</div>
+            <div>列数不一致时按「尽量对齐」处理；工程编号为必填项，其余可留空。列映射可选择「不导入」来忽略某列。</div>
          </el-alert>
          <el-input
             v-model="pasteText"
             type="textarea"
-            :rows="6"
-            placeholder="工程编号(Tab)项目名称(Tab)工程项目(Tab)委托单位(Tab)联系人(Tab)联系电话(Tab)工程地点(Tab)负责人(Tab)备注&#10;从 Excel 复制后粘贴到此处..."
+            :rows="8"
+            placeholder="工程编号(Tab)委托单位(Tab)联系人(Tab)联系电话(Tab)工程项目(Tab)工程地点(Tab)作业部门(Tab)下达日期&#10;例：XK2026001	某某公司	张三	13800138000	某安置房工程	某镇某村	测绘部	2026-09-10&#10;从 Excel 复制后粘贴到此处，也可用空格分隔..."
          />
          <div style="margin-top: 10px; text-align: right;">
             <el-button type="primary" @click="parsePasteData">解析数据</el-button>
@@ -498,7 +501,8 @@
          <el-table v-if="pasteRows.length > 0" :data="pasteRows" border stripe max-height="300" style="margin-top: 12px">
             <el-table-column v-for="(header, index) in pasteHeaders" :key="index" :min-width="120" align="center">
                <template #header>
-                  <el-select v-model="header.field" size="small" style="width: 130px" placeholder="选择字段">
+                  <el-select v-model="header.field" size="small" style="width: 130px" placeholder="选择字段" clearable>
+                     <el-option label="不导入" value="" />
                      <el-option v-for="opt in fieldOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
                   </el-select>
                </template>
@@ -544,6 +548,7 @@ import ExcelImportDialog from "@/components/ExcelImportDialog"
 import { ArrowRight } from '@element-plus/icons-vue'
 import { checkRole } from "@/utils/permission"
 import { countWorkdays } from "@/utils/workday"
+import { nextTick } from "vue"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
 /** 格式化日期 YYYY-MM-DD */
 function fmt(d) { return d.toISOString().slice(0, 10) }
@@ -671,6 +676,19 @@ const relatedFieldRequired = computed(() => {
 const leaderOptions = ref([])
 const contractOptions = ref([])
 const contractLoading = ref(false)
+
+/** 合同下拉展示：编号 + 名称（【编号】名称；缺失部分自动省略） */
+function fmtContractOption(c) {
+  const no = (c.contractNo || '').trim()
+  const name = (c.contractName || '').trim()
+  if (no && name) return '【' + no + '】' + name
+  return no || name || '-'
+}
+
+/** 合同纯文本展示（详情属性用，与下拉展示格式一致） */
+function fmtContractDetail(c) {
+  return fmtContractOption(c || {})
+}
 const detail = ref({})
 const ids = ref([])
 const dateRange = ref([])
@@ -743,8 +761,26 @@ const fieldOptions = [
    { label: "联系人", value: "contactName" },
    { label: "联系电话", value: "contactPhone" },
    { label: "工程地点", value: "projectLocation" },
+   { label: "安排日期", value: "assignDate" },
    { label: "负责人", value: "leaderNames" },
    { label: "备注", value: "remark" },
+]
+
+/**
+ * 粘贴时的「固定顺序」默认列映射（方案A）。
+ * 用户从 Excel 复制的字段顺序：
+ *   1 工程编号  2 委托单位  3 联系人  4 联系电话  5 工程项目  6 工程地点  7 作业部门(跳过)  8 下达日期
+ * 下标 6（作业部门）不在导入范围内，映射为空字符串表示「忽略该列」。
+ */
+const PASTE_DEFAULT_MAP = [
+   "projectCode",        // 1 工程编号
+   "clientUnit",         // 2 委托单位
+   "contactName",        // 3 联系人
+   "contactPhone",       // 4 联系电话
+   "engineeringProject", // 5 工程项目
+   "projectLocation",    // 6 工程地点
+   "",                   // 7 作业部门 —— 不导入，忽略
+   "assignDate",         // 8 下达日期 → 安排日期
 ]
 
 // 基于 ids 计算当前页选中状态
@@ -891,6 +927,9 @@ function getList() {
     projectList.value = response.rows
     total.value = response.total
     loading.value = false
+    // 数据整体替换后清空选中：避免 el-table 残留的 selection 错位套到新行上
+    // （表现为"删除/翻页后某些记录莫名被勾选"，甚至引发误删）
+    nextTick(() => clearSelection())
     refreshRowDurations()
   })
   fetchStatusCounts()
@@ -1138,6 +1177,20 @@ function handleSelectionChange(selection) {
   multiple.value = !selection.length
 }
 
+/**
+ * 清空选中状态（列表刷新后必须调用）。
+ * 背景：el-table 内部维护一份 selection 引用，数据整体替换后它不会自动跟随；
+ * 若不清理，删除第 1 条后原第 2 条升到首行，残留的选中引用/下标会错位套到新行上，
+ * 表现为「删除后后续记录自动被勾选」，且会连带影响批量删除/导出的选中集合。
+ */
+function clearSelection() {
+  tableRef.value?.clearSelection()
+  ids.value = []
+  currentSelection.value = []
+  single.value = true
+  multiple.value = false
+}
+
 /** 全选切换 */
 function handleCheckAll(checked) {
   projectList.value.forEach(row => {
@@ -1272,27 +1325,68 @@ function handlePaste() {
    pasteOpen.value = true
 }
 
+/**
+ * 按分隔符切分一行粘贴文本，三级降级：
+ *   1) 含 Tab            → 按 Tab 切（Excel 原生复制）
+ *   2) 含 2+ 连续空格     → 按连续空格切（网页/文档复制的对齐文本）
+ *   3) 其它              → 退化按单个空格切
+ * 注意：第 3 级会把「含空格的字段值」也切开，属于已知取舍——
+ * 用户明确要求"优先 2+ 连续空格，没有则按单空格"。若字段值本身含空格，
+ * 建议改用 Tab（Excel 直接复制）粘贴，可获得精确切分。
+ */
+function splitPasteLine(line) {
+   if (line.includes("\t")) return line.split("\t")
+   if (/\s{2,}/.test(line)) return line.split(/\s{2,}/)
+   return line.split(/\s/)
+}
+
 /** 解析粘贴数据 */
 function parsePasteData() {
    if (!pasteText.value || !pasteText.value.trim()) {
       proxy.$modal.msgError("请先粘贴数据")
       return
    }
-   const lines = pasteText.value.trim().split(/\n/).filter(l => l.trim())
+   // 整段 trim()：去掉首尾空白（含行首的缩进空格/Tab），再按行切分。
+   // 说明：从 Excel 复制的文本里，「工程编号为空」的行行首会带 Tab，
+   // 但那种情况无法与"排版缩进"区分；且这类行本就会因 projectCode 为空被过滤，
+   // 不影响最终入库数据。因此统一按"去掉前导空白"处理，结果更可预期。
+   const lines = pasteText.value.trim().split(/\r?\n/).filter(l => l.trim() !== "")
    if (lines.length === 0) {
       proxy.$modal.msgError("没有有效数据")
       return
    }
-   const rows = lines.map(line => line.split(/\t/))
-   const headerKeywords = ["工程编号", "项目名称", "工程项目", "委托单位", "联系人", "联系电话", "工程地点", "负责人", "备注"]
+   const rows = lines.map(line => splitPasteLine(line).map(cell => cell.trim()))
+   const headerKeywords = ["工程编号", "项目名称", "工程项目", "委托单位", "联系人", "联系电话", "工程地点", "负责人", "备注", "作业部门", "下达日期", "安排日期"]
    const firstRowIsHeader = rows[0].some(cell => headerKeywords.some(kw => cell.includes(kw)))
    const dataRows = firstRowIsHeader ? rows.slice(1) : rows
    pasteRows.value = dataRows
-   const numCols = dataRows[0]?.length || 0
+   // 容错：列数取「所有行中的最大列数」，缺列的行尾部视为空，
+   // 这样既不会因某行少列而丢列，也不会判问题行（用户要求容错）。
+   const numCols = dataRows.reduce((max, r) => Math.max(max, r.length), 0)
    pasteHeaders.value = []
    for (let i = 0; i < numCols; i++) {
-      pasteHeaders.value.push({ field: fieldOptions[i]?.value || "", label: "第" + (i + 1) + "列" })
+      pasteHeaders.value.push({
+         field: PASTE_DEFAULT_MAP[i] !== undefined ? PASTE_DEFAULT_MAP[i] : "",
+         label: "第" + (i + 1) + "列"
+      })
    }
+}
+
+/**
+ * 归一化粘贴来的日期文本，兼容 Excel 常见的几种写法：
+ *   2026-09-10 / 2026/9/10 / 2026.9.10 / 2026年9月10日 → 2026-09-10
+ * 无法识别的原样返回，交由后端做最终校验。
+ */
+function normalizePasteDate(val) {
+   if (!val) return val
+   const s = String(val).trim()
+   const m = s.match(/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/)
+   if (m) {
+      const mm = String(m[2]).padStart(2, "0")
+      const dd = String(m[3]).padStart(2, "0")
+      return `${m[1]}-${mm}-${dd}`
+   }
+   return s
 }
 
 /** 提交粘贴数据 */
@@ -1300,8 +1394,12 @@ function submitPasteData() {
    const projects = pasteRows.value.map(row => {
       const project = {}
       pasteHeaders.value.forEach((header, index) => {
+         // field 为空字符串 = 该列被标记为「不导入」，直接跳过
          if (header.field && row[index] !== undefined) {
-            project[header.field] = row[index].trim()
+            let val = String(row[index]).trim()
+            if (header.field === "assignDate") val = normalizePasteDate(val)
+            // 容错：空值不覆盖后端默认值
+            if (val !== "") project[header.field] = val
          }
       })
       return project
@@ -1317,6 +1415,12 @@ function submitPasteData() {
       pasteRows.value = []
       pasteHeaders.value = []
       getList()
+      // 只新增 1 条时，直接打开该记录的编辑弹窗，方便用户接着补充信息
+      // （批量新增的记录无法一次性编辑，故多条时不做自动弹窗）
+      const ids = response.data && response.data.ids
+      if (ids && ids.length === 1) {
+         handleUpdate({ id: ids[0] })
+      }
    })
 }
 

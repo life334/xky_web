@@ -19,15 +19,15 @@
          <span class="status-capsule" :class="{ active: selectedStatuses.includes('closed') && selectedStatuses.includes('archived') }" @click="onStatusCapsuleClick(['closed','archived'])">已办结 + 已归档</span>
       </div> -->
 
-      <!-- Row 2b: 录入状态胶囊（工作量 + 到账，本地筛选） -->
+      <!-- Row 2b: 录入状态胶囊（工作量 + 到账 + 发票，筛选与计数均下推后端） -->
       <div class="status-capsule-row entry-capsules">
          <span class="capsule-group-label">工作量</span>
-         <span class="status-capsule" :class="{ active: workloadFilter === 'all' }" @click="setWorkloadFilter('all')">全部 <em>{{ treeData.length }}</em></span>
+         <span class="status-capsule" :class="{ active: workloadFilter === 'all' }" @click="setWorkloadFilter('all')">全部 <em>{{ entryAllCount }}</em></span>
          <span class="status-capsule" :class="{ active: workloadFilter === 'done' }" @click="setWorkloadFilter('done')">已录入 <em>{{ workloadDoneCount }}</em></span>
          <span class="status-capsule" :class="{ active: workloadFilter === 'undone' }" @click="setWorkloadFilter('undone')">未录入 <em>{{ workloadUndoneCount }}</em></span>
          <span class="capsule-sep" />
          <span class="capsule-group-label">到账</span>
-         <span class="status-capsule" :class="{ active: paymentFilter === 'all' }" @click="setPaymentFilter('all')">全部 <em>{{ treeData.length }}</em></span>
+         <span class="status-capsule" :class="{ active: paymentFilter === 'all' }" @click="setPaymentFilter('all')">全部 <em>{{ entryAllCount }}</em></span>
          <span class="status-capsule" :class="{ active: paymentFilter === 'done' }" @click="setPaymentFilter('done')">已录入 <em>{{ paymentDoneCount }}</em></span>
          <span class="status-capsule" :class="{ active: paymentFilter === 'undone' }" @click="setPaymentFilter('undone')">未录入 <em>{{ paymentUndoneCount }}</em></span>
          <span class="capsule-sep" />
@@ -100,7 +100,7 @@
             <el-button type="warning" size="small" plain icon="Download" @click="handleExport" v-hasPermi="['project:settlement:export']">导出</el-button>
          </el-col>
          <el-col :span="1.5" style="margin-left:auto">
-            <right-toolbar size="small" v-model:showSearch="showSearch" :columns="columns" storage-key="settlement-list-columns" @queryTable="getList" />
+            <right-toolbar size="small" v-model:showSearch="showSearch" :columns="columns" storage-key="settlement-list-columns" @queryTable="refreshAll" />
          </el-col>
       </el-row>
 
@@ -254,8 +254,56 @@
                   <el-tag v-else-if="scope.row.invoicePaymentStatus === 'invoiced_unpaid'" type="warning" size="small">已开未付</el-tag>
                   <el-tag v-else-if="scope.row.invoicePaymentStatus === 'invoiced_paid'" type="success" size="small">已开已付</el-tag>
                </template>
+               <!-- 内部工作量：数值 + 悬浮明细 -->
+               <template v-else-if="col.key === 'internalWorkload'">
+                  <span v-if="isWlEmpty(scope.row.internalWorkload)" class="cell-placeholder">-</span>
+                  <el-tooltip v-else-if="(scope.row.internalWorkloadDetail || []).length" placement="top" effect="light" :show-after="120">
+                     <template #content>
+                        <div class="wl-tip">
+                           <div class="wl-tip-title"><span class="wl-dot internal"></span>内部工作量构成</div>
+                           <div class="wl-tip-head">
+                              <span class="wl-tip-cat">计费类别</span>
+                              <span class="wl-tip-price">单价</span>
+                              <span class="wl-tip-val">工作量</span>
+                           </div>
+                           <div v-for="it in scope.row.internalWorkloadDetail" :key="it.category + '|' + it.unit" class="wl-tip-row">
+                              <span class="wl-tip-cat">{{ it.category }}</span>
+                              <span class="wl-tip-price">{{ it.unitPrice != null ? (formatMoney(it.unitPrice) + (it.unit ? ' /' + it.unit : '')) : '-' }}</span>
+                              <span class="wl-tip-val">{{ fmtWorkload(it.value) }}<em v-if="it.unit"> {{ it.unit }}</em></span>
+                           </div>
+                        </div>
+                     </template>
+                     <span class="wl-hoverable">{{ fmtWorkload(scope.row.internalWorkload) }}</span>
+                  </el-tooltip>
+                  <span v-else>{{ fmtWorkload(scope.row.internalWorkload) }}</span>
+               </template>
+               <!-- 外部工作量：数值 + 悬浮明细 -->
+               <template v-else-if="col.key === 'externalWorkload'">
+                  <span v-if="isWlEmpty(scope.row.externalWorkload)" class="cell-placeholder">-</span>
+                  <el-tooltip v-else-if="(scope.row.externalWorkloadDetail || []).length" placement="top" effect="light" :show-after="120">
+                     <template #content>
+                        <div class="wl-tip">
+                           <div class="wl-tip-title"><span class="wl-dot external"></span>外部工作量构成</div>
+                           <div class="wl-tip-head">
+                              <span class="wl-tip-cat">计费类别</span>
+                              <span class="wl-tip-price">单价</span>
+                              <span class="wl-tip-val">工作量</span>
+                           </div>
+                           <div v-for="it in scope.row.externalWorkloadDetail" :key="it.category + '|' + it.unit" class="wl-tip-row">
+                              <span class="wl-tip-cat">{{ it.category }}</span>
+                              <span class="wl-tip-price">{{ it.unitPrice != null ? (formatMoney(it.unitPrice) + (it.unit ? ' /' + it.unit : '')) : '-' }}</span>
+                              <span class="wl-tip-val">{{ fmtWorkload(it.value) }}<em v-if="it.unit"> {{ it.unit }}</em></span>
+                           </div>
+                        </div>
+                     </template>
+                     <span class="wl-hoverable">{{ fmtWorkload(scope.row.externalWorkload) }}</span>
+                  </el-tooltip>
+                  <span v-else>{{ fmtWorkload(scope.row.externalWorkload) }}</span>
+               </template>
                <!-- 金额字段 -->
                <span v-else-if="col.type === 'money'"><span v-if="scope.row[col.prop] != null">{{ formatMoney(scope.row[col.prop]) }}</span></span>
+               <!-- 数字字段（工作量等，去除尾随 0） -->
+               <span v-else-if="col.type === 'number'"><span v-if="scope.row[col.prop] != null">{{ fmtWorkload(scope.row[col.prop]) }}</span></span>
                <!-- 日期字段：原样显示 -->
                <span v-else-if="col.type === 'date' && scope.row[col.prop]">{{ scope.row[col.prop] }}</span>
                <!-- 其他：直接显示 -->
@@ -671,7 +719,7 @@
 
 <script setup name="Settlement">
 import { ElMessageBox } from 'element-plus'
-import { treeListSettlement, getSettlementDetail, saveSettlement, saveWorkload, savePayment, getSettlementColumns } from "@/api/project/settlement"
+import { treeListSettlement, getSettlementDetail, saveSettlement, saveWorkload, savePayment, getSettlementColumns, getSettlementEntryStatusCounts } from "@/api/project/settlement"
 import { categoryTreeselectFull, listBilling } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { getDistinctValues } from "@/api/project/project"
@@ -709,7 +757,9 @@ const FALLBACK_COLUMNS = [
   { key: 'leaderNames', label: '负责人', type: 'text', group: 'business', prop: 'leaderNames', defaultVisible: false },
   { key: 'userName', label: '人员', type: 'text', group: 'business', prop: 'userName', defaultVisible: false },
   { key: 'categoryName', label: '项目类别', type: 'text', group: 'business', prop: 'categoryName', defaultVisible: false },
-  { key: 'workload', label: '工作量', type: 'number', group: 'business', prop: 'workload', defaultVisible: true },
+  { key: 'internalWorkload', label: '内部工作量', type: 'number', group: 'business', prop: 'internalWorkload', defaultVisible: true },
+  { key: 'externalWorkload', label: '外部工作量', type: 'number', group: 'business', prop: 'externalWorkload', defaultVisible: true },
+  { key: 'workload', label: '工作量', type: 'number', group: 'business', prop: 'workload', defaultVisible: false },
   { key: 'internalPrice', label: '内部单价', type: 'money', group: 'business', prop: 'internalPrice', defaultVisible: false },
   { key: 'externalPrice', label: '外部单价', type: 'money', group: 'business', prop: 'externalPrice', defaultVisible: false },
   { key: 'internalOutput', label: '内部产值', type: 'money', group: 'business', prop: 'internalOutput', defaultVisible: true },
@@ -770,43 +820,31 @@ function colWidth(col) {
   return 130
 }
 
-/** 录入状态胶囊：工作量/到账 本地筛选（依赖后端 workloadCount/paymentCount/invoicePaymentStatus） */
+/** 录入状态胶囊：工作量/到账/发票（筛选条件全部下推后端，计数由后端全局口径返回） */
 const workloadFilter = ref('all')
 const paymentFilter = ref('all')
 const invoiceUnpaidFilter = ref(false)
-const workloadDoneCount = computed(() => treeData.value.filter(r => (Number(r.workloadCount) || 0) > 0).length)
-const workloadUndoneCount = computed(() => treeData.value.length - workloadDoneCount.value)
-const paymentDoneCount = computed(() => treeData.value.filter(r => (Number(r.paymentCount) || 0) > 0).length)
-const paymentUndoneCount = computed(() => treeData.value.length - paymentDoneCount.value)
-const invoiceUnpaidCount = computed(() => treeData.value.filter(r => r.invoicePaymentStatus === 'invoiced_unpaid').length)
-const filteredTreeData = computed(() => {
-  return treeData.value.filter(r => {
-    const wlDone = (Number(r.workloadCount) || 0) > 0
-    const pmDone = (Number(r.paymentCount) || 0) > 0
-    if (workloadFilter.value === 'done' && !wlDone) return false
-    if (workloadFilter.value === 'undone' && wlDone) return false
-    if (paymentFilter.value === 'done' && !pmDone) return false
-    if (paymentFilter.value === 'undone' && pmDone) return false
-    if (invoiceUnpaidFilter.value && r.invoicePaymentStatus !== 'invoiced_unpaid') return false
-    return true
-  })
+/** 录入状态全局计数（后端 /entryStatusCounts 返回；忽略录入状态筛选本身） */
+const entryCounts = ref({
+  workloadDone: 0,
+  workloadUndone: 0,
+  paymentDone: 0,
+  paymentUndone: 0,
+  invoiceUnpaid: 0
 })
+const workloadDoneCount = computed(() => Number(entryCounts.value.workloadDone) || 0)
+const workloadUndoneCount = computed(() => Number(entryCounts.value.workloadUndone) || 0)
+const paymentDoneCount = computed(() => Number(entryCounts.value.paymentDone) || 0)
+const paymentUndoneCount = computed(() => Number(entryCounts.value.paymentUndone) || 0)
+const invoiceUnpaidCount = computed(() => Number(entryCounts.value.invoiceUnpaid) || 0)
+/** 「全部」胶囊的计数 = 当前项目状态+高级筛选下的项目总数（后端 total） */
+const entryAllCount = computed(() => total.value)
 
-/** 总条数 = 筛选后的项目数 */
-const total = computed(() => filteredTreeData.value.length)
-/** 当前页数据（前端分页切片） */
-const pagedTreeData = computed(() => {
-  const start = (pageNum.value - 1) * pageSize.value
-  return filteredTreeData.value.slice(start, start + pageSize.value)
-})
+/** 总条数（后端分页 total） */
+const total = ref(0)
 
-// 筛选/数据变化时：越界回退 + 清空展开与选中
-watch(filteredTreeData, (val) => {
-  const maxPage = Math.max(1, Math.ceil(val.length / pageSize.value))
-  if (pageNum.value > maxPage) pageNum.value = maxPage
-  expandedKeys.value = []
-  currentRow.value = null
-})
+/** 当前页数据（直接使用后端返回的当前页 rows） */
+const pagedTreeData = computed(() => treeData.value)
 
 const selectedStatuses = ref(['closed', 'archived'])
 const editOpen = ref(false)
@@ -986,6 +1024,19 @@ function formatMoney(val) {
   return Number(val).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/** 工作量格式化：千分位 + 最多 2 位小数并去除尾随 0（如 1200 → 1,200；12.50 → 12.5） */
+function fmtWorkload(val) {
+  if (val == null || val === '') return ''
+  const n = Number(val)
+  if (Number.isNaN(n)) return String(val)
+  return n.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+}
+
+/** 工作量是否为空（null / 0 视作无数据） */
+function isWlEmpty(val) {
+  return val == null || Number(val) === 0
+}
+
 /** 计算单行产值（起步量兜底）并同步内部/外部产值字段（供后端汇总口径） */
 function calcRow(row) {
   const w = Number(row.workload) || 0
@@ -1037,7 +1088,22 @@ function calcExpr(row) {
 function priceSourceMeta(source) {
   if (source === 'contract') return { text: '合同价', type: 'success' }
   if (source === 'manual') return { text: '手动', type: 'danger' }
+  if (source === 'imported') return { text: '导入价', type: 'warning' }
   return { text: '类别价', type: 'info' }
+}
+
+/**
+ * 解析合同单价：按 categoryId#billingId 精确匹配，未命中时回退 categoryId 维度（兼容旧数据）
+ * @param {Number|String} categoryId 项目类别ID
+ * @param {Number|String} billingId  计费方式ID（可空）
+ */
+function resolveContractPrice(categoryId, billingId) {
+  if (categoryId == null) return null
+  if (billingId != null) {
+    const exact = contractPriceMap.value[categoryId + '#' + billingId]
+    if (exact) return exact
+  }
+  return contractPriceMap.value[categoryId] || null
 }
 
 /** 类别的计费方式下拉分组（内部/外部） */
@@ -1083,8 +1149,8 @@ function onBillingChange(billingKey, row) {
   row.billingCategory = b.billingCategory
   row.priceUnit = b.priceUnit
   row.minQuantity = b.minQuantity
-  // 外部计费方式：有合同价优先合同价
-  const cp = contractPriceMap.value[row.categoryId]
+  // 外部计费方式：有合同价优先合同价（按 categoryId#billingId 精确匹配，categoryId 兜底）
+  const cp = resolveContractPrice(row.categoryId, b.id)
   if (b.billingType === 'external' && cp && cp.price != null) {
     row.unitPrice = cp.price
     row.priceSource = 'contract'
@@ -1103,19 +1169,61 @@ function onUnitPriceChange(row) {
   calcRow(row)
 }
 
-/** 查询树形列表 */
-function getList() {
+/** 查询列表（后端分页；`resetPage` 为 true 时回到第 1 页） */
+function getList(resetPage = true) {
+  if (resetPage) pageNum.value = 1
   loading.value = true
-  pageNum.value = 1
-  const params = { ...queryParams.value }
-  params.projectStatus = selectedStatuses.value.join(',')
+  const params = {
+    ...queryParams.value,
+    projectStatus: selectedStatuses.value.join(','),
+    pageNum: pageNum.value,
+    pageSize: pageSize.value
+  }
+  // 录入状态筛选下推后端（'all' 与 false 不传，表示不限）
+  if (workloadFilter.value === 'done' || workloadFilter.value === 'undone') {
+    params.workloadEntry = workloadFilter.value
+  }
+  if (paymentFilter.value === 'done' || paymentFilter.value === 'undone') {
+    params.paymentEntry = paymentFilter.value
+  }
+  if (invoiceUnpaidFilter.value) {
+    params.invoiceUnpaid = 'true'
+  }
   treeListSettlement(params).then(response => {
-    treeData.value = response.data || []
+    treeData.value = response.rows || []
+    total.value = Number(response.total) || 0
     // 数据刷新后清理展开明细与选中行，避免旧数据残留
     Object.keys(expandDetails).forEach(k => delete expandDetails[k])
+    expandedKeys.value = []
     currentRow.value = null
     loading.value = false
+  }).catch(() => {
+    loading.value = false
   })
+}
+
+/** 加载录入状态胶囊的全局计数（忽略录入状态筛选本身，只受项目状态+高级筛选影响） */
+function loadEntryStatusCounts() {
+  const params = {
+    ...queryParams.value,
+    projectStatus: selectedStatuses.value.join(',')
+  }
+  getSettlementEntryStatusCounts(params).then(response => {
+    const d = response.data || response || {}
+    entryCounts.value = {
+      workloadDone: Number(d.workloadDone) || 0,
+      workloadUndone: Number(d.workloadUndone) || 0,
+      paymentDone: Number(d.paymentDone) || 0,
+      paymentUndone: Number(d.paymentUndone) || 0,
+      invoiceUnpaid: Number(d.invoiceUnpaid) || 0
+    }
+  }).catch(() => { /* 计数失败不影响主列表 */ })
+}
+
+/** 状态/高级筛选变化后统一刷新（列表 + 胶囊计数） */
+function refreshAll(resetPage = true) {
+  loadEntryStatusCounts()
+  getList(resetPage)
 }
 
 // ===== 展开行明细卡 + 结算核对（平表模式） =====
@@ -1172,10 +1280,11 @@ function toggleExpand(row) {
   }
 }
 
-/** 分页变化：清空展开与选中，避免跨页残留 */
+/** 分页变化：清空展开与选中 + 按新页码重新查询 */
 function handlePagination() {
   expandedKeys.value = []
   currentRow.value = null
+  getList(false)
 }
 
 /** 全局序号（翻页后连续） */
@@ -1284,33 +1393,38 @@ function paymentSpanMethod({ rowIndex, columnIndex }, projectId) {
 /** 状态胶囊点击 */
 function onStatusCapsuleClick(statuses) {
   selectedStatuses.value = statuses
+  refreshAll()
+}
+
+/** 录入状态胶囊：工作量筛选（下推后端，重新查询并回到第 1 页） */
+function setWorkloadFilter(val) {
+  if (workloadFilter.value === val) return
+  workloadFilter.value = val
   getList()
 }
 
-/** 录入状态胶囊：工作量筛选（本地筛选，无需重新请求） */
-function setWorkloadFilter(val) {
-  workloadFilter.value = val
-}
-
-/** 录入状态胶囊：到账筛选（本地筛选，无需重新请求） */
+/** 录入状态胶囊：到账筛选（下推后端，重新查询并回到第 1 页） */
 function setPaymentFilter(val) {
+  if (paymentFilter.value === val) return
   paymentFilter.value = val
+  getList()
 }
 
-/** 已开未付快捷胶囊：切换筛选（重点跟进提前开票未回款项目） */
+/** 已开未付快捷胶囊：切换筛选（下推后端，重新查询并回到第 1 页） */
 function toggleInvoiceUnpaidFilter() {
   invoiceUnpaidFilter.value = !invoiceUnpaidFilter.value
+  getList()
 }
 
 /** 状态筛选变更 */
 function onStatusChange(val) {
-  getList()
+  refreshAll()
 }
 
 function handleQuery() {
   // 同步工程编号到全局记忆（含清空）
   searchMemory.setProjectCode(queryParams.value.projectCode)
-  getList()
+  refreshAll()
 }
 
 function resetQuery() {
@@ -1428,11 +1542,12 @@ function handleEdit(row) {
       const payments = detail.payments || []
       const workloads = detail.workloads || []
 
-      // 解析合同单价映射（categoryId → {price}），用于自动带出外部单价
+      // 解析合同单价映射（key = categoryId#billingId；同时保留 categoryId 兜底，兼容无 billingId 的旧数据）
       const contractPrices = detail.contractPrices || []
       const cpMap = {}
       contractPrices.forEach(cp => {
-        if (cp.categoryId) cpMap[cp.categoryId] = cp
+        if (cp.categoryId && cp.billingId != null) cpMap[cp.categoryId + '#' + cp.billingId] = cp
+        if (cp.categoryId && cpMap[cp.categoryId] === undefined) cpMap[cp.categoryId] = cp
       })
       contractPriceMap.value = cpMap
 
@@ -1526,10 +1641,13 @@ function handleEditWorkload(row) {
       currentProjectCategoryId.value = detail.project ? detail.project.projectCategoryId : null
       const workloads = detail.workloads || []
 
-      // 解析合同单价映射
+      // 解析合同单价映射（key = categoryId#billingId；categoryId 兜底）
       const contractPrices = detail.contractPrices || []
       const cpMap = {}
-      contractPrices.forEach(cp => { if (cp.categoryId) cpMap[cp.categoryId] = cp })
+      contractPrices.forEach(cp => {
+        if (cp.categoryId && cp.billingId != null) cpMap[cp.categoryId + '#' + cp.billingId] = cp
+        if (cp.categoryId && cpMap[cp.categoryId] === undefined) cpMap[cp.categoryId] = cp
+      })
       contractPriceMap.value = cpMap
 
       // 填充工作量
@@ -1805,7 +1923,7 @@ function onQuickCatChange(val, rec, type) {
       return
     }
     const b = opt.raw
-    const cp = contractPriceMap.value[opt.categoryId]
+    const cp = resolveContractPrice(opt.categoryId, b.id)
     if (cp && cp.price != null) {
       rec.quickExternalPrice = cp.price
     } else {
@@ -1863,7 +1981,7 @@ function quickAddWorkload(rec, type) {
   }
 
   const b = opt.raw
-  const cp = contractPriceMap.value[opt.categoryId]
+  const cp = resolveContractPrice(opt.categoryId, b.id)
   let finalPrice = price
   let priceSource = 'manual'
   if (isExternal && cp && cp.price != null) {
@@ -1929,7 +2047,7 @@ function saveWorkloadData() {
     proxy.$modal.msgSuccess("保存成功")
     workloadOpen.value = false
     workloadSaving.value = false
-    getList()
+    refreshAll(false)
   }).catch(() => {
     workloadSaving.value = false
   })
@@ -1992,7 +2110,7 @@ function savePaymentData() {
     proxy.$modal.msgSuccess("保存成功")
     paymentOpen.value = false
     paymentSaving.value = false
-    getList()
+    refreshAll(false)
   }).catch(() => {
     paymentSaving.value = false
   })
@@ -2125,7 +2243,7 @@ function doSaveSettlement() {
     proxy.$modal.msgSuccess("保存成功")
     editOpen.value = false
     saveLoading.value = false
-    getList()
+    refreshAll(false)
   }).catch(() => {
     saveLoading.value = false
   })
@@ -2144,7 +2262,7 @@ function loadDistinctValues() {
 }
 
 loadColumns()
-getList()
+refreshAll()
 // 全局工程编号回填：仅回填输入框，不自动查询（用户点「查询」才生效）
 if (searchMemory.projectCode && !queryParams.value.projectCode) {
   queryParams.value.projectCode = searchMemory.projectCode
@@ -2153,7 +2271,7 @@ loadDistinctValues()
 
 // keep-alive 缓存下切回本页时刷新列表（否则在项目列表删除项目后，本页仍显示旧数据）
 onActivated(() => {
-  getList()
+  refreshAll(false)
 })
 </script>
 
@@ -2573,5 +2691,76 @@ onActivated(() => {
 }
 .seq-num {
   color: #606266;
+}
+
+/* ===== 工作量列：数值本身悬浮显示明细 ===== */
+.wl-hoverable {
+  cursor: help;
+  border-bottom: 1px dashed #c0c4cc;
+}
+/* 悬浮明细浮层 */
+.wl-tip {
+  min-width: 240px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #303133;
+}
+.wl-tip-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  font-size: 13px;
+  color: #303133;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #ebeef5;
+}
+.wl-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.wl-dot.internal { background: #409eff; }
+.wl-dot.external { background: #e6a23c; }
+.wl-tip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px dashed #ebeef5;
+  color: #909399;
+  font-size: 11px;
+}
+.wl-tip-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.wl-tip-cat {
+  flex: 1;
+  color: #606266;
+}
+.wl-tip-price {
+  width: 110px;
+  text-align: right;
+  color: #909399;
+  white-space: nowrap;
+}
+.wl-tip-val {
+  width: 96px;
+  text-align: right;
+  font-weight: 500;
+  color: #303133;
+  white-space: nowrap;
+}
+.wl-tip-val em {
+  font-style: normal;
+  font-weight: 400;
+  color: #909399;
 }
 </style>

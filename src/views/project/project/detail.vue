@@ -27,7 +27,7 @@
                <el-descriptions-item label="工程地点">{{ projectInfo.projectLocation || '-' }}</el-descriptions-item>
                <el-descriptions-item label="联系人">{{ projectInfo.contactName || '-' }}</el-descriptions-item>
                <el-descriptions-item label="联系电话">{{ projectInfo.contactPhone || '-' }}</el-descriptions-item>
-               <el-descriptions-item label="合同">{{ projectInfo.contractName || '-' }}</el-descriptions-item>
+               <el-descriptions-item label="合同">{{ fmtContract(projectInfo) }}</el-descriptions-item>
                <el-descriptions-item label="安排日期">{{ projectInfo.assignDate ? parseTime(projectInfo.assignDate, '{y}-{m}-{d}') : '-' }}</el-descriptions-item>
                <el-descriptions-item label="工期要求">{{ projectInfo.durationRequire != null ? projectInfo.durationRequire + ' 天' : '-' }}</el-descriptions-item>
                <el-descriptions-item label="总时长">
@@ -535,6 +535,15 @@ const settlementPayments = computed(() => settlementOverview.value.payments || [
 function formatMoney(val) {
    if (val == null || val === "") return ""
    return Number(val).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " 元"
+}
+
+/** 合同展示：编号 + 名称（拼接，缺失部分自动省略；两者皆空显示 -）
+ *  格式：【编号】名称，如【HT-2026-001】地下空间管线探测合同 */
+function fmtContract(row) {
+   const no = (row.contractNo || '').trim()
+   const name = (row.contractName || '').trim()
+   if (no && name) return '【' + no + '】' + name
+   return no || name || '-'
 }
 
 /** 数值兜底 */

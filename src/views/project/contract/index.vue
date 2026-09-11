@@ -233,7 +233,7 @@
          </el-table-column>
       </el-table>
 
-      <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
+      <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" all-option @pagination="getList" />
 
       <!-- 添加或修改合同对话框 -->
       <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
@@ -353,14 +353,14 @@
                   <el-row :gutter="20">
                      <el-col :span="24">
                         <el-form-item label="支付条件" prop="paymentTerms">
-                           <el-input v-model="form.paymentTerms" type="textarea" placeholder="请输入支付条件" maxlength="2000" :rows="3" />
+                           <el-input v-model="form.paymentTerms" type="textarea" placeholder="请输入支付条件" maxlength="2000" :rows="2" />
                         </el-form-item>
                      </el-col>
                   </el-row>
                   <el-row :gutter="20">
                      <el-col :span="24">
                         <el-form-item label="备注" prop="remark">
-                           <el-input v-model="form.remark" type="textarea" placeholder="请输入备注" maxlength="500" :rows="2" />
+                           <el-input v-model="form.remark" type="textarea" placeholder="请输入备注" maxlength="500" :rows="4" />
                         </el-form-item>
                      </el-col>
                   </el-row>

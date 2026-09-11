@@ -342,7 +342,7 @@
               </el-table-column>
               <el-table-column label="合同类型" width="100" align="center">
                 <template #default="{ row }">
-                  <el-tag size="small" :type="row.contractType === '单价合同' ? 'warning' : ''">{{ row.contractType }}</el-tag>
+                  <el-tag size="small" :type="contractTypeLabel(row.contractType) === '单价合同' ? 'warning' : ''">{{ contractTypeLabel(row.contractType) || '-' }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="projectType" label="项目类型" min-width="110" show-overflow-tooltip />
@@ -439,6 +439,13 @@ const hasProblems = computed(() =>
   (preview.warningCount > 0) || (preview.errorCount > 0)
 )
 
+// 合同类型字典值 → 中文标签（兼容旧中文原文）
+function contractTypeLabel(v) {
+  if (v === 'unit') return '单价合同'
+  if (v === 'total') return '总价合同'
+  return v
+}
+
 function problemTagType(t) {
   if (t === '无法导入') return 'danger'
   return 'warning' // 待修正
@@ -446,8 +453,9 @@ function problemTagType(t) {
 
 // ============ Step1 上传 ============
 function handleFileChange(file) {
-  if (!file.name.toLowerCase().endsWith('.xlsx')) {
-    ElMessage.error('请选择 .xlsx 文件')
+  const name = file.name.toLowerCase()
+  if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+    ElMessage.error('请选择 .xls 或 .xlsx 文件')
     uploadFile.value = null
     return
   }
