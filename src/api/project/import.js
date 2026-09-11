@@ -13,13 +13,22 @@ export function previewImport(file) {
   })
 }
 
-// 步骤2：提交确认后的数据落库
+// 步骤2：提交确认后的数据落库（异步提交，立即返回）
 export function commitImport(data) {
   return request({
     url: '/project/import/commit',
     method: 'post',
     data,
     timeout: 15 * 60 * 1000
+  })
+}
+
+// 步骤3：查询导入状态（轮询直到 done）
+export function getImportStatus(token) {
+  return request({
+    url: '/project/import/status',
+    method: 'get',
+    params: { token }
   })
 }
 

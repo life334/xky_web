@@ -7,6 +7,13 @@
         </keep-alive>
       </transition>
     </router-view>
+    <!-- 路由切换内容区加载遮罩：懒加载 chunk 下载/权限刷新期间避免"空白等待" -->
+    <transition name="rl-fade">
+      <div v-if="routeLoading.show" class="route-loading-mask">
+        <div class="rl-spinner" />
+        <div class="rl-text">页面加载中…</div>
+      </div>
+    </transition>
     <iframe-toggle />
     <copyright />
   </section>
@@ -16,6 +23,7 @@
 import copyright from "./Copyright/index"
 import iframeToggle from "./IframeToggle/index"
 import useTagsViewStore from '@/store/modules/tagsView'
+import { routeLoading } from '@/utils/route-loading'
 
 const route = useRoute()
 const tagsViewStore = useTagsViewStore()
@@ -103,6 +111,45 @@ function addIframe() {
       height: calc(100dvh - 84px);
     }
   }
+}
+
+/* ===== 路由切换内容区加载遮罩 ===== */
+.route-loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 1999;
+  min-height: calc(100vh - 84px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(246, 248, 251, 0.72);
+  backdrop-filter: blur(1px);
+}
+.rl-spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid rgba(64, 158, 255, 0.18);
+  border-top-color: #409eff;
+  animation: rl-spin 0.8s linear infinite;
+}
+@keyframes rl-spin {
+  to { transform: rotate(360deg); }
+}
+.rl-text {
+  color: #606266;
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+.rl-fade-enter-active,
+.rl-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.rl-fade-enter-from,
+.rl-fade-leave-to {
+  opacity: 0;
 }
 </style>
 

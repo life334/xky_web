@@ -189,19 +189,19 @@
          </el-table-column>
       </el-table>
 
-      <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
+      <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" all-option @pagination="getList" />
 
       <!-- 添加或修改项目对话框 -->
       <el-dialog 
          :title="title" 
          :model-value="open" 
-         @update:model-value="open = $event" 
+         @update:model-value="onFormDialogVisible" 
          width="80%" 
          append-to-body 
          :close-on-click-modal="false" 
          :close-on-press-escape="false"
       >
-         <el-form ref="projectRef" :model="form" :rules="rules" label-width="100px">
+         <el-form ref="projectRef" v-loading="formLoading" :model="form" :rules="rules" label-width="100px">
             <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="工程编号" prop="projectCode">
@@ -380,7 +380,7 @@
          </el-form>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" @click="submitForm">确 定</el-button>
+               <el-button type="primary" :disabled="formLoading" @click="submitForm">确 定</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
          </template>
@@ -554,6 +554,10 @@ const searchMemory = useSearchMemoryStore()
 
 const projectList = ref([])
 const open = ref(false)
+/** 修改弹窗表单数据加载中（先开窗 + 遮罩，后台取数填充，避免点击后空白等待） */
+const formLoading = ref(false)
+/** 修改弹窗请求令牌：关闭/重开时自增，使在途请求失效，防止旧响应覆盖新表单 */
+let formSeq = 0
 const detailOpen = ref(false)
 const loading = ref(true)
 const showSearch = ref(true)
@@ -1068,12 +1072,6 @@ function filterCategoryNode(value, data) {
   return data.label.indexOf(value) !== -1
 }
 
-/** 取消按钮 */
-function cancel() {
-  open.value = false
-  reset()
-}
-
 /** 表单重置 */
 function reset() {
   form.value = {
@@ -1160,12 +1158,32 @@ function handleAdd() {
   title.value = "新增项目"
 }
 
-/** 修改按钮操作 */
+/** 修改弹窗关闭（右上角 X / 取消 / 加载失败）：使在途请求失效并复位表单 */
+function onFormDialogVisible(v) {
+  open.value = v
+  if (!v) {
+    formSeq++
+    formLoading.value = false
+    reset()
+  }
+}
+
+/** 取消按钮 */
+function cancel() {
+  onFormDialogVisible(false)
+}
+
+/** 修改按钮操作（先开窗 + 遮罩，后台取数填充，避免点击后等接口返回才弹窗） */
 function handleUpdate(row) {
   reset()
   loadLeaderList()
   const id = row.id || ids.value[0]
+  const seq = ++formSeq
+  open.value = true
+  title.value = "修改项目"
+  formLoading.value = true
   getProject(id).then(response => {
+    if (seq !== formSeq) return
     form.value = response.data
     if (!form.value.leaderIds) {
       form.value.leaderIds = []
@@ -1174,16 +1192,23 @@ function handleUpdate(row) {
     if (form.value.contractId) {
       searchContracts("")
     }
-    open.value = true
-    title.value = "修改项目"
     // 打开弹窗即按"安排日期→今天"实时计算总时长（不依赖用户重新选择日期）
     refreshFormDuration()
     // 显式加载关联定线候选项目（watch 可能因时序未触发）
     if (form.value.engineeringProject && relatedFieldVisible.value) {
       relatedCandidates.value = []
       getRelatedCandidates(form.value.engineeringProject).then(res => {
+        if (seq !== formSeq) return
         relatedCandidates.value = res.data || []
       })
+    }
+  }).catch(() => {
+    if (seq !== formSeq) return
+    proxy.$modal.msgError("加载项目信息失败，请重试")
+    onFormDialogVisible(false)
+  }).finally(() => {
+    if (seq === formSeq) {
+      formLoading.value = false
     }
   })
 }

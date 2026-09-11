@@ -133,6 +133,10 @@
 /* 移动端适配 */
 @media (max-width: 768px) {
   .pagination-container {
+    /* 与原生 sizes 保持一致：小屏隐藏每页条数下拉（含「全部」） */
+    > .pagination-size-select {
+      display: none !important;
+    }
     .el-pagination {
       > .el-pagination__jump {
         display: none !important;

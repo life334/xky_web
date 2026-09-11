@@ -38,6 +38,7 @@
           <div class="stat-row">
             <div class="stat-pill stat-total">总行数 <b>{{ preview.totalRows ?? 0 }}</b></div>
             <div class="stat-pill stat-ready">可导入 ✅ <b>{{ preview.readyCount ?? 0 }}</b></div>
+            <div v-if="(preview.existsCount ?? 0) > 0" class="stat-pill stat-skip">已存在·将跳过 ⏭️ <b>{{ preview.existsCount ?? 0 }}</b></div>
             <div class="stat-pill stat-warn">待修正 ⚠️ <b>{{ preview.warningCount ?? 0 }}</b></div>
             <div class="stat-pill stat-err">无法导入 ❌ <b>{{ preview.errorCount ?? 0 }}</b></div>
             <div style="flex:1"></div>
@@ -45,6 +46,17 @@
             <el-button type="primary" :disabled="(preview.readyCount ?? 0) === 0" :loading="committing" @click="doCommit">
               确认导入（{{ preview.readyCount ?? 0 }}行）
             </el-button>
+          </div>
+
+          <!-- 已存在工程编号提示（整组跳过，不写入） -->
+          <div v-if="(preview.existsCount ?? 0) > 0" class="problem-section">
+            <div class="problem-card problem-skip">
+              <div class="problem-icon">⏭️</div>
+              <div class="problem-body">
+                <div class="problem-title">{{ preview.existsCount }} 行（{{ (preview.existsCodes || []).length }} 个工程编号）已存在于系统中{{ (preview.readyCount ?? 0) === 0 ? '，本次没有可导入的数据' : '，导入时将整组跳过' }}</div>
+                <div class="problem-desc">已存在的工程编号不会覆盖、也不会重复写入（不产生子项/任务/付款/资料）。如需更新，请先在系统中处理原项目，或修改 Excel 中的工程编号后重新导入。</div>
+              </div>
+            </div>
           </div>
 
           <!-- 问题摘要 + 下载按钮 -->
@@ -89,11 +101,17 @@
           </el-collapse>
 
           <!-- 可导入数据只读表格 -->
-          <div v-if="(preview.readyCount ?? 0) > 0" class="ready-section">
+          <div v-if="(preview.rows || []).length > 0" class="ready-section">
             <div class="section-title">可导入数据预览（只读）</div>
             <el-table :data="preview.rows" border stripe size="small" height="50vh">
               <el-table-column type="index" label="序" width="50" />
               <el-table-column prop="excelRow" label="Excel行" width="75" />
+              <el-table-column label="状态" width="110" align="center">
+                <template #default="{ row }">
+                  <el-tag v-if="row.existsInDb" type="warning" size="small">已存在·跳过</el-tag>
+                  <el-tag v-else type="success" size="small">可导入</el-tag>
+                </template>
+              </el-table-column>
               <el-table-column prop="projectCode" label="工程编号" min-width="130" />
               <el-table-column prop="clientUnit" label="委托单位" min-width="150" show-overflow-tooltip />
               <el-table-column prop="engineeringProject" label="委托任务" min-width="160" show-overflow-tooltip />
@@ -127,13 +145,20 @@
         <!-- Step3 结果摘要 -->
         <div v-if="step === 2" class="step-box">
           <el-row :gutter="16" class="result-summary">
-            <el-col :span="12">
+            <el-col :span="8">
               <el-card shadow="never" class="sum-card sum-ok">
                 <div class="sum-label">导入成功</div>
                 <div class="sum-num">{{ result.successCount ?? 0 }}</div>
               </el-card>
             </el-col>
-            <el-col :span="12">
+            <el-col :span="8">
+              <el-card shadow="never" class="sum-card sum-skip">
+                <div class="sum-label">跳过（工程编号已存在）</div>
+                <div class="sum-num">{{ result.skippedCount ?? 0 }}</div>
+                <el-button v-if="result.skippedCount > 0" link type="primary" size="small" @click="downloadResultFile('skipped')">下载跳过明细</el-button>
+              </el-card>
+            </el-col>
+            <el-col :span="8">
               <el-card shadow="never" class="sum-card sum-fail">
                 <div class="sum-label">失败</div>
                 <div class="sum-num">{{ result.failedCount ?? 0 }}</div>
@@ -141,6 +166,15 @@
               </el-card>
             </el-col>
           </el-row>
+          <el-collapse v-if="result.skippedDetails && result.skippedDetails.length" class="mt20">
+            <el-collapse-item name="skip" :title="'跳过明细（' + result.skippedDetails.length + '行）'">
+              <el-table :data="result.skippedDetails" size="small" border stripe max-height="300">
+                <el-table-column label="Excel行号" prop="excelRow" width="100" align="center" />
+                <el-table-column label="工程编号" prop="projectCode" width="180" />
+                <el-table-column label="跳过原因" prop="reason" show-overflow-tooltip />
+              </el-table>
+            </el-collapse-item>
+          </el-collapse>
           <el-collapse v-if="result.failedDetails && result.failedDetails.length" class="mt20">
             <el-collapse-item name="fail" :title="'失败明细（' + result.failedDetails.length + '行）'">
               <el-table :data="result.failedDetails" size="small" border stripe max-height="300">
@@ -370,11 +404,11 @@
 
 
 <script setup>
-import { ref, reactive, computed, getCurrentInstance } from 'vue'
+import { ref, reactive, computed, getCurrentInstance, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
-  previewImport, commitImport,
+  previewImport, commitImport, getImportStatus,
   downloadProblems, downloadImportFailures, downloadImportSkipped
 } from '@/api/project/import'
 import {
@@ -393,6 +427,7 @@ const problemCollapse = ref(['problems']) // 默认折叠
 
 const preview = reactive({
   token: '', totalRows: 0, readyCount: 0, warningCount: 0, errorCount: 0,
+  existsCount: 0, existsCodes: [],
   problemSummary: null,
   rows: [],
   problemRows: []
@@ -432,6 +467,8 @@ async function doPreview() {
     preview.token = d.token
     preview.totalRows = d.totalRows
     preview.readyCount = d.readyCount
+    preview.existsCount = d.existsCount ?? 0
+    preview.existsCodes = d.existsCodes || []
     preview.warningCount = d.warningCount
     preview.errorCount = d.errorCount
     preview.problemSummary = d.problemSummary
@@ -450,35 +487,87 @@ async function doPreview() {
   }
 }
 
-// ============ Step2 确认导入 ============
+// ============ Step2 确认导入（后台异步 + 轮询） ============
+let importPollTimer = null
+// 本页是否打开过全屏遮罩：$modal 是全局单例，别的页面也可能在用，
+// 卸载时必须"自己开过才关"，否则会在未打开时调用 close 抛错并打断路由切换。
+let importLoadingShown = false
+function openImportLoading(text) {
+  importLoadingShown = true
+  proxy.$modal.loading(text)
+}
+function closeImportLoading() {
+  if (!importLoadingShown) return
+  importLoadingShown = false
+  proxy.$modal.closeLoading()
+}
+function fillImportResult(d) {
+  result.logId = d.logId
+  result.successCount = d.successCount
+  result.skippedCount = d.skippedCount
+  result.failedCount = d.failedCount
+  result.failedDetails = Array.isArray(d.failedDetails) ? d.failedDetails : []
+  result.skippedDetails = Array.isArray(d.skippedDetails) ? d.skippedDetails : []
+}
 async function doCommit() {
   try {
     await ElMessageBox.confirm(
-      `确认导入 ${preview.readyCount} 行可导入数据？（同一工程编号的多条记录将合并为同一项目的多个子项；待修正/无法导入的行将自动跳过）`,
+      `确认导入 ${preview.readyCount} 行可导入数据？（同一工程编号的多条记录将合并为同一项目的多个子项；待修正/无法导入的行将自动跳过`
+      + ((preview.existsCount ?? 0) > 0 ? `；另有 ${preview.existsCount} 行因工程编号已存在将整组跳过，不覆盖也不重复写入` : '')
+      + '）',
       '确认导入', { type: 'warning' }
     )
   } catch { return }
   committing.value = true
-  proxy.$modal.loading('正在导入，请稍候...')
   try {
     const res = await commitImport({ token: preview.token, rows: preview.rows })
     if (res.code !== 200) throw new Error(res.msg)
-    const d = res.data
-    result.logId = d.logId
-    result.successCount = d.successCount
-    result.skippedCount = d.skippedCount
-    result.failedCount = d.failedCount
-    result.failedDetails = Array.isArray(d.failedDetails) ? d.failedDetails : []
-    result.skippedDetails = Array.isArray(d.skippedDetails) ? d.skippedDetails : []
-    step.value = 2
-    ElMessage.success('导入完成')
+    const d = res.data || {}
+    if (d.status === 'done') {
+      // 极小数据量下后台可能瞬间完成，直接展示结果
+      fillImportResult(d)
+      step.value = 2
+      ElMessage.success('导入完成')
+      committing.value = false
+      return
+    }
+    ElMessage.info('已提交后台导入，正在处理中…完成前请勿重复点击')
+    const token = preview.token
+    openImportLoading('后台导入中，请稍候…')
+    importPollTimer = setInterval(async () => {
+      try {
+        const sr = await getImportStatus(token)
+        const sd = sr.data || {}
+        if (sd.status === 'done') {
+          clearInterval(importPollTimer); importPollTimer = null
+          closeImportLoading()
+          fillImportResult(sd)
+          step.value = 2
+          ElMessage.success(`导入完成：成功 ${sd.successCount ?? 0}，跳过 ${sd.skippedCount ?? 0}，失败 ${sd.failedCount ?? 0}`)
+          committing.value = false
+        } else if (sd.status === 'expired') {
+          clearInterval(importPollTimer); importPollTimer = null
+          closeImportLoading()
+          committing.value = false
+          ElMessage.error('导入会话已过期，请重新解析后再导入')
+        }
+      } catch (e) {
+        clearInterval(importPollTimer); importPollTimer = null
+        closeImportLoading()
+        committing.value = false
+        ElMessage.error('查询导入状态失败：' + (e.message || e))
+      }
+    }, 2000)
   } catch (e) {
-    ElMessage.error('导入失败：' + (e.message || e))
-  } finally {
-    proxy.$modal.closeLoading()
+    ElMessage.error('导入提交失败：' + (e.message || e))
     committing.value = false
   }
 }
+onBeforeUnmount(() => {
+  // 离开页面：停掉轮询并只关闭本页打开的遮罩（$modal 为全局单例）
+  if (importPollTimer) { clearInterval(importPollTimer); importPollTimer = null }
+  closeImportLoading()
+})
 
 // ============ 下载 ============
 function blobDownload(promise, filename) {
@@ -528,9 +617,10 @@ function resetAll() {
   if (uploadRef.value) uploadRef.value.clearFiles()
   Object.assign(preview, {
     token: '', totalRows: 0, readyCount: 0, warningCount: 0, errorCount: 0,
+    existsCount: 0, existsCodes: [],
     problemSummary: null, rows: [], problemRows: []
   })
-  Object.assign(result, { logId: null, successCount: 0, skippedCount: 0, failedCount: 0 })
+  Object.assign(result, { logId: null, successCount: 0, skippedCount: 0, failedCount: 0, failedDetails: [], skippedDetails: [] })
 }
 
 // ============ 合同导入 ============
@@ -674,6 +764,7 @@ function resetCAll() {
   &.stat-ready { background: #f0f9eb; color: #67c23a; }
   &.stat-warn  { background: #fdf6ec; color: #e6a23c; }
   &.stat-dup   { background: #f4f4f5; color: #909399; }
+  &.stat-skip  { background: #f4f4f5; color: #909399; }
   &.stat-err   { background: #fef0f0; color: #f56c6c; }
 }
 /* 问题摘要卡片 */
@@ -684,6 +775,7 @@ function resetCAll() {
 }
 .problem-warn { border-color: #e6a23c40; background: #fdf6ec; }
 .problem-dup  { border-color: #90939940; background: #f4f4f5; }
+.problem-skip { border-color: #90939940; background: #f4f4f5; }
 .problem-err  { border-color: #f56c6c40; background: #fef0f0; }
 .problem-icon { font-size: 20px; }
 .problem-body { flex: 1; }

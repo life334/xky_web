@@ -69,14 +69,25 @@ export default {
   },
   // 打开遮罩层
   loading(content) {
+    // 防止重复调用导致实例泄漏（ElLoading 会往 body 追加节点，旧实例失去引用后无法再关闭）
+    if (loadingInstance) {
+      loadingInstance.close()
+      loadingInstance = undefined
+    }
     loadingInstance = ElLoading.service({
       lock: true,
       text: content,
       background: "rgba(0, 0, 0, 0.7)",
     })
   },
-  // 关闭遮罩层
+  // 关闭遮罩层（幂等：未打开或已关闭时静默返回，避免 undefined.close() 抛错）
   closeLoading() {
+    if (!loadingInstance) return
     loadingInstance.close()
+    loadingInstance = undefined
+  },
+  // 当前是否有遮罩层处于打开状态
+  isLoading() {
+    return !!loadingInstance
   }
 }

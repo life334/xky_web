@@ -2,6 +2,7 @@ import router from './router'
 import { ElMessage } from 'element-plus'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
+import { startRouteLoading, finishRouteLoading } from '@/utils/route-loading'
 import { getToken } from '@/utils/auth'
 import { isHttp, isPathMatch } from '@/utils/validate'
 import { isRelogin } from '@/utils/request'
@@ -20,6 +21,7 @@ const isWhiteList = (path) => {
 
 router.beforeEach(async (to, from) => {
   NProgress.start()
+  startRouteLoading()
   if (getToken()) {
     to.meta.title && useSettingsStore().setTitle(to.meta.title)
     const isLock = useLockStore().isLock
@@ -73,4 +75,12 @@ router.beforeEach(async (to, from) => {
 
 router.afterEach(() => {
   NProgress.done()
+  finishRouteLoading()
+})
+
+// 兜底：导航过程中若抛出异常（守卫报错 / 懒加载 chunk 失败等），
+// afterEach 可能不执行，这里强制收尾，避免内容区加载遮罩永久停留导致「页面一直转圈」
+router.onError(() => {
+  NProgress.done()
+  finishRouteLoading()
 })

@@ -36,7 +36,20 @@ export default defineConfig(({ mode, command }) => {
         output: {
           chunkFileNames: 'static/js/[name]-[hash].js',
           entryFileNames: 'static/js/[name]-[hash].js',
-          assetFileNames: 'static/[ext]/[name]-[hash].[ext]'
+          assetFileNames: 'static/[ext]/[name]-[hash].[ext]',
+          // 大库独立分包：稳定 hash → 浏览器长缓存，发版后 vendor 不变则用户无需重新下载；
+          // 同时避免 element-plus/echarts/maplibre 等巨型库与业务代码混在一个 chunk 里反复下载
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return
+            if (id.includes('element-plus') || id.includes('@element-plus')) return 'element-plus'
+            if (id.includes('echarts')) return 'echarts'
+            if (id.includes('maplibre')) return 'maplibre'
+            if (id.includes('quill') || id.includes('@vueup')) return 'quill'
+            if (id.includes('/vue/') || id.includes('/vue-router/') || id.includes('/pinia/') ||
+                id.includes('/@vue/') || id.includes('/@vueuse/')) return 'vue-vendor'
+            if (id.includes('/axios/')) return 'axios'
+            return 'chunk-vendor'
+          }
         }
       }
     },

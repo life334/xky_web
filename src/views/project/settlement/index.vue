@@ -283,6 +283,7 @@
          v-model:page="pageNum"
          v-model:limit="pageSize"
          :page-sizes="[10, 20, 50, 100]"
+         all-option
          @pagination="handlePagination"
       />
 
@@ -316,8 +317,9 @@
          class="scrollbar"
          width="80%"
          draggable
+         :title="editProjectCode"
       >
-         <el-form :model="workloadForm" label-width="90px">
+         <el-form v-loading="workloadLoading" element-loading-text="数据加载中..." element-loading-background="rgba(255, 255, 255, 0.7)" :model="workloadForm" label-width="90px">
             <!-- 内部工作量区 -->
             <el-divider content-position="left">
                <span class="section-title-internal">内部工作量</span>
@@ -440,7 +442,7 @@
          </el-form>
          <template #footer>
             <el-button @click="workloadOpen = false">取消</el-button>
-            <el-button type="primary" @click="saveWorkloadData" :loading="workloadSaving">保 存</el-button>
+            <el-button type="primary" @click="saveWorkloadData" :loading="workloadSaving" :disabled="workloadLoading">保 存</el-button>
          </template>
       </el-dialog>
 
@@ -454,7 +456,7 @@
          width="80%"
          draggable
       >
-         <el-form ref="paymentRef" :model="paymentForm" label-width="100px">
+         <el-form ref="paymentRef" v-loading="paymentLoading" element-loading-text="数据加载中..." element-loading-background="rgba(255, 255, 255, 0.7)" :model="paymentForm" label-width="100px">
             <!-- 付款信息（保持原有结构） -->
             <el-divider content-position="left">付款信息</el-divider>
             <div class="settle-panel">
@@ -661,7 +663,7 @@
          </el-form>
          <template #footer>
             <el-button @click="paymentOpen = false">取消</el-button>
-            <el-button type="primary" @click="savePaymentData" :loading="paymentSaving">保 存</el-button>
+            <el-button type="primary" @click="savePaymentData" :loading="paymentSaving" :disabled="paymentLoading">保 存</el-button>
          </template>
       </el-dialog>
    </div>
@@ -855,6 +857,10 @@ const clientUnitOptions = ref([])
 const billingMap = ref({})
 /** 当前编辑项目对应的小类 id（用于下拉只显示该小类下的计费类别） */
 const currentProjectCategoryId = ref(null)
+/** 工作量弹窗内容加载中（先开弹窗再异步填充，消除点击后的空白等待） */
+const workloadLoading = ref(false)
+/** 到账信息弹窗内容加载中 */
+const paymentLoading = ref(false)
 
 // 新增：智能查询面板
 const assignDateRange = ref([])
@@ -1366,6 +1372,43 @@ function setQuickDate(type) {
   }
 }
 
+/** 计费方式映射：categoryId -> 启用中的计费方式列表（停用 status=1 过滤） */
+function buildBillingMap(list) {
+  const bMap = {}
+  ;(list || []).forEach(b => {
+    if (b.status === '1') return
+    if (!bMap[b.categoryId]) bMap[b.categoryId] = []
+    bMap[b.categoryId].push(b)
+  })
+  return bMap
+}
+
+// ---- 基础数据缓存：类别树 / 用户列表 / 计费档位 页面运行期基本不变，首次成功后复用 ----
+let baseDataCache = null   // 已 resolve 的 Promise（命中即同步返回）
+let baseDataPending = null // 进行中的 Promise（防止并发重复请求）
+function ensureBaseData() {
+  if (baseDataCache) return baseDataCache
+  if (!baseDataPending) {
+    baseDataPending = Promise.all([
+      categoryTreeselectFull(),
+      listUserOptions({ pageNum: 1, pageSize: 1000 }),
+      listBilling()
+    ]).then(([catRes, userRes, billingRes]) => {
+      const base = {
+        categoryOptions: catRes.data || [],
+        userOptions: userRes.rows || [],
+        billingMap: buildBillingMap(billingRes.data || [])
+      }
+      baseDataCache = Promise.resolve(base)
+      return base
+    }).catch(err => {
+      baseDataPending = null
+      throw err
+    })
+  }
+  return baseDataPending
+}
+
 /** 编辑结算 */
 function handleEdit(row) {
   editProjectId.value = row.projectId
@@ -1373,20 +1416,12 @@ function handleEdit(row) {
   editClientUnit.value = row.clientUnit || ""
   editProjectLocation.value = row.projectLocation || ""
 
-  // 加载基础数据
-  Promise.all([categoryTreeselectFull(), listUserOptions({ pageNum: 1, pageSize: 1000 }), getSettlementDetail(row.projectId), listBilling()])
-    .then(([catRes, userRes, detailRes, billingRes]) => {
-      categoryOptions.value = catRes.data
-      userOptions.value = userRes.rows || []
-
-      // 计费方式映射：categoryId -> 启用中的计费方式列表
-      const bMap = {}
-      ;(billingRes.data || []).forEach(b => {
-        if (b.status === '1') return // 停用的不参与
-        if (!bMap[b.categoryId]) bMap[b.categoryId] = []
-        bMap[b.categoryId].push(b)
-      })
-      billingMap.value = bMap
+  // 加载数据：基础数据走缓存（二次点击秒回），仅项目明细每次请求
+  Promise.all([ensureBaseData(), getSettlementDetail(row.projectId)])
+    .then(([base, detailRes]) => {
+      categoryOptions.value = base.categoryOptions
+      userOptions.value = base.userOptions
+      billingMap.value = base.billingMap
 
       const detail = detailRes.data
       currentProjectCategoryId.value = detail.project ? detail.project.projectCategoryId : null
@@ -1470,7 +1505,7 @@ function handleEdit(row) {
     })
 }
 
-/** 打开工作量弹窗 */
+/** 打开工作量弹窗（先立即开窗显示 loading，数据就绪后填充内容，避免点击后空白等待） */
 function handleEditWorkload(row) {
   editProjectId.value = row.projectId
   editProjectCode.value = row.projectCode
@@ -1478,20 +1513,14 @@ function handleEditWorkload(row) {
   editProjectLocation.value = row.projectLocation || ""
   editEngineeringProject.value = row.engineeringProject || ""
 
-  // 加载基础数据
-  Promise.all([categoryTreeselectFull(), listUserOptions({ pageNum: 1, pageSize: 1000 }), getSettlementDetail(row.projectId), listBilling()])
-    .then(([catRes, userRes, detailRes, billingRes]) => {
-      categoryOptions.value = catRes.data
-      userOptions.value = userRes.rows || []
-
-      // 计费方式映射：categoryId -> 启用中的计费方式列表
-      const bMap = {}
-      ;(billingRes.data || []).forEach(b => {
-        if (b.status === '1') return
-        if (!bMap[b.categoryId]) bMap[b.categoryId] = []
-        bMap[b.categoryId].push(b)
-      })
-      billingMap.value = bMap
+  // 立即打开弹窗 + 内容 loading；数据在后台并行加载（基础数据走缓存，二次点击秒回）
+  workloadOpen.value = true
+  workloadLoading.value = true
+  Promise.all([ensureBaseData(), getSettlementDetail(row.projectId)])
+    .then(([base, detailRes]) => {
+      categoryOptions.value = base.categoryOptions
+      userOptions.value = base.userOptions
+      billingMap.value = base.billingMap
 
       const detail = detailRes.data
       currentProjectCategoryId.value = detail.project ? detail.project.projectCategoryId : null
@@ -1568,12 +1597,15 @@ function handleEditWorkload(row) {
         quickExternalPrice: null,
         quickExternalUnit: ''
       }))
-
-      workloadOpen.value = true
     })
+    .catch(err => {
+      proxy.$modal.msgError('工作量数据加载失败：' + (err.message || err))
+      workloadOpen.value = false
+    })
+    .finally(() => { workloadLoading.value = false })
 }
 
-/** 打开到账信息弹窗 */
+/** 打开到账信息弹窗（先立即开窗显示 loading，明细就绪后填充） */
 function handleEditPayment(row) {
   editProjectId.value = row.projectId
   editProjectCode.value = row.projectCode
@@ -1581,9 +1613,11 @@ function handleEditPayment(row) {
   editProjectLocation.value = row.projectLocation || ""
   editEngineeringProject.value = row.engineeringProject || ""
 
-  // 加载明细（同步工作量，用于显示结算总额 = 外部产值合计）
-  Promise.all([getSettlementDetail(row.projectId)])
-    .then(([detailRes]) => {
+  // 立即打开弹窗 + 内容 loading，明细在后台加载
+  paymentOpen.value = true
+  paymentLoading.value = true
+  getSettlementDetail(row.projectId)
+    .then(detailRes => {
       const detail = detailRes.data
       const payments = detail.payments || []
       const workloads = detail.workloads || []
@@ -1629,9 +1663,12 @@ function handleEditPayment(row) {
       paymentForm.value.tailInvoiceNo = tail ? tail.invoiceNo : null
       paymentForm.value.tailInvoiceDate = tail ? tail.invoiceDate : null
       paymentForm.value.tailInvoiceAmount = tail ? tail.invoiceAmount : null
-
-      paymentOpen.value = true
     })
+    .catch(err => {
+      proxy.$modal.msgError('到账信息加载失败：' + (err.message || err))
+      paymentOpen.value = false
+    })
+    .finally(() => { paymentLoading.value = false })
 }
 
 /** 某负责人内部产值 */
