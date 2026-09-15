@@ -2303,7 +2303,7 @@ onActivated(() => {
   font-size: 13px;
   cursor: pointer;
   background: #f5f5f5;
-  color: #666;
+  color: #606266;
   transition: all 0.2s;
   user-select: none;
 }
@@ -2330,7 +2330,7 @@ onActivated(() => {
 .capsule-warn.active { background: #e6a23c; color: #fff; border-color: #e6a23c; }
 .status-capsule em {
   font-style: normal;
-  font-weight: bold;
+  font-weight: 600;
   margin-left: 2px;
 }
 /* 开票状态单元格：状态标签 + 标记作废勾选 横排 */
@@ -2376,7 +2376,7 @@ onActivated(() => {
   padding-top: 12px;
   border-top: 1px solid rgba(255,255,255,0.08);
 }
-.quick-label { font-size: 12px; color: #888; }
+.quick-label { font-size: 12px; color: #909399; }
 .quick-chip {
   display: inline-block;
   padding: 2px 10px;
@@ -2384,7 +2384,7 @@ onActivated(() => {
   font-size: 12px;
   cursor: pointer;
   background: rgba(255,255,255,0.07);
-  color: #aaa;
+  color: #c0c4cc;
   transition: all 0.2s;
   user-select: none;
 }
@@ -2392,7 +2392,7 @@ onActivated(() => {
 .collapse-link {
   margin-left: auto;
   font-size: 12px;
-  color: #666;
+  color: #606266;
   cursor: pointer;
   user-select: none;
 }
@@ -2419,11 +2419,11 @@ onActivated(() => {
 }
 .sum-inline b {
   font-size: 15px;
-  font-weight: bold;
-  font-family: "JetBrains Mono", Consolas, monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .sum-inline small {
-  font-size: 11px;
+  font-size: 12px;
   color: #c0c4cc;
 }
 .sum-dot {
@@ -2478,7 +2478,7 @@ onActivated(() => {
 }
 .settle-cell { display: inline-flex; align-items: baseline; gap: 8px; flex: 1; }
 .settle-label { font-size: 13px; color: #909399; }
-.settle-value { font-size: 16px; font-weight: bold; color: #303133; font-family: "JetBrains Mono", Consolas, monospace; }
+.settle-value { font-size: 16px; font-weight: 600; color: #303133; font-variant-numeric: tabular-nums; }
 .settle-hint { font-size: 12px; color: #a8abb2; }
 .settle-divider { width: 1px; height: 24px; background: #e4e7ed; }
 .text-success { color: #67c23a; }
@@ -2565,7 +2565,7 @@ onActivated(() => {
 }
 .check-cell { display: inline-flex; align-items: baseline; gap: 8px; }
 .check-label { font-size: 12px; color: #909399; }
-.check-value { font-size: 15px; font-weight: bold; color: #303133; font-family: "JetBrains Mono", Consolas, monospace; }
+.check-value { font-size: 15px; font-weight: 600; color: #303133; font-variant-numeric: tabular-nums; }
 .check-divider { width: 1px; height: 20px; background: #e4e7ed; }
 .expand-section-title {
   font-size: 13px;
@@ -2592,12 +2592,12 @@ onActivated(() => {
 }
 .summary-label {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 .summary-label.external { color: #e6a23c; }
 .summary-label.internal { color: #409eff; }
 .summary-value {
-  font-family: "JetBrains Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
   font-size: 14px;
 }
 /* ===== 工作量明细单元格辅助文字 ===== */
@@ -2610,10 +2610,10 @@ onActivated(() => {
 }
 .cell-sub-inline { font-size: 12px; color: #909399; margin-left: 3px; }
 .min-qty-hit { color: #e6a23c; margin-left: 4px; }
-.calc-hint { color: #a8abb2; font-family: "JetBrains Mono", Consolas, monospace; }
+.calc-hint { color: #a8abb2; font-variant-numeric: tabular-nums; }
 .row-output {
    font-weight: 600;
-   font-family: "JetBrains Mono", Consolas, monospace;
+   font-variant-numeric: tabular-nums;
 }
 .expand-empty {
   padding: 16px;
@@ -2645,7 +2645,7 @@ onActivated(() => {
 }
 .bar-cell { display: inline-flex; align-items: baseline; gap: 8px; }
 .bar-label { font-size: 12px; color: #909399; }
-.bar-value { font-size: 16px; font-weight: bold; color: #303133; font-family: "JetBrains Mono", Consolas, monospace; }
+.bar-value { font-size: 16px; font-weight: 600; color: #303133; font-variant-numeric: tabular-nums; }
 .bar-divider { width: 1px; height: 20px; background: #d9ecff; }
 
 /* ===== 工作量弹窗：负责人卡片 / 快速录入栏 ===== */
@@ -2658,7 +2658,7 @@ onActivated(() => {
 .record-name { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); }
 .quick-add-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--el-fill-color-lighter); border-bottom: 1px solid var(--el-border-color-lighter); flex-wrap: wrap; }
 .qa-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
-.qa-unit { font-size: 11px; color: var(--el-text-color-placeholder); }
+.qa-unit { font-size: 12px; color: var(--el-text-color-placeholder); }
 .empty-hint { text-align: center; color: var(--el-text-color-placeholder); font-size: 12px; padding: 12px 0; }
 .section-title-internal { color: var(--el-color-primary); font-weight: 600; }
 .section-title-external { color: var(--el-color-warning); font-weight: 600; }
@@ -2733,7 +2733,7 @@ onActivated(() => {
   margin-bottom: 4px;
   border-bottom: 1px dashed #ebeef5;
   color: #909399;
-  font-size: 11px;
+  font-size: 12px;
 }
 .wl-tip-row {
   display: flex;

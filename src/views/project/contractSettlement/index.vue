@@ -638,7 +638,7 @@ onActivated(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: linear-gradient(135deg, #ecf5ff, #d9ecff);
+  background: #ecf5ff;
   border: 1px solid #a0cfff;
   border-radius: 20px;
   padding: 4px 12px;
@@ -648,18 +648,18 @@ onActivated(() => {
   white-space: nowrap;
 }
 .price-capsule:hover {
-  background: linear-gradient(135deg, #d9ecff, #c6e2ff);
+  background: #d9ecff;
   border-color: #79bbff;
   box-shadow: 0 2px 8px rgba(64, 158, 255, 0.25);
   transform: translateY(-1px);
 }
 .capsule-icon {
   color: #409eff;
-  font-size: 10px;
+  font-size: 12px;
 }
 .capsule-count {
   color: #409eff;
-  font-weight: 700;
+  font-weight: 600;
 }
 .capsule-range {
   color: #606266;
@@ -667,7 +667,7 @@ onActivated(() => {
 }
 .capsule-arrow {
   color: #a0cfff;
-  font-size: 11px;
+  font-size: 12px;
   margin-left: 2px;
 }
 
@@ -763,10 +763,10 @@ onActivated(() => {
   transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .payment-card-fill--full {
-  background: linear-gradient(90deg, #52c41a, #73d13d);
+  background: #67c23a;
 }
 .payment-card-fill--partial {
-  background: linear-gradient(90deg, #fa8c16, #ffc53d);
+  background: #e6a23c;
 }
 .payment-card-fill--none {
   background: #d9d9d9;
@@ -774,18 +774,18 @@ onActivated(() => {
 
 .payment-card-pct {
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   min-width: 34px;
   text-align: right;
 }
 .pct--full {
-  color: #52c41a;
+  color: #67c23a;
 }
 .pct--partial {
-  color: #fa8c16;
+  color: #e6a23c;
 }
 .pct--none {
-  color: #bfbfbf;
+  color: #c0c4cc;
 }
 
 /* 金额信息行 */
@@ -797,11 +797,11 @@ onActivated(() => {
   font-size: 12px;
 }
 .payment-card-label {
-  color: #595959;
+  color: #606266;
   font-weight: 500;
 }
 .payment-card-detail {
-  color: #8c8c8c;
+  color: #909399;
   margin-left: auto;
 }
 
@@ -881,7 +881,7 @@ onActivated(() => {
   justify-content: center;
   color: #fff;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   flex-shrink: 0;
 }
 .price-card-body {
@@ -907,7 +907,7 @@ onActivated(() => {
   display: flex;
   align-items: center;
   justify-content: space-around;
-  background: linear-gradient(135deg, #f5f7fa, #ebeef5);
+  background: #f5f7fa;
   border-radius: 12px;
   padding: 18px 10px;
 }
@@ -939,7 +939,7 @@ onActivated(() => {
 .text-muted { color: #c0c4cc; }
 .text-success { color: #67c23a; }
 .text-warning { color: #e6a23c; }
-.font-bold { font-weight: 700; }
+.font-bold { font-weight: 600; }
 </style>
 
 <style>

@@ -241,7 +241,7 @@
                      <el-select v-model="form.relatedProjectId" filterable clearable placeholder="请选择关联定线项目" style="width: 100%">
                         <el-option v-for="item in relatedCandidates" :key="item.id" :label="item.projectCode" :value="item.id">
                            <span>{{ item.projectCode }}</span>
-                           <span style="color: #999; margin-left: 8px; font-size: 12px">{{ item.projectName }}</span>
+                           <span style="color: #909399; margin-left: 8px; font-size: 12px">{{ item.projectName }}</span>
                         </el-option>
                      </el-select>
                   </el-form-item>
@@ -1584,12 +1584,12 @@ loadDistinctValues()
 }
 .status-capsule:hover {
   background: #ecf5ff;
-  color: #409EFF;
+  color: #409eff;
 }
 .status-capsule.active {
   background: #ecf5ff;
-  color: #409EFF;
-  border-color: #409EFF;
+  color: #409eff;
+  border-color: #409eff;
   font-weight: 600;
 }
 
@@ -1606,10 +1606,10 @@ loadDistinctValues()
   border-bottom: 1px solid #ebeef5;
 }
 .advanced-toggle:hover {
-  color: #409EFF;
+  color: #409eff;
 }
 .toggle-arrow {
-  font-size: 10px;
+  font-size: 12px;
   transition: transform 0.2s ease;
   color: #909399;
 }
@@ -1658,8 +1658,8 @@ loadDistinctValues()
   background: transparent;
 }
 .quick-date-row .el-button:hover {
-  border-color: #409EFF;
-  color: #409EFF;
+  border-color: #409eff;
+  color: #409eff;
 }
 
 /* 分割线 */
@@ -1697,9 +1697,9 @@ loadDistinctValues()
   background: #4a4a4a;
 }
 .scheme-tag.active {
-  background: #409EFF;
+  background: #409eff;
   color: #fff;
-  border-color: #409EFF;
+  border-color: #409eff;
 }
 .collapse-link {
   margin-left: auto;
@@ -1711,10 +1711,10 @@ loadDistinctValues()
   gap: 4px;
 }
 .collapse-link:hover {
-  color: #409EFF;
+  color: #409eff;
 }
 .collapse-arrow {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 /* 操作栏紧凑化（保留兼容） */

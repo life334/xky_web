@@ -162,7 +162,7 @@
                         <el-radio :value="1">可选关联</el-radio>
                         <el-radio :value="2">必须关联</el-radio>
                      </el-radio-group>
-                     <div style="color: #999; font-size: 12px; margin-top: 4px;margin-left: 10px">验线类项目可选择关联同大类下的定线项目，必须关联时保存需填写关联定线编号</div>
+                     <div style="color: #909399; font-size: 12px; margin-top: 4px;margin-left: 10px">验线类项目可选择关联同大类下的定线项目，必须关联时保存需填写关联定线编号</div>
                   </el-form-item>
                </el-col>
             </el-row>

@@ -499,3 +499,11 @@
 .top-right-btn {
   margin-left: auto;
 }
+
+/* ===== 弹窗内排版基准：与表格 13px 对齐，消除弹窗与页面的字号断层 ===== */
+.el-dialog .el-form-item__label,
+.el-dialog .el-form-item__content,
+.el-dialog .el-descriptions__label,
+.el-dialog .el-descriptions__content {
+  font-size: 13px;
+}

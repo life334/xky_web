@@ -671,8 +671,8 @@ onActivated(() => {
 .stat-sub { font-size: 12px; color: #909399; }
 .collection-tabs :deep(.el-tabs__content) { padding: 0 4px; }
 .age-green { color: #67c23a; font-weight: 600; }
-.age-yellow { color: #c8a23a; font-weight: 600; }
-.age-orange { color: #e6752e; font-weight: 600; }
+.age-yellow { color: #e6a23c; font-weight: 600; }
+.age-orange { color: #cf9236; font-weight: 600; }
 .age-red { color: #f56c6c; font-weight: 600; }
 .log-summary { padding: 10px 12px; background: #f5f7fa; border-radius: 6px; font-size: 13px; }
 .log-item { font-size: 13px; line-height: 1.7; }

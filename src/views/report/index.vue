@@ -112,6 +112,14 @@
             <el-tag size="small" :type="previewTotal > 0 ? 'primary' : 'info'" effect="plain">命中 {{ previewTotal }} 条</el-tag>
             <span v-if="previewTotal > 50" class="preview-limit">（仅展示前 50 行）</span>
           </template>
+          <!-- 按单位合并开关（仅单位合并类内置模板显示）：预览实时联动，导出与预览保持一致 -->
+          <div v-if="currentTemplate && isUnitMergeTemplate" class="preview-merge-toggle">
+            <el-switch v-model="mergeUnitCells" size="small" @change="onMergeToggle" />
+            <span class="merge-label">按单位合并单元格</span>
+            <el-tooltip placement="top" content="开启：按单位排序、单位名称列合并、到账时间按单位汇总；关闭：保持原始顺序逐条显示。导出文件与预览保持一致">
+              <el-icon class="merge-help"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </div>
         </div>
         <el-button v-if="currentTemplate" size="small" :loading="previewLoading" @click="doPreview">
           <el-icon><Refresh /></el-icon>&nbsp;刷新预览
@@ -514,6 +522,9 @@
           <div v-if="isZdywTemplate && submitAsReport && !monthSubmitted" class="export-tip">
             本次导出将作为<b class="ok">上报记录</b>：未上报过的记录写入上报时间（已上报记录锁定跳过），并在服务器保存报表快照。
           </div>
+          <div class="export-tip">
+            合并方式：{{ mergeUnitCells ? '按单位合并（与预览一致）' : '不合并，按原始顺序逐条显示（与预览一致）' }}
+          </div>
         </el-alert>
       </div>
       <template #footer>
@@ -720,14 +731,41 @@ const uncheckedCount = computed(() => previewCodes.value.filter(c => !!c && unch
 /* 是否「只定未验及补之前扣除项目」报表（zdyw_report）：唯一支持上报的模板 */
 const isZdywTemplate = computed(() => (currentTemplate.value?.templateFile || '').toLowerCase().includes('zdyw_report'))
 
+/* 是否单位合并类内置模板（zdyw/byx/yhdz）：导出弹窗显示「按单位合并单元格」开关 */
+const isUnitMergeTemplate = computed(() => {
+  const tpl = currentTemplate.value
+  if (!tpl || tpl.templateType === 'custom') return false
+  const f = (tpl.templateFile || '').toLowerCase()
+  return f.includes('zdyw_report') || f.includes('byx_report') || f.includes('yhdz_report')
+})
+
+/* 按单位合并开关：默认关闭；每个模板记忆上次选择（localStorage） */
+const mergeUnitCells = ref(false)
+const MERGE_UNIT_KEY = 'report:mergeUnitCells:'
+function loadSavedMergeUnit(templateId) {
+  try { return localStorage.getItem(MERGE_UNIT_KEY + templateId) === '1' } catch (e) { return false }
+}
+function saveMergeUnit(templateId, val) {
+  try { localStorage.setItem(MERGE_UNIT_KEY + templateId, val ? '1' : '0') } catch (e) { /* ignore */ }
+}
+
 /* 上报状态列仅「只定未验及补之前扣除项目」(zdyw) 与「补验线」(byx) 模板显示 */
 const showSubmitStatus = computed(() => {
   const f = (currentTemplate.value?.templateFile || '').toLowerCase()
   return f.includes('zdyw_report') || f.includes('byx_report')
 })
 
-/* 切换模板时重置「上报记录」勾选，避免误上报 */
-watch(currentTemplateId, () => { submitAsReport.value = false })
+/* 切换模板时重置「上报记录」勾选，恢复该模板的「按单位合并」记忆选择 */
+watch(currentTemplateId, (id) => {
+  submitAsReport.value = false
+  mergeUnitCells.value = loadSavedMergeUnit(id)
+})
+
+/* 预览区「按单位合并单元格」开关：实时联动预览（后端重排 + 前端合并渲染），并记忆选择 */
+function onMergeToggle(val) {
+  saveMergeUnit(currentTemplateId.value, val)
+  doPreview()
+}
 
 /* 管理员：可删除上报批次 / 单条上报记录 */
 const isAdmin = computed(() => checkRole(['admin']))
@@ -942,7 +980,12 @@ async function doPreview() {
   const seq = ++previewSeq
   previewLoading.value = true
   try {
-    const res = await previewReport({ templateId: currentTemplateId.value, filter: buildBackendFilter() })
+    const res = await previewReport({
+      templateId: currentTemplateId.value,
+      filter: buildBackendFilter(),
+      // 预览与导出同一开关：开启时后端按单位排序 + 到账时间输出单位汇总文案
+      mergeUnitCells: mergeUnitCells.value
+    })
     if (seq !== previewSeq) return // 已有更新的预览请求，丢弃本次过期响应
     const d = res?.data || {}
     currentTemplate.value = d.template
@@ -1601,8 +1644,10 @@ async function doExport(quiet = false) {
     const res = await exportReport({
       templateId: currentTemplateId.value,
       filter: buildBackendFilter(true),
-      projectCodes: effectiveCodes.value
+      projectCodes: effectiveCodes.value,
+      mergeUnitCells: mergeUnitCells.value
     })
+    saveMergeUnit(currentTemplateId.value, mergeUnitCells.value)
     const blob = res.data
     if (blob.type && blob.type.includes('application/json')) {
       const text = await blob.text()
@@ -1839,8 +1884,9 @@ const unitMergeSpans = computed(() => {
   return spans
 })
 
-/* el-table span-method：仅对委托单位列生效（勾选列/上报状态列等不合并） */
+/* el-table span-method：仅对委托单位列生效（勾选列/上报状态列等不合并）；开关关闭时不合并 */
 function previewSpanMethod({ column, rowIndex }) {
+  if (!mergeUnitCells.value) return
   const leaf = clientUnitLeaf.value
   if (!leaf) return
   if (column.property !== 'c' + leaf.colIndex) return
@@ -2630,6 +2676,20 @@ function leafWidth(leaf) {
     .ok { color: var(--el-color-success); font-weight: 600; }
     .no { color: var(--el-color-danger); font-weight: 600; }
     .tip-sub { color: var(--el-text-color-secondary); font-size: 12px; }
+  }
+}
+
+/* 预览区「按单位合并单元格」开关 */
+.preview-head {
+  .preview-merge-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 12px;
+    padding-left: 12px;
+    border-left: 1px solid var(--el-border-color-lighter);
+    .merge-label { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); }
+    .merge-help { font-size: 14px; color: var(--el-text-color-secondary); cursor: help; }
   }
 }
 

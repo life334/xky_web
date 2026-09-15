@@ -223,7 +223,7 @@
          </el-table-column>
       </el-table>
 
-      <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
+      <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" all-option @pagination="getList" />
 
       <!-- 修改资料提交对话框 -->
       <el-dialog 
@@ -966,14 +966,14 @@ loadStatusCounts()
   font-size: 13px;
   cursor: pointer;
   background: #f5f5f5;
-  color: #666;
+  color: #606266;
   transition: all 0.2s;
   user-select: none;
 }
 .status-capsule:hover { background: #e8e8e8; }
 .status-capsule.active { background: #409eff; color: #fff; }
 .capsule-count {
-  font-size: 11px;
+  font-size: 12px;
   background: rgba(0,0,0,0.08);
   border-radius: 10px;
   padding: 0 6px;
@@ -1016,7 +1016,7 @@ loadStatusCounts()
   padding-top: 12px;
   border-top: 1px solid rgba(255,255,255,0.08);
 }
-.quick-label { font-size: 12px; color: #888; }
+.quick-label { font-size: 12px; color: #909399; }
 .quick-chip {
   display: inline-block;
   padding: 2px 10px;
@@ -1024,7 +1024,7 @@ loadStatusCounts()
   font-size: 12px;
   cursor: pointer;
   background: rgba(255,255,255,0.07);
-  color: #aaa;
+  color: #c0c4cc;
   transition: all 0.2s;
   user-select: none;
 }
@@ -1032,7 +1032,7 @@ loadStatusCounts()
 .collapse-link {
   margin-left: auto;
   font-size: 12px;
-  color: #666;
+  color: #606266;
   cursor: pointer;
   user-select: none;
 }
@@ -1069,7 +1069,7 @@ loadStatusCounts()
 }
 .check-cell { display: inline-flex; align-items: baseline; gap: 8px; }
 .check-label { font-size: 12px; color: #909399; }
-.check-value { font-size: 15px; font-weight: bold; color: #303133; font-family: "JetBrains Mono", Consolas, monospace; }
+.check-value { font-size: 15px; font-weight: 600; color: #303133; font-variant-numeric: tabular-nums; }
 .check-divider { width: 1px; height: 20px; background: #e4e7ed; }
 .expand-section-title {
   font-size: 13px; font-weight: 600; color: #303133;
@@ -1080,10 +1080,10 @@ loadStatusCounts()
 .expand-summary-row td { background: #f5f7fa !important; font-weight: 600; }
 .expand-summary-row.external td { background: #fdf6ec !important; border-top: 2px solid #e6a23c; }
 .expand-summary-row.internal td { background: #ecf5ff !important; border-top: 2px solid #409eff; }
-.summary-label { font-size: 13px; font-weight: 700; }
+.summary-label { font-size: 13px; font-weight: 600; }
 .summary-label.external { color: #e6a23c; }
 .summary-label.internal { color: #409eff; }
-.summary-value { font-family: "JetBrains Mono", Consolas, monospace; font-size: 14px; }
+.summary-value { font-variant-numeric: tabular-nums; font-size: 14px; }
 .cell-sub { font-size: 12px; color: #909399; line-height: 16px; margin-top: 2px; text-align: center; }
 .cell-sub-inline { font-size: 12px; color: #909399; margin-left: 3px; }
 .min-qty-hit { color: #e6a23c; margin-left: 4px; }

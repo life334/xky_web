@@ -37,18 +37,36 @@ export default defineConfig(({ mode, command }) => {
           chunkFileNames: 'static/js/[name]-[hash].js',
           entryFileNames: 'static/js/[name]-[hash].js',
           assetFileNames: 'static/[ext]/[name]-[hash].[ext]',
-          // 大库独立分包：稳定 hash → 浏览器长缓存，发版后 vendor 不变则用户无需重新下载；
-          // 同时避免 element-plus/echarts/maplibre 等巨型库与业务代码混在一个 chunk 里反复下载
+          // 配置：仅把「职责独立、不与 vue 生态交叉」的大库单独分包（长缓存收益最大），
+          // 其余 node_modules 统一进 vendor。
+          //
+          // ⚠️ 为什么不做更细的拆分（重要）：
+          // element-plus 依赖 @vueuse/core、@popperjs/core、@floating-ui/dom、lodash-es、dayjs 等，
+          // 而这些包又依赖 vue / @vue/shared；同时 vue-vendor 侧模块也可能反向引用 element-plus 内部工具。
+          // 一旦按「包名」把它们切到不同 chunk，必然形成 chunk 之间的循环依赖（Rollup 无法保证初始化顺序），
+          // 生产环境即报 "Cannot access 'X' before initialization"（TDZ）。
+          // 因此 vue 生态（vue + element-plus + 其运行时依赖）必须同处一个 vendor chunk；
+          // echarts / maplibre / quill 三个大库互不依赖 vue 生态之外的包，可安全独立。
           manualChunks(id) {
             if (!id.includes('node_modules')) return
-            if (id.includes('element-plus') || id.includes('@element-plus')) return 'element-plus'
-            if (id.includes('echarts')) return 'echarts'
-            if (id.includes('maplibre')) return 'maplibre'
-            if (id.includes('quill') || id.includes('@vueup')) return 'quill'
-            if (id.includes('/vue/') || id.includes('/vue-router/') || id.includes('/pinia/') ||
-                id.includes('/@vue/') || id.includes('/@vueuse/')) return 'vue-vendor'
-            if (id.includes('/axios/')) return 'axios'
-            return 'chunk-vendor'
+            const m = id.split('node_modules/').pop()
+            const seg = m.split('/')
+            const pkgName = m.startsWith('@') ? seg[0] + '/' + seg[1] : seg[0]
+
+            // 独立大库（与 vue 生态无交叉，单独缓存收益高）
+            if (pkgName === 'echarts' || pkgName.startsWith('zrender')) return 'echarts'
+            if (pkgName === 'maplibre-gl' || pkgName.startsWith('@mapbox/') || pkgName.startsWith('@maplibre/')) return 'maplibre'
+            if (pkgName === 'quill' || pkgName === 'quill-delta' || pkgName.startsWith('@vueup/')) return 'quill'
+
+            // HTTP
+            if (pkgName === 'axios') return 'axios'
+
+            // 其余全部归入 vendor（vue、vue-router、pinia、element-plus 及其全部依赖、工具库）
+            // 该 chunk 内自闭环，不产生跨 chunk 依赖 —— 这是本项目的稳定分法。
+            // 不要再尝试把 lodash/dayjs/popper 等拆出去：element-plus 与 vue 生态对这些包存在
+            // 双向引用，一旦分到不同 chunk 即形成循环依赖，生产环境报 TDZ
+            // "Cannot access 'X' before initialization"。
+            return 'vendor'
           }
         }
       }

@@ -66,7 +66,7 @@
                   <div class="filter-item-label">合同金额</div>
                   <div style="display:flex;gap:8px;align-items:center">
                      <el-input-number v-model="queryParams.contractAmountMin" :min="0" :precision="2" controls-position="right" placeholder="最低" style="flex:1" @change="handleQuery" />
-                     <span style="color:#999">~</span>
+                     <span style="color:#909399">~</span>
                      <el-input-number v-model="queryParams.contractAmountMax" :min="0" :precision="2" controls-position="right" placeholder="最高" style="flex:1" @change="handleQuery" />
                   </div>
                </div>
@@ -236,7 +236,7 @@
       <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" all-option @pagination="getList" />
 
       <!-- 添加或修改合同对话框 -->
-      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body>
+      <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body class="contract-form-dialog">
          <el-tabs v-model="activeTab">
             <el-tab-pane label="基本信息" name="info">
                <el-form ref="contractRef" :model="form" :rules="rules" label-width="90px">
@@ -343,7 +343,7 @@
                         </el-form-item>
                      </el-col>
                   </el-row>
-                  <el-row :gutter="20" v-if="form.status">
+                  <el-row :gutter="20" v-if="form.status && false">
                      <el-col :span="8">
                         <el-form-item label="当前状态">
                            <dict-tag :options="d('proj_contract_status')" :value="form.status" />
@@ -576,7 +576,7 @@
                      <el-table-column label="计价单位" align="center" prop="priceUnit" min-width="100" />
                      <el-table-column label="合同单价" align="center" min-width="120">
                         <template #default="scope">
-                           <span style="font-weight: 600; color: #409EFF;">¥{{ Number(scope.row.price).toFixed(2) }}</span>
+                           <span style="font-weight: 600; color: #409eff;">¥{{ Number(scope.row.price).toFixed(2) }}</span>
                         </template>
                      </el-table-column>
                   </el-table>
@@ -1953,14 +1953,14 @@ getConfigKey("contract.no.prefix").then(res => {
   font-size: 13px;
   cursor: pointer;
   background: #f5f5f5;
-  color: #666;
+  color: #606266;
   transition: all 0.2s;
   user-select: none;
 }
 .status-capsule:hover { background: #e8e8e8; }
 .status-capsule.active { background: #409eff; color: #fff; }
 .capsule-count {
-  font-size: 11px;
+  font-size: 12px;
   background: rgba(0,0,0,0.08);
   border-radius: 10px;
   padding: 0 6px;
@@ -2003,7 +2003,7 @@ getConfigKey("contract.no.prefix").then(res => {
   padding-top: 12px;
   border-top: 1px solid rgba(255,255,255,0.08);
 }
-.quick-label { font-size: 12px; color: #888; }
+.quick-label { font-size: 12px; color: #909399; }
 .quick-chip {
   display: inline-block;
   padding: 2px 10px;
@@ -2011,7 +2011,7 @@ getConfigKey("contract.no.prefix").then(res => {
   font-size: 12px;
   cursor: pointer;
   background: rgba(255,255,255,0.07);
-  color: #aaa;
+  color: #c0c4cc;
   transition: all 0.2s;
   user-select: none;
 }
@@ -2021,7 +2021,7 @@ getConfigKey("contract.no.prefix").then(res => {
 .collapse-link {
   margin-left: auto;
   font-size: 12px;
-  color: #666;
+  color: #606266;
   cursor: pointer;
   user-select: none;
 }
@@ -2078,7 +2078,7 @@ getConfigKey("contract.no.prefix").then(res => {
 }
 .slot-actions { display: flex; gap: 4px; }
 .version-badge {
-  font-size: 11px;
+  font-size: 12px;
   background: #ecf5ff;
   color: #409eff;
   padding: 0 6px;
@@ -2167,6 +2167,12 @@ getConfigKey("contract.no.prefix").then(res => {
   color: #606266;
   font-weight: 500;
 }
+.contract-form-dialog .el-dialog__body {
+  max-height: 75vh;
+  overflow-y: auto;
+  padding-right: 8px;
+  box-sizing: border-box;
+}
 </style>
 
 <style>
@@ -2204,7 +2210,7 @@ getConfigKey("contract.no.prefix").then(res => {
   border-radius: 50%;
   background: #409eff;
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -2229,7 +2235,7 @@ getConfigKey("contract.no.prefix").then(res => {
 }
 .popover-payment-detail .pay-project {
   color: #909399;
-  font-size: 11px;
+  font-size: 12px;
   flex: 1;
 }
 .popover-payment-detail .popover-summary {
