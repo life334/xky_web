@@ -27,7 +27,7 @@
             <div class="filter-grid">
                <div class="filter-item">
                   <div class="filter-item-label">所属项目</div>
-                  <el-select v-model="queryParams.projectId" filterable clearable placeholder="全部项目" style="width:100%" @change="handleQuery">
+                  <el-select v-model="queryParams.projectId" filterable clearable placeholder="全部项目" style="width:100%" :loading="optionsLoading" @change="handleQuery">
                      <el-option v-for="p in projectOptions" :key="p.id" :label="p.projectName" :value="p.id" />
                   </el-select>
                </div>
@@ -278,7 +278,7 @@
                </el-col>
                <el-col :span="12">
                   <el-form-item v-if="form.guarantorFlag === 'Y'" label="担保人" prop="guarantorId" :rules="[{ required: true, message: '请选择担保人', trigger: 'change' }]">
-                     <el-select v-model="form.guarantorId" filterable clearable placeholder="请选择担保人" style="width: 100%">
+                     <el-select v-model="form.guarantorId" filterable clearable placeholder="请选择担保人" style="width: 100%" :loading="optionsLoading">
                         <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
                      </el-select>
                   </el-form-item>
@@ -313,7 +313,7 @@
                <span class="flow-toggle-arrow" :class="{ expanded: flowHistoryExpanded }"></span>
             </div>
             <el-collapse-transition>
-               <div v-show="flowHistoryExpanded" class="flow-history-content" style="margin-top: 10px;">
+               <div v-show="flowHistoryExpanded" class="flow-history-content" style="margin-top: 10px;" v-loading="flowLoading">
                   <el-timeline v-if="flowList.length > 0" class="flow-timeline">
                      <el-timeline-item v-for="item in flowList" :key="item.id"
                         :type="item.flowType === '领取' ? 'primary' : 'success'"
@@ -337,7 +337,7 @@
          </div>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" @click="submitForm">确认领取</el-button>
+               <el-button type="primary" @click="submitForm" :loading="submitLoading">确认领取</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
          </template>
@@ -345,7 +345,7 @@
 
       <!-- 历史记录对话框 -->
       <el-dialog title="历史记录" :model-value="flowOpen" @update:model-value="flowOpen = $event" width="600px" append-to-body>
-         <div class="flow-dialog-body">
+         <div class="flow-dialog-body" v-loading="flowLoading">
             <el-timeline v-if="flowList.length > 0" class="flow-timeline">
             <el-timeline-item v-for="item in flowList" :key="item.id"
                :type="item.flowType === '领取' ? 'primary' : 'success'"
@@ -405,7 +405,7 @@
          <template #footer>
             <div class="dialog-footer">
                <el-button @click="paymentOpen = false">取消</el-button>
-               <el-button type="primary" :disabled="!paymentConfirm" @click="confirmBorrowWithDebt">确认领取</el-button>
+               <el-button type="primary" :disabled="!paymentConfirm" @click="confirmBorrowWithDebt" :loading="submitLoading">确认领取</el-button>
             </div>
          </template>
       </el-dialog>
@@ -529,6 +529,8 @@ const multiple = ref(true)
 const ids = ref([])
 const projectOptions = ref([])
 const userOptions = ref([])
+const optionsLoading = ref(false)    // 下拉选项加载中
+const submitLoading = ref(false)     // 表单提交中（防重复提交）
 
 // 新增：智能查询面板
 const submitTimeRange = ref([])
@@ -539,6 +541,7 @@ const advancedVisible = ref(false)
 const flowOpen = ref(false)
 const flowList = ref([])
 const flowHistoryExpanded = ref(false)
+const flowLoading = ref(false)        // 流转记录局部加载中
 
 // 欠款确认弹窗
 const paymentOpen = ref(false)
@@ -569,8 +572,10 @@ const { queryParams, form, rules } = toRefs(data)
 
 /** 加载下拉选项 */
 function loadOptions() {
-  listProject({ pageNum: 1, pageSize: 999 }).then(r => { projectOptions.value = r.rows || [] })
-  listUserOptions({ pageNum: 1, pageSize: 1000 }).then(r => { userOptions.value = r.rows || [] })
+  optionsLoading.value = true
+  const p1 = listProject({ pageNum: 1, pageSize: 999 }).then(r => { projectOptions.value = r.rows || [] })
+  const p2 = listUserOptions({ pageNum: 1, pageSize: 1000 }).then(r => { userOptions.value = r.rows || [] })
+  Promise.all([p1, p2]).finally(() => { optionsLoading.value = false })
 }
 
 /** 查询 */
@@ -580,6 +585,7 @@ function getList() {
   listMaterial(params).then(response => {
     materialList.value = response.rows
     total.value = response.total
+  }).finally(() => {
     loading.value = false
   })
 }
@@ -695,6 +701,7 @@ function handleSelectionChange(selection) {
 function handleUpdate(row) {
   reset()
   const id = row.id || ids.value[0]
+  loading.value = true
   getMaterial(id).then(response => {
     form.value = response.data
     // 联系人/电话：资料有值则保留（保留本次领取修改），为空才从关联项目带出
@@ -709,6 +716,8 @@ function handleUpdate(row) {
     title.value = "领取/修改资料"
     // 加载历史记录供编辑页内嵌时间轴展示
     loadFlowList(id)
+  }).finally(() => {
+    loading.value = false
   })
 }
 
@@ -719,6 +728,7 @@ function submitForm() {
     if (!form.value.submitTime) {
       form.value.submitTime = proxy.parseTime(new Date(), '{y}-{m}-{d} {h}:{i}:{s}')
     }
+    submitLoading.value = true
     // 领取前欠款检查
     checkPayment(form.value.projectId).then(res => {
       const info = res.data
@@ -726,6 +736,7 @@ function submitForm() {
         paymentInfo.value = info
         paymentConfirm.value = false
         paymentOpen.value = true
+        submitLoading.value = false   // 欠款确认弹窗接管，复位主提交按钮
       } else {
         doBorrow()
       }
@@ -735,31 +746,28 @@ function submitForm() {
 
 /** 执行领取保存：更新主表 + 追加历史记录 */
 function doBorrow() {
+  submitLoading.value = true
   borrowMaterial(form.value.id, form.value).then(() => {
     proxy.$modal.msgSuccess("领取成功")
     open.value = false
     getList()
-  })
+  }).finally(() => { submitLoading.value = false })
 }
 
 /** 欠款弹窗确认后领取 */
 function confirmBorrowWithDebt() {
-  borrowMaterial(form.value.id, form.value).then(() => {
-    proxy.$modal.msgSuccess("领取成功")
-    paymentOpen.value = false
-    open.value = false
-    getList()
-  })
+  doBorrow()
 }
 
 /** 加载领取历史记录 */
 function loadFlowList(id) {
+  flowLoading.value = true
   getFlowList(id).then(response => {
     flowList.value = (response.data || []).map(item => ({
       ...item,
       snapshotObj: safeParseSnapshot(item.snapshot)
     }))
-  }).catch(() => { flowList.value = [] })
+  }).catch(() => { flowList.value = [] }).finally(() => { flowLoading.value = false })
 }
 
 /** 解析历史快照 JSON */
@@ -778,10 +786,11 @@ function resultTypeLabel(val) {
 function handleToggleArchive(row) {
   const action = row.archiveFlag === 'Y' ? '取消归档' : '归档'
   proxy.$modal.confirm(`确认${action}该资料？`).then(() => {
+    loading.value = true
     toggleArchive(row.id).then(() => {
       proxy.$modal.msgSuccess(`${action}成功`)
-      getList()
-    })
+      getList()  // getList 会接管 loading
+    }).catch(() => { loading.value = false })
   }).catch(() => {})
 }
 
@@ -917,11 +926,14 @@ function handleFlow(row) {
 function handleDelete(row) {
   const idsToDelete = row.id ? [row.id] : ids.value
   proxy.$modal.confirm('是否确认删除所选资料提交记录?').then(function() {
+    loading.value = true
     return delMaterial(idsToDelete.join(","))
   }).then(() => {
     getList()
     proxy.$modal.msgSuccess("删除成功")
-  }).catch(() => {})
+  }).catch(() => {
+    loading.value = false
+  })
 }
 
 function handleExport() {

@@ -2,7 +2,7 @@
   <div class="app-container">
     <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px">
       <el-form-item label="任务" prop="taskId">
-        <el-select v-model="queryParams.taskId" placeholder="请选择任务" clearable filterable style="width: 200px" @change="handleQuery">
+        <el-select v-model="queryParams.taskId" placeholder="请选择任务" clearable filterable :loading="optionsLoading" style="width: 200px" @change="handleQuery">
           <el-option
             v-for="t in taskOptions"
             :key="t.taskId"
@@ -144,7 +144,7 @@
         <el-row>
           <el-col :span="12">
             <el-form-item label="所属任务" required prop="taskId">
-              <el-select v-model="form.taskId" placeholder="请选择所属任务" filterable style="width: 100%" @focus="loadTaskOptions">
+              <el-select v-model="form.taskId" placeholder="请选择所属任务" filterable :loading="optionsLoading" style="width: 100%" @focus="loadTaskOptions">
                 <el-option
                   v-for="t in taskOptions"
                   :key="t.taskId"
@@ -205,7 +205,7 @@
       </el-form>
       <template #footer>
         <div class="dialog-footer">
-          <el-button type="primary" @click="submitForm">确 定</el-button>
+          <el-button type="primary" @click="submitForm" :loading="submitLoading">确 定</el-button>
           <el-button @click="cancel">取 消</el-button>
         </div>
       </template>
@@ -215,7 +215,7 @@
     <el-dialog title="导入图斑数据" v-model="importOpen" width="500px" append-to-body>
       <el-form label-width="90px">
         <el-form-item label="所属任务" required>
-          <el-select v-model="importTaskId" placeholder="请选择所属任务" filterable style="width: 100%" @focus="loadTaskOptions">
+          <el-select v-model="importTaskId" placeholder="请选择所属任务" filterable :loading="optionsLoading" style="width: 100%" @focus="loadTaskOptions">
             <el-option
               v-for="t in taskOptions"
               :key="t.taskId"
@@ -645,6 +645,8 @@ const importLoading = ref(false)
 const uploadFile = ref(null)
 const importTaskId = ref(null)
 const taskOptions = ref([])
+const optionsLoading = ref(false)
+const submitLoading = ref(false)
 
 // 详情抽屉
 const detailVisible = ref(false)
@@ -951,13 +953,14 @@ function handleSelectionChange(selection) {
 function handleViewDetail(row) {
   // 如果传入的只有 parcelId（地图点击），先获取完整数据
   if (row.parcelId && !row.parcelCode) {
+    loading.value = true
     getParcel(row.parcelId).then(response => {
       currentParcel.value = response.data
       detailTitle.value = `图斑详情 - ${response.data.parcelName || response.data.parcelCode}`
       detailVisible.value = true
       detailTab.value = "info"
       loadDetailExtras(response.data)
-    })
+    }).finally(() => { loading.value = false })
   } else {
     currentParcel.value = row
     detailTitle.value = `图斑详情 - ${row.parcelName || row.parcelCode}`
@@ -1070,24 +1073,26 @@ function submitAudit() {
 function handleUpdate(row) {
   reset()
   const parcelId = row.parcelId || ids.value[0]
+  loading.value = true
   getParcel(parcelId).then(response => {
     form.value = response.data
     open.value = true
     title.value = "修改图斑"
-  })
+  }).finally(() => { loading.value = false })
 }
 
 /** 删除 */
 function handleDelete(row) {
   const parcelIds = row.parcelId || ids.value
   proxy.$modal.confirm('确认删除所选图斑吗？此操作不可恢复。').then(function () {
+    loading.value = true
     return delParcel(parcelIds)
   }).then(() => {
     getList()
     // 地图可见时同步刷新
     if (mapVisible.value) loadParcelGeojson()
     proxy.$modal.msgSuccess("删除成功")
-  }).catch(() => {})
+  }).catch(() => { loading.value = false })
 }
 
 /** 导入 */
@@ -1101,9 +1106,10 @@ function handleImport() {
 
 function loadTaskOptions() {
   if (taskOptions.value.length > 0) return
+  optionsLoading.value = true
   listTask().then(res => {
     taskOptions.value = res.rows || []
-  })
+  }).finally(() => { optionsLoading.value = false })
 }
 
 function handleFileChange(file) {
@@ -1155,18 +1161,19 @@ function reset() {
 function submitForm() {
   proxy.$refs["parcelRef"].validate(valid => {
     if (valid) {
+      submitLoading.value = true
       if (form.value.parcelId != undefined) {
         updateParcel(form.value).then(() => {
           proxy.$modal.msgSuccess("修改成功")
           open.value = false
           getList()
-        })
+        }).finally(() => { submitLoading.value = false })
       } else {
         addParcel(form.value).then(() => {
           proxy.$modal.msgSuccess("新增成功")
           open.value = false
           getList()
-        })
+        }).finally(() => { submitLoading.value = false })
       }
     }
   })

@@ -214,30 +214,32 @@
 
     <!-- 合同单价卡片墙弹窗（按大类分组） -->
     <el-dialog :title="'合同单价 — ' + priceDialogTitle" :model-value="priceCardVisible" @update:model-value="priceCardVisible = $event" width="80%" destroy-on-close>
-      <div v-if="priceCardGroups && priceCardGroups.length" class="price-card-container">
-        <div v-for="(group, gIdx) in priceCardGroups" :key="gIdx" class="price-group-section">
-          <!-- 大类标题 -->
-          <div v-if="group.parent" class="price-group-header">
-            <span class="price-group-header-icon">📁</span>
-            <span>{{ group.parent }}</span>
-          </div>
-          <!-- 卡片网格 -->
-          <div class="price-card-wall">
-            <div v-for="(item, idx) in group.items" :key="idx" class="price-card-item">
-              <div class="price-card-icon" :style="{ background: gradientColor(globalItemIdx(priceCardGroups, gIdx, idx), totalCardCount) }">
-                <span>{{ item.name ? item.name.charAt(0) : '?' }}</span>
-              </div>
-              <div class="price-card-body">
-                <div class="price-card-name">{{ item.name || '' }}</div>
-                <div class="price-card-value" :class="{ 'text-muted': item.price == null }">
-                  {{ item.price != null ? '¥' + item.price : '未设置' }}
+      <div v-loading="priceCardLoading">
+        <div v-if="priceCardGroups && priceCardGroups.length" class="price-card-container">
+          <div v-for="(group, gIdx) in priceCardGroups" :key="gIdx" class="price-group-section">
+            <!-- 大类标题 -->
+            <div v-if="group.parent" class="price-group-header">
+              <span class="price-group-header-icon">📁</span>
+              <span>{{ group.parent }}</span>
+            </div>
+            <!-- 卡片网格 -->
+            <div class="price-card-wall">
+              <div v-for="(item, idx) in group.items" :key="idx" class="price-card-item">
+                <div class="price-card-icon" :style="{ background: gradientColor(globalItemIdx(priceCardGroups, gIdx, idx), totalCardCount) }">
+                  <span>{{ item.name ? item.name.charAt(0) : '?' }}</span>
+                </div>
+                <div class="price-card-body">
+                  <div class="price-card-name">{{ item.name || '' }}</div>
+                  <div class="price-card-value" :class="{ 'text-muted': item.price == null }">
+                    {{ item.price != null ? '¥' + item.price : '未设置' }}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
+        <el-empty v-if="!priceCardLoading && (!priceCardGroups || !priceCardGroups.length)" description="暂无单价数据" />
       </div>
-      <el-empty v-else description="暂无单价数据" />
       <template #footer>
         <el-button @click="priceCardVisible = false">关闭</el-button>
       </template>
@@ -366,6 +368,7 @@ const priceCardVisible = ref(false)
 const priceDialogTitle = ref('')
 const priceCardGroups = ref([])
 const totalCardCount = ref(0)
+const priceCardLoading = ref(false)
 
 // ===== 到账明细弹窗 =====
 const receivedDialogVisible = ref(false)
@@ -561,6 +564,7 @@ async function openPriceCard(row) {
   priceCardGroups.value = []
   totalCardCount.value = 0
   priceCardVisible.value = true
+  priceCardLoading.value = true
   try {
     const res = await getPriceDetail(row.contractId)
     const items = (res.data || []).map(item => ({
@@ -573,6 +577,8 @@ async function openPriceCard(row) {
   } catch {
     priceCardGroups.value = []
     totalCardCount.value = 0
+  } finally {
+    priceCardLoading.value = false
   }
 }
 

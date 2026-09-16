@@ -1,5 +1,5 @@
 <template>
-   <div class="app-container">
+   <div class="app-container" v-loading="projectLoading">
       <!-- 面包屑 + 标题栏 -->
       <el-breadcrumb separator="/" style="margin-bottom: 8px">
          <el-breadcrumb-item>项目列表</el-breadcrumb-item>
@@ -82,9 +82,37 @@
             </el-table>
          </el-tab-pane>
 
-         <!-- 工作量录入（只读）：内部按执行人分组，外部不挂执行人统一列表 -->
+         <!-- 工作量录入（只读）：外部（不挂执行人，按子项分组）在上，内部（按执行人分组）在下 -->
          <el-tab-pane label="工作量" name="workload">
             <div v-loading="workloadLoading">
+               <!-- 外部工作量：不挂执行人，按子项分组（展示在最上方） -->
+               <template v-if="externalGroups.length">
+                  <div class="workload-section">
+                     <div class="workload-section-title">
+                        <i class="workload-section-dot" style="background:#e6a23c"></i>
+                        <span>外部工作量</span>
+                        <span class="workload-section-total">产值合计 {{ formatMoney(externalOutputTotal) }}</span>
+                     </div>
+                     <div v-for="group in externalGroups" :key="'ext-' + group.subItemNo" class="workload-group">
+                        <el-table :data="group.items" stripe border>
+                           <el-table-column label="计费类别" align="center" prop="billingCategory" min-width="150" />
+                           <el-table-column label="工作量" align="right" min-width="110">
+                              <template #default="scope"><span>{{ fmtWorkload(scope.row) }}</span></template>
+                           </el-table-column>
+                           <el-table-column label="起步量" align="right" min-width="90" v-if="false">
+                              <template #default="scope"><span>{{ fmtMinQuantity(scope.row.minQuantity) }}</span></template>
+                           </el-table-column>
+                           <el-table-column label="单价" align="right" min-width="110">
+                              <template #default="scope"><span>{{ formatMoney(pickPrice(scope.row)) }}</span></template>
+                           </el-table-column>
+                           <el-table-column label="产值" align="right" min-width="120">
+                              <template #default="scope"><span style="color:#ff9900;font-weight:500">{{ formatMoney(pickOutput(scope.row)) }}</span></template>
+                           </el-table-column>
+                        </el-table>
+                     </div>
+                  </div>
+               </template>
+
                <!-- 内部工作量：按执行人分组 -->
                <template v-if="internalGroups.length">
                   <div class="workload-section">
@@ -111,34 +139,6 @@
                            </el-table-column>
                            <el-table-column label="产值" align="right" min-width="120">
                               <template #default="scope"><span style="color:#67c23a;font-weight:500">{{ formatMoney(pickOutput(scope.row)) }}</span></template>
-                           </el-table-column>
-                        </el-table>
-                     </div>
-                  </div>
-               </template>
-
-               <!-- 外部工作量：不挂执行人，按子项分组 -->
-               <template v-if="externalGroups.length">
-                  <div class="workload-section">
-                     <div class="workload-section-title">
-                        <i class="workload-section-dot" style="background:#e6a23c"></i>
-                        <span>外部工作量</span>
-                        <span class="workload-section-total">产值合计 {{ formatMoney(externalOutputTotal) }}</span>
-                     </div>
-                     <div v-for="group in externalGroups" :key="'ext-' + group.subItemNo" class="workload-group">
-                        <el-table :data="group.items" stripe border>
-                           <el-table-column label="计费类别" align="center" prop="billingCategory" min-width="150" />
-                           <el-table-column label="工作量" align="right" min-width="110">
-                              <template #default="scope"><span>{{ fmtWorkload(scope.row) }}</span></template>
-                           </el-table-column>
-                           <el-table-column label="起步量" align="right" min-width="90" v-if="false">
-                              <template #default="scope"><span>{{ fmtMinQuantity(scope.row.minQuantity) }}</span></template>
-                           </el-table-column>
-                           <el-table-column label="单价" align="right" min-width="110">
-                              <template #default="scope"><span>{{ formatMoney(pickPrice(scope.row)) }}</span></template>
-                           </el-table-column>
-                           <el-table-column label="产值" align="right" min-width="120">
-                              <template #default="scope"><span style="color:#ff9900;font-weight:500">{{ formatMoney(pickOutput(scope.row)) }}</span></template>
                            </el-table-column>
                         </el-table>
                      </div>
@@ -313,7 +313,7 @@
             </el-row>
          </el-form>
          <template #footer>
-            <el-button type="primary" @click="submitWorkload">确 定</el-button>
+            <el-button type="primary" :loading="submitLoading" @click="submitWorkload">确 定</el-button>
             <el-button @click="workloadOpen = false">取 消</el-button>
          </template>
       </el-dialog>
@@ -354,7 +354,7 @@
             </el-form-item>
          </el-form>
          <template #footer>
-            <el-button type="primary" @click="submitPayment">确 定</el-button>
+            <el-button type="primary" :loading="submitLoading" @click="submitPayment">确 定</el-button>
             <el-button @click="paymentOpen = false">取 消</el-button>
          </template>
       </el-dialog>
@@ -380,6 +380,8 @@ const route = useRoute()
 const projectId = route.params.projectId
 const activeTab = ref("info")
 const projectInfo = ref({})
+/** 项目基本信息加载中（整页遮罩，覆盖详情头部与基本信息 Tab） */
+const projectLoading = ref(false)
 
 // 详情总时长：进行中按"安排日期→今天"实时计算工作日（含头含尾）；办结/归档固定显示存储值
 const detailDuration = ref(null)
@@ -494,6 +496,9 @@ const paymentRules = {
    paymentType: [{ required: true, message: "请选择付款类型", trigger: "change" }],
    amount: [{ required: true, message: "请输入金额", trigger: "blur" }]
 }
+
+/** 工作量/付款表单提交中（防重复提交，绑定对应提交按钮 :loading） */
+const submitLoading = ref(false)
 
 // 产值结算 tab 计算属性
 const settleProgressPercent = computed(() => {
@@ -672,11 +677,14 @@ function loadSettlementOverview() {
 
 /** 加载项目信息 + 付款记录 */
 function loadProjectInfo() {
+   projectLoading.value = true
    getProject(projectId).then(response => {
       projectInfo.value = response.data
       refreshDuration()
    }).catch(() => {
       projectInfo.value = {}
+   }).finally(() => {
+      projectLoading.value = false
    })
    loadPayments()
 }
@@ -813,34 +821,35 @@ function onWorkloadCategoryChange(categoryId) {
    }
 }
 
-/** 删除工作量 */
+/** 删除工作量（复用工作量 Tab 遮罩，成功后由 loadWorkloads 接管） */
 function handleDeleteWorkload(row) {
    proxy.$modal.confirm("确认删除该工作量记录？").then(() => {
+      workloadLoading.value = true
       return delWorkload(row.id)
    }).then(() => {
       proxy.$modal.msgSuccess("删除成功")
       loadWorkloads()
-   }).catch(() => {})
+   }).catch(() => {
+      workloadLoading.value = false
+   })
 }
 
 /** 提交工作量 */
 function submitWorkload() {
    proxy.$refs["workloadRef"].validate(valid => {
       if (!valid) return
+      submitLoading.value = true
       workloadForm.value.projectId = Number(projectId)
-      if (workloadForm.value.id) {
-         updateWorkload(workloadForm.value).then(() => {
-            proxy.$modal.msgSuccess("修改成功")
-            workloadOpen.value = false
-            loadWorkloads()
-         })
-      } else {
-         addWorkload(workloadForm.value).then(() => {
-            proxy.$modal.msgSuccess("录入成功")
-            workloadOpen.value = false
-            loadWorkloads()
-         })
-      }
+      const req = workloadForm.value.id ? updateWorkload(workloadForm.value) : addWorkload(workloadForm.value)
+      req.then(() => {
+         proxy.$modal.msgSuccess(workloadForm.value.id ? "修改成功" : "录入成功")
+         workloadOpen.value = false
+         loadWorkloads()
+      }).catch(() => {
+         // 错误提示由请求拦截器统一处理
+      }).finally(() => {
+         submitLoading.value = false
+      })
    })
 }
 
@@ -858,34 +867,35 @@ function handleEditPayment(row) {
    paymentOpen.value = true
 }
 
-/** 删除付款 */
+/** 删除付款（复用付款 Tab 遮罩，成功后由 loadPayments 接管） */
 function handleDeletePayment(row) {
    proxy.$modal.confirm("确认删除该付款记录？").then(() => {
+      paymentLoading.value = true
       return delPayment(row.id)
    }).then(() => {
       proxy.$modal.msgSuccess("删除成功")
       loadPayments()
-   }).catch(() => {})
+   }).catch(() => {
+      paymentLoading.value = false
+   })
 }
 
 /** 提交付款 */
 function submitPayment() {
    proxy.$refs["paymentRef"].validate(valid => {
       if (!valid) return
+      submitLoading.value = true
       paymentForm.value.projectId = Number(projectId)
-      if (paymentForm.value.id) {
-         updatePayment(paymentForm.value).then(() => {
-            proxy.$modal.msgSuccess("修改成功")
-            paymentOpen.value = false
-            loadPayments()
-         })
-      } else {
-         addPayment(paymentForm.value).then(() => {
-            proxy.$modal.msgSuccess("登记成功")
-            paymentOpen.value = false
-            loadPayments()
-         })
-      }
+      const req = paymentForm.value.id ? updatePayment(paymentForm.value) : addPayment(paymentForm.value)
+      req.then(() => {
+         proxy.$modal.msgSuccess(paymentForm.value.id ? "修改成功" : "登记成功")
+         paymentOpen.value = false
+         loadPayments()
+      }).catch(() => {
+         // 错误提示由请求拦截器统一处理
+      }).finally(() => {
+         submitLoading.value = false
+      })
    })
 }
 

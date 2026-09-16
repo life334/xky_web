@@ -1,7 +1,7 @@
 <template>
    <div class="app-container">
       <!-- ========== 统计卡片区 ========== -->
-      <el-row :gutter="16" class="stat-row">
+      <el-row v-loading="statsLoading" :gutter="16" class="stat-row">
          <el-col :span="6">
             <el-card shadow="hover" class="stat-card">
                <div class="stat-body">
@@ -295,7 +295,7 @@
          </el-form>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" @click="submitPay">确 定</el-button>
+               <el-button type="primary" :loading="submitLoading" @click="submitPay">确 定</el-button>
                <el-button @click="payOpen = false">取 消</el-button>
             </div>
          </template>
@@ -307,26 +307,28 @@
             该项目未收 <span style="color: #f56c6c; font-weight: 600">{{ money(currentProject.unpaidAmount) }}</span> 元，
             账龄 <span :class="ageClass(currentProject.debtMonths)">{{ currentProject.debtMonths }}</span> 个月
          </div>
-         <el-timeline v-if="logList.length > 0" style="margin-top: 16px">
-            <el-timeline-item v-for="log in logList" :key="log.id" :timestamp="fmtDate(log.collectTime)" placement="top"
-               :type="log.nextCollectTime && log.nextCollectTime < todayStr ? 'danger' : 'primary'">
-               <div class="log-item">
-                  <div class="log-head">
-                     <el-tag size="small" effect="plain">{{ log.collectMethod || '未填方式' }}</el-tag>
-                     <span v-if="log.contactName" class="log-contact">联系人：{{ log.contactName }}</span>
-                     <el-button link type="danger" size="small" @click="handleDeleteLog(log)" v-hasPermi="['project:collection:log']">删除</el-button>
+         <div v-loading="logLoading">
+            <el-timeline v-if="logList.length > 0" style="margin-top: 16px">
+               <el-timeline-item v-for="log in logList" :key="log.id" :timestamp="fmtDate(log.collectTime)" placement="top"
+                  :type="log.nextCollectTime && log.nextCollectTime < todayStr ? 'danger' : 'primary'">
+                  <div class="log-item">
+                     <div class="log-head">
+                        <el-tag size="small" effect="plain">{{ log.collectMethod || '未填方式' }}</el-tag>
+                        <span v-if="log.contactName" class="log-contact">联系人：{{ log.contactName }}</span>
+                        <el-button link type="danger" size="small" @click="handleDeleteLog(log)" v-hasPermi="['project:collection:log']">删除</el-button>
+                     </div>
+                     <div class="log-result">{{ log.collectResult || '（未填结果）' }}</div>
+                     <div class="log-next" v-if="log.nextCollectTime">
+                        下次催收：{{ fmtDate(log.nextCollectTime) }}
+                        <span v-if="log.nextCollectTime < todayStr" style="color: #f56c6c">（已超期）</span>
+                     </div>
+                     <div class="log-remark" v-if="log.remark">{{ log.remark }}</div>
+                     <div class="log-creator">登记人：{{ log.createBy }}</div>
                   </div>
-                  <div class="log-result">{{ log.collectResult || '（未填结果）' }}</div>
-                  <div class="log-next" v-if="log.nextCollectTime">
-                     下次催收：{{ fmtDate(log.nextCollectTime) }}
-                     <span v-if="log.nextCollectTime < todayStr" style="color: #f56c6c">（已超期）</span>
-                  </div>
-                  <div class="log-remark" v-if="log.remark">{{ log.remark }}</div>
-                  <div class="log-creator">登记人：{{ log.createBy }}</div>
-               </div>
-            </el-timeline-item>
-         </el-timeline>
-         <el-empty v-else description="暂无催收记录，请在下方登记首次催收" :image-size="60" />
+               </el-timeline-item>
+            </el-timeline>
+            <el-empty v-else description="暂无催收记录，请在下方登记首次催收" :image-size="60" />
+         </div>
 
          <el-divider content-position="left">登记催收</el-divider>
          <el-form ref="logRef" :model="logForm" :rules="logRules" label-width="90px">
@@ -365,7 +367,7 @@
                <el-input v-model="logForm.remark" type="textarea" :rows="2" maxlength="500" />
             </el-form-item>
             <el-form-item>
-               <el-button type="primary" @click="submitLog" v-hasPermi="['project:collection:log']">登记催收记录</el-button>
+               <el-button type="primary" :loading="logSubmitLoading" @click="submitLog" v-hasPermi="['project:collection:log']">登记催收记录</el-button>
             </el-form-item>
          </el-form>
       </el-drawer>
@@ -387,6 +389,7 @@ const pendingList = ref([])
 const clientList = ref([])
 const total = ref(0)
 const stats = ref({})
+const statsLoading = ref(false)   // KPI 统计加载中
 const closeTimeRange = ref([])
 
 // 待结算
@@ -397,12 +400,15 @@ const unsettledTotal = ref(0)
 // 登记回款
 const payOpen = ref(false)
 const payForm = ref({})
+const submitLoading = ref(false)   // 回款登记提交中
 
 // 催收记录
 const logOpen = ref(false)
 const logList = ref([])
 const currentProject = ref({})
 const logForm = ref({})
+const logLoading = ref(false)       // 催收记录加载中（抽屉内局部遮罩）
+const logSubmitLoading = ref(false) // 登记催收提交中
 
 const todayStr = (() => {
    const d = new Date()
@@ -487,7 +493,8 @@ function buildParams() {
 
 /** 查询统计卡 */
 function getStats() {
-   collectionStats().then(res => { stats.value = res.data || {} })
+   statsLoading.value = true
+   collectionStats().then(res => { stats.value = res.data || {} }).finally(() => { statsLoading.value = false })
 }
 
 /** 查询待结算提醒 */
@@ -552,12 +559,13 @@ function handleAddPayment(row) {
 function submitPay() {
    proxy.$refs["payRef"].validate(valid => {
       if (valid) {
+         submitLoading.value = true
          addPayment(payForm.value).then(() => {
             proxy.$modal.msgSuccess("回款登记成功")
             payOpen.value = false
             getList()
             getStats()
-         })
+         }).finally(() => { submitLoading.value = false })
       }
    })
 }
@@ -572,19 +580,21 @@ function handleShowLog(row) {
 
 /** 加载催收记录 */
 function loadLog(projectId) {
-   collectionLog(projectId).then(res => { logList.value = res.data || [] })
+   logLoading.value = true
+   collectionLog(projectId).then(res => { logList.value = res.data || [] }).finally(() => { logLoading.value = false })
 }
 
 /** 提交催收记录 */
 function submitLog() {
    proxy.$refs["logRef"].validate(valid => {
       if (valid) {
+         logSubmitLoading.value = true
          addCollectionLog(logForm.value).then(() => {
             proxy.$modal.msgSuccess("催收记录登记成功")
             logForm.value = { projectId: currentProject.value.projectId, collectTime: todayStr }
             loadLog(currentProject.value.projectId)
             getList()
-         })
+         }).finally(() => { logSubmitLoading.value = false })
       }
    })
 }
@@ -592,12 +602,15 @@ function submitLog() {
 /** 删除催收记录 */
 function handleDeleteLog(log) {
    proxy.$modal.confirm('是否确认删除该条催收记录?').then(() => {
+      logLoading.value = true  // 抽屉局部遮罩：成功时由 loadLog 接管 loading
       return delCollectionLog(log.id)
    }).then(() => {
       loadLog(currentProject.value.projectId)
       getList()
       proxy.$modal.msgSuccess("删除成功")
-   }).catch(() => {})
+   }).catch(() => {
+      logLoading.value = false  // 用户取消或请求失败复位
+   })
 }
 
 /** 导出催款清单 */

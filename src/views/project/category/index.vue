@@ -244,7 +244,7 @@
          </el-form>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" @click="submitForm">确 定</el-button>
+               <el-button type="primary" :loading="submitLoading" @click="submitForm">确 定</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
          </template>
@@ -261,6 +261,7 @@ const { sys_normal_disable } = useDict("sys_normal_disable")
 const categoryList = ref([])
 const open = ref(false)
 const loading = ref(true)
+const submitLoading = ref(false)   // 表单提交中（防重复提交）
 const showSearch = ref(true)
 const title = ref("")
 const categoryOptions = ref([])
@@ -313,6 +314,7 @@ function getList() {
   loading.value = true
   listCategory(queryParams.value).then(response => {
     categoryList.value = proxy.handleTree(response.data, "id")
+  }).finally(() => {
     loading.value = false
   })
 }
@@ -384,14 +386,18 @@ function resetQuery() {
 }
 
 /** 新增按钮操作 */
-function handleAdd(row) {
+async function handleAdd(row) {
   reset()
   if (row != undefined && row.id != undefined) {
-    // 新增小类，预填父类别
-    form.value.parentId = row.id
-    categoryTreeselect().then(response => {
+    loading.value = true
+    try {
+      // 新增小类，预填父类别
+      form.value.parentId = row.id
+      const response = await categoryTreeselect()
       categoryOptions.value = response.data
-    })
+    } finally {
+      loading.value = false
+    }
   }
   open.value = true
   title.value = form.value.parentId ? "添加小类" : "添加大类"
@@ -407,23 +413,25 @@ function toggleExpandAll() {
 }
 
 /** 修改按钮操作 */
-function handleUpdate(row) {
+async function handleUpdate(row) {
   reset()
-  getCategory(row.id).then(response => {
+  loading.value = true
+  try {
+    const response = await getCategory(row.id)
     form.value = response.data
     if (form.value.parentId != null && form.value.parentId > 0) {
-      // 小类：加载父类别树 + 计费方式
-      categoryTreeselect().then(res => {
-        categoryOptions.value = res.data
-      })
-      getBilling(row.id).then(res => {
-        billingRows.internal = (res.data || []).filter(b => b.billingType === "internal").map(toEditRow)
-        billingRows.external = (res.data || []).filter(b => b.billingType === "external").map(toEditRow)
-      })
+      // 小类：加载父类别树 + 计费方式（请求完成后再开弹窗）
+      const res = await categoryTreeselect()
+      categoryOptions.value = res.data
+      const bres = await getBilling(row.id)
+      billingRows.internal = (bres.data || []).filter(b => b.billingType === "internal").map(toEditRow)
+      billingRows.external = (bres.data || []).filter(b => b.billingType === "external").map(toEditRow)
     }
     open.value = true
     title.value = "修改项目类别"
-  })
+  } finally {
+    loading.value = false
+  }
 }
 
 /** 数据库行 → 编辑行（去掉持久化字段） */
@@ -498,22 +506,18 @@ function submitForm() {
       } else {
         form.value.billingList = undefined
       }
+      submitLoading.value = true
+      const done = () => { open.value = false; getList(); loadBilling(); loadBillingCategories() }
       if (form.value.id != undefined) {
-        updateCategory(form.value).then(response => {
+        updateCategory(form.value).then(() => {
           proxy.$modal.msgSuccess("修改成功")
-          open.value = false
-          getList()
-          loadBilling()
-          loadBillingCategories()
-        })
+          done()
+        }).finally(() => { submitLoading.value = false })
       } else {
-        addCategory(form.value).then(response => {
+        addCategory(form.value).then(() => {
           proxy.$modal.msgSuccess("新增成功")
-          open.value = false
-          getList()
-          loadBilling()
-          loadBillingCategories()
-        })
+          done()
+        }).finally(() => { submitLoading.value = false })
       }
     }
   })
@@ -522,12 +526,15 @@ function submitForm() {
 /** 删除按钮操作 */
 function handleDelete(row) {
   proxy.$modal.confirm('是否确认删除类别"' + row.name + '"？').then(function() {
+    loading.value = true  // 表格遮罩：成功时由 getList 接管 loading
     return delCategory(row.id)
   }).then(() => {
     getList()
     loadBilling()
     proxy.$modal.msgSuccess("删除成功")
-  }).catch(() => {})
+  }).catch(() => {
+    loading.value = false  // 用户取消或请求失败复位
+  })
 }
 
 getList()

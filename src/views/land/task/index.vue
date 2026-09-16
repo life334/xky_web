@@ -205,7 +205,7 @@
       </el-form>
       <template #footer>
         <div class="dialog-footer">
-          <el-button type="primary" @click="submitForm">确 定</el-button>
+          <el-button type="primary" @click="submitForm" :loading="submitLoading">确 定</el-button>
           <el-button @click="cancel">取 消</el-button>
         </div>
       </template>
@@ -221,7 +221,7 @@
           <span>{{ assignForm.parcelCount }} 个</span>
         </el-form-item>
         <el-form-item label="分派给" prop="userId">
-          <el-select v-model="assignForm.userId" placeholder="请选择外业人员" style="width: 100%">
+          <el-select v-model="assignForm.userId" placeholder="请选择外业人员" :loading="fieldUserLoading" style="width: 100%">
             <el-option v-for="user in fieldUserList" :key="user.userId" :label="user.nickName" :value="user.userId">
               <span style="float: left">{{ user.nickName }}</span>
               <span style="float: right; color: #8492a6; font-size: 12px">{{ user.dept?.deptName }} | 任务数:{{ user.taskCount || 0 }}</span>
@@ -234,7 +234,7 @@
       </el-form>
       <template #footer>
         <div class="dialog-footer">
-          <el-button type="primary" @click="submitAssign">确 定</el-button>
+          <el-button type="primary" @click="submitAssign" :loading="submitAssignLoading">确 定</el-button>
           <el-button @click="cancelAssign">取 消</el-button>
         </div>
       </template>
@@ -263,6 +263,9 @@ const title = ref("")
 const assignTitle = ref("")
 const dateRange = ref([])
 const fieldUserList = ref([])
+const fieldUserLoading = ref(false)
+const submitAssignLoading = ref(false)
+const submitLoading = ref(false)
 
 // 列显隐
 const columns = ref([
@@ -354,22 +357,24 @@ function handleAdd() {
 function handleUpdate(row) {
   reset()
   const taskId = row.taskId || ids.value[0]
+  loading.value = true
   getTask(taskId).then(response => {
     form.value = response.data
     open.value = true
     title.value = "修改调查任务"
-  })
+  }).finally(() => { loading.value = false })
 }
 
 /** 删除 */
 function handleDelete(row) {
   const taskIds = row.taskId || ids.value
   proxy.$modal.confirm('确认删除所选调查任务吗？任务下的图斑数据不会被删除。').then(function () {
+    loading.value = true
     return delTask(taskIds)
   }).then(() => {
     getList()
     proxy.$modal.msgSuccess("删除成功")
-  }).catch(() => {})
+  }).catch(() => { loading.value = false })
 }
 
 /** 导出 */
@@ -404,9 +409,10 @@ function reset() {
 
 /** 获取外业人员列表 */
 function getFieldUserList() {
+  fieldUserLoading.value = true
   listUserOptions({ roleKey: 'field' }).then(res => {
     fieldUserList.value = res.rows || []
-  })
+  }).finally(() => { fieldUserLoading.value = false })
 }
 
 /** 打开分派对话框 */
@@ -427,6 +433,7 @@ function submitAssign() {
     proxy.$modal.msgError("请选择外业人员")
     return
   }
+  submitAssignLoading.value = true
   assignTask({
     taskId: assignForm.value.taskId,
     userId: assignForm.value.userId,
@@ -435,7 +442,7 @@ function submitAssign() {
     proxy.$modal.msgSuccess("分派成功")
     assignOpen.value = false
     getList()
-  })
+  }).finally(() => { submitAssignLoading.value = false })
 }
 
 /** 取消分派 */
@@ -459,18 +466,19 @@ function resetAssign() {
 function submitForm() {
   proxy.$refs["taskRef"].validate(valid => {
     if (valid) {
+      submitLoading.value = true
       if (form.value.taskId != undefined) {
         updateTask(form.value).then(() => {
           proxy.$modal.msgSuccess("修改成功")
           open.value = false
           getList()
-        })
+        }).finally(() => { submitLoading.value = false })
       } else {
         addTask(form.value).then(() => {
           proxy.$modal.msgSuccess("新增成功")
           open.value = false
           getList()
-        })
+        }).finally(() => { submitLoading.value = false })
       }
     }
   })

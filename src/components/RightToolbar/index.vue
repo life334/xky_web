@@ -9,7 +9,15 @@
       </el-tooltip>
       <el-tooltip class="item" effect="dark" content="显隐列" placement="top" v-if="Object.keys(columns).length > 0">
         <el-button :size="size" circle icon="Menu" @click="showColumn()" v-if="showColumnsType == 'transfer'"/>
-        <el-dropdown trigger="click" :hide-on-click="false" style="padding-left: 12px" v-if="showColumnsType == 'checkbox'">
+        <el-dropdown
+          trigger="click"
+          :hide-on-click="false"
+          placement="bottom-end"
+          :max-height="320"
+          popper-class="right-toolbar-columns-popper"
+          style="padding-left: 12px"
+          v-if="showColumnsType == 'checkbox'"
+        >
           <el-button :size="size" circle icon="Menu" />
           <template #dropdown>
             <el-dropdown-menu>
@@ -249,5 +257,18 @@ function saveStorage() {
   height: 1px;
   background-color: #ccc;
   margin: 3px auto;
+}
+</style>
+
+<!--
+  非 scoped：popper 被 teleport 到 body，scoped 选择器命中不到。
+  显隐列面板列多（项目表已 20+ 列）时若不限高，面板会把文档高度撑大 →
+  整页出现纵向滚动条、并因高度突变把页面顶走（用户反馈的"自动向上滚动"）。
+  这里对面板限高 + 内部滚动；组件上另配 :max-height="320" 由 el-dropdown 自身兜底。
+-->
+<style lang="scss">
+.right-toolbar-columns-popper .el-dropdown-menu {
+  max-height: 60vh;
+  overflow-y: auto;
 }
 </style>

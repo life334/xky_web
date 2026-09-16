@@ -2,7 +2,7 @@
    <div class="app-container">
       <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="80px">
          <el-form-item label="所属项目" prop="projectId">
-            <el-select v-model="queryParams.projectId" placeholder="请选择项目" clearable filterable style="width: 200px">
+            <el-select v-model="queryParams.projectId" placeholder="请选择项目" clearable filterable :loading="optionsLoading" style="width: 200px">
                <el-option v-for="p in projectOptions" :key="p.id" :label="p.projectName" :value="p.id" />
             </el-select>
          </el-form-item>
@@ -95,7 +95,7 @@
             <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="所属项目" prop="projectId">
-                     <el-select v-model="form.projectId" placeholder="请选择项目" filterable style="width: 100%">
+                     <el-select v-model="form.projectId" placeholder="请选择项目" filterable :loading="optionsLoading" style="width: 100%">
                         <el-option v-for="p in projectOptions" :key="p.id" :label="p.projectName" :value="p.id" />
                      </el-select>
                   </el-form-item>
@@ -145,7 +145,7 @@
          </el-form>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" @click="submitForm">确 定</el-button>
+               <el-button type="primary" :loading="submitLoading" @click="submitForm">确 定</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
          </template>
@@ -170,6 +170,8 @@ const single = ref(true)
 const multiple = ref(true)
 const ids = ref([])
 const projectOptions = ref([])
+const optionsLoading = ref(false)   // 项目下拉选项加载中
+const submitLoading = ref(false)    // 表单提交中（防重复提交）
 
 const data = reactive({
   form: {},
@@ -191,7 +193,9 @@ const { queryParams, form, rules } = toRefs(data)
 
 /** 加载项目下拉选项 */
 function loadOptions() {
+  optionsLoading.value = true
   listProject({ pageNum: 1, pageSize: 999 }).then(r => { projectOptions.value = r.rows || [] })
+    .finally(() => { optionsLoading.value = false })
 }
 
 /** 查询付款记录列表 */
@@ -200,6 +204,7 @@ function getList() {
   listPayment(queryParams.value).then(response => {
     paymentList.value = response.rows
     total.value = response.total
+  }).finally(() => {
     loading.value = false
   })
 }
@@ -255,10 +260,13 @@ function handleAdd() {
 function handleUpdate(row) {
   reset()
   const id = row.id || ids.value[0]
+  loading.value = true
   getPayment(id).then(response => {
     form.value = response.data
     open.value = true
     title.value = "修改付款记录"
+  }).finally(() => {
+    loading.value = false
   })
 }
 
@@ -272,18 +280,19 @@ function formatMoney(val) {
 function submitForm() {
   proxy.$refs["paymentRef"].validate(valid => {
     if (valid) {
+      submitLoading.value = true
       if (form.value.id != undefined) {
         updatePayment(form.value).then(response => {
           proxy.$modal.msgSuccess("修改成功")
           open.value = false
           getList()
-        })
+        }).finally(() => { submitLoading.value = false })
       } else {
         addPayment(form.value).then(response => {
           proxy.$modal.msgSuccess("新增成功")
           open.value = false
           getList()
-        })
+        }).finally(() => { submitLoading.value = false })
       }
     }
   })
@@ -293,11 +302,14 @@ function submitForm() {
 function handleDelete(row) {
   const idsToDelete = row.id ? [row.id] : ids.value
   proxy.$modal.confirm('是否确认删除所选付款记录?').then(function() {
+    loading.value = true
     return delPayment(idsToDelete.join(","))
   }).then(() => {
-    getList()
     proxy.$modal.msgSuccess("删除成功")
-  }).catch(() => {})
+    getList()
+  }).catch(() => {
+    loading.value = false
+  })
 }
 
 /** 导出 */

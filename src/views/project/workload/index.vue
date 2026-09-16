@@ -2,12 +2,12 @@
    <div class="app-container">
       <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="80px">
          <el-form-item label="所属项目" prop="projectId">
-            <el-select v-model="queryParams.projectId" placeholder="请选择项目" clearable filterable style="width: 200px">
+            <el-select v-model="queryParams.projectId" placeholder="请选择项目" clearable filterable :loading="optionsLoading" style="width: 200px">
                <el-option v-for="p in projectOptions" :key="p.id" :label="p.projectName" :value="p.id" />
             </el-select>
          </el-form-item>
          <el-form-item label="执行人" prop="userId">
-            <el-select v-model="queryParams.userId" placeholder="请选择执行人" clearable filterable style="width: 160px">
+            <el-select v-model="queryParams.userId" placeholder="请选择执行人" clearable filterable :loading="optionsLoading" style="width: 160px">
                <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
             </el-select>
          </el-form-item>
@@ -18,6 +18,7 @@
                :props="{ value: 'id', label: 'label', children: 'children' }"
                value-key="id"
                placeholder="请选择类别"
+               :loading="optionsLoading"
                check-strictly
                clearable
                style="width: 180px"
@@ -120,6 +121,7 @@ const total = ref(0)
 const projectOptions = ref([])
 const userOptions = ref([])
 const categoryOptions = ref([])
+const optionsLoading = ref(false)   // 下拉选项加载中
 
 const data = reactive({
   queryParams: {
@@ -135,9 +137,12 @@ const { queryParams } = toRefs(data)
 
 /** 加载下拉选项 */
 function loadOptions() {
-  listProject({ pageNum: 1, pageSize: 999 }).then(r => { projectOptions.value = r.rows || [] })
-  listUserOptions({ pageNum: 1, pageSize: 999 }).then(r => { userOptions.value = r.rows || [] })
-  categoryTreeselect().then(r => { categoryOptions.value = r.data || [] })
+  optionsLoading.value = true
+  Promise.all([
+    listProject({ pageNum: 1, pageSize: 999 }).then(r => { projectOptions.value = r.rows || [] }),
+    listUserOptions({ pageNum: 1, pageSize: 999 }).then(r => { userOptions.value = r.rows || [] }),
+    categoryTreeselect().then(r => { categoryOptions.value = r.data || [] })
+  ]).finally(() => { optionsLoading.value = false })
 }
 
 /** 查询工作量列表 */
@@ -146,6 +151,7 @@ function getList() {
   listWorkload(queryParams.value).then(response => {
     workloadList.value = response.rows
     total.value = response.total
+  }).finally(() => {
     loading.value = false
   })
 }

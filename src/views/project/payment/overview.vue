@@ -1,7 +1,7 @@
 <template>
    <div class="app-container">
       <!-- KPI 统计卡片 -->
-      <el-row :gutter="16" style="margin-bottom: 20px">
+      <el-row v-loading="statsLoading" :gutter="16" style="margin-bottom: 20px">
          <el-col :span="6">
             <div class="stat-card">
                <div class="stat-card__icon stat-card__icon--total">
@@ -147,6 +147,7 @@ const router = useRouter()
 const { proj_payment_overview_status } = useDict('proj_payment_overview_status')
 
 const loading = ref(false)
+const statsLoading = ref(false)   // KPI 统计加载中
 const total = ref(0)
 const overviewList = ref([])
 const stats = ref({})
@@ -167,10 +168,11 @@ const { queryParams } = toRefs(data)
 
 /** 加载统计 */
 function loadStats() {
+   statsLoading.value = true
    paymentOverviewStats().then(response => {
       stats.value = response.data
       totalCount.value = (stats.value.totalCount || 0)
-   })
+   }).finally(() => { statsLoading.value = false })
 }
 
 /** 加载列表 */

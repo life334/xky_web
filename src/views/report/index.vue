@@ -5,7 +5,7 @@
       <div class="toolbar-row">
         <div class="toolbar-group">
           <span class="t-label">报表模板</span>
-          <el-select v-model="currentTemplateId" filterable placeholder="请选择模板" style="width: 280px" @change="onTemplateChange">
+          <el-select v-model="currentTemplateId" filterable placeholder="请选择模板" style="width: 280px" :loading="optionsLoading" @change="onTemplateChange">
             <el-option-group label="内置模板（样式 100% 还原）">
               <el-option v-for="t in builtinTemplates" :key="t.id" :label="t.templateName" :value="t.id" />
             </el-option-group>
@@ -19,7 +19,7 @@
 
         <div class="toolbar-group">
           <span class="t-label">筛选方案</span>
-          <el-select v-model="currentFilterId" clearable filterable placeholder="无筛选方案" style="width: 220px" @change="onFilterChange">
+          <el-select v-model="currentFilterId" clearable filterable placeholder="无筛选方案" style="width: 220px" :loading="optionsLoading" @change="onFilterChange">
             <el-option-group :label="'模板默认方案（' + (currentTemplate?.templateName || '当前模板') + '）'">
               <el-option :value="DEFAULT_FILTER_ID" :label="templateDefaultFilterLabel" />
             </el-option-group>
@@ -28,8 +28,8 @@
             </el-option-group>
           </el-select>
           <el-button type="primary" link icon="Operation" v-hasPermi="['report:report:filter']" @click="openFilterDialog">筛选设置</el-button>
-          <el-button type="warning" link icon="FolderAdd" :disabled="!selectedFilterKeys.length" v-hasPermi="['report:report:filter']" @click="saveFilterScheme">{{ isDefaultFilterMode ? '保存为模板默认' : '保存筛选' }}</el-button>
-          <el-button type="success" link icon="DocumentCopy" :disabled="!selectedFilterKeys.length" v-hasPermi="['report:report:filter']" @click="saveAsNewFilterScheme">另存为</el-button>
+          <el-button type="warning" link icon="FolderAdd" :disabled="!selectedFilterKeys.length" :loading="filterSaving" v-hasPermi="['report:report:filter']" @click="saveFilterScheme">{{ isDefaultFilterMode ? '保存为模板默认' : '保存筛选' }}</el-button>
+          <el-button type="success" link icon="DocumentCopy" :disabled="!selectedFilterKeys.length" :loading="filterSaving" v-hasPermi="['report:report:filter']" @click="saveAsNewFilterScheme">另存为</el-button>
           <el-button type="warning" link icon="EditPen" :disabled="!canRenameFilter" v-hasPermi="['report:report:filter']" @click="handleRenameFilter">重命名</el-button>
           <el-button type="danger" link icon="Delete" :disabled="!canDeleteFilter" v-hasPermi="['report:report:filter']" @click="handleDeleteFilter">删除方案</el-button>
         </div>
@@ -594,7 +594,7 @@
 
 <script setup name="Report">
 import { saveAs } from 'file-saver'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElLoading } from 'element-plus'
 import { ArrowRight, ArrowDown, Search, Download } from '@element-plus/icons-vue'
 import {
   getFieldPool, listReportTemplate, getReportTemplate, saveReportTemplate, delReportTemplate, saveTemplateDefaultFilter,
@@ -677,6 +677,10 @@ const submitting = ref(false)
 const categoryOptions = ref([])
 /* 工程项目下拉选项（类别树小类名称，与项目编辑页数据源一致） */
 const engineeringOptions = ref([])
+/* 下拉选项类加载（字段池/模板/筛选方案/类别）统一遮罩，绑定模板两个 el-select */
+const optionsLoading = ref(false)
+/* 筛选方案保存/另存为按钮遮罩（与上报记录弹窗的 submitLoading 区分开） */
+const filterSaving = ref(false)
 
 /* 导出弹窗 + 工具栏「上报记录」复选框 */
 const exportDialogVisible = ref(false)
@@ -895,7 +899,13 @@ const hasAnyFilterValue = computed(() => selectedFilterKeys.value.some(fk => {
 
 /* ═══════════ 初始化 ═══════════ */
 async function init() {
-  await Promise.all([loadFieldPool(), loadTemplates(), loadFilters(), loadCategories()])
+  // 四个下拉选项加载统一用 optionsLoading 接管，避免单个函数各自开关导致 Promise.all 提前复位
+  optionsLoading.value = true
+  try {
+    await Promise.all([loadFieldPool(), loadTemplates(), loadFilters(), loadCategories()])
+  } finally {
+    optionsLoading.value = false
+  }
   if (builtinTemplates.value.length) {
     currentTemplateId.value = builtinTemplates.value[0].id
     await onTemplateChange()
@@ -1129,18 +1139,24 @@ async function onFilterChange(id) {
     applyDefaultFilter(true)
     return
   }
-  const res = await getReportFilter(id)
-  const detail = res?.data || {}
-  let cfg = {}
-  try { cfg = JSON.parse(detail.filterConfig || '{}') } catch (e) { cfg = {} }
-  // 跨模板套用全局方案：忽略当前不可用的筛选字段，轻提示
-  const unknownCount = (cfg.selected || []).filter(k => !FILTER_MAP[k]).length
-  applyFilterConfig(cfg)
-  currentFilterSchemeName.value = detail.filterName
-  clearTimeout(previewTimer)
-  doPreview()
-  if (unknownCount > 0) {
-    proxy.$modal.msgWarning(`${unknownCount} 个筛选条件在当前模板不可用，已自动忽略`)
+  // 拉取方案配置期间用预览遮罩反馈，随后交由 doPreview 接管
+  previewLoading.value = true
+  try {
+    const res = await getReportFilter(id)
+    const detail = res?.data || {}
+    let cfg = {}
+    try { cfg = JSON.parse(detail.filterConfig || '{}') } catch (e) { cfg = {} }
+    // 跨模板套用全局方案：忽略当前不可用的筛选字段，轻提示
+    const unknownCount = (cfg.selected || []).filter(k => !FILTER_MAP[k]).length
+    applyFilterConfig(cfg)
+    currentFilterSchemeName.value = detail.filterName
+    clearTimeout(previewTimer)
+    await doPreview()
+    if (unknownCount > 0) {
+      proxy.$modal.msgWarning(`${unknownCount} 个筛选条件在当前模板不可用，已自动忽略`)
+    }
+  } finally {
+    previewLoading.value = false
   }
 }
 
@@ -1163,6 +1179,8 @@ function buildFilterConfigJson() {
 }
 
 async function saveFilterScheme() {
+  filterSaving.value = true
+  try {
   // ① 模板默认方案模式：直接保存到模板 default_filter（无需命名）
   if (isDefaultFilterMode.value) {
     if (!currentTemplateId.value) { proxy.$modal.msgWarning('请先选择模板'); return }
@@ -1189,24 +1207,32 @@ async function saveFilterScheme() {
   }
   // ③ 无方案：与「另存为」一致，新建全局方案
   await saveAsNewFilterScheme()
+  } finally {
+    filterSaving.value = false
+  }
 }
 
 /* 另存为：将当前筛选配置保存为一个新的全局方案（所有模板共享） */
 async function saveAsNewFilterScheme() {
   if (!selectedFilterKeys.value.length) { proxy.$modal.msgWarning('请先启用筛选条件'); return }
-  const { value } = await ElMessageBox.prompt(
-    '将当前筛选配置保存为新的全局方案（所有模板共享）：',
-    '另存为筛选方案',
-    { confirmButtonText: '保存方案', cancelButtonText: '取消', inputPlaceholder: '请输入方案名称，如：未结算项目' }
-  )
-  if (!value || !value.trim()) return
-  const name = value.trim()
-  await saveReportFilter({ filterName: name, filterConfig: buildFilterConfigJson() })
-  proxy.$modal.msgSuccess('方案已保存：' + name)
-  await loadFilters()
-  const match = filterSchemes.value.find(s => s.filterName === name)
-  currentFilterId.value = match ? match.id : null
-  currentFilterSchemeName.value = name
+  filterSaving.value = true
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '将当前筛选配置保存为新的全局方案（所有模板共享）：',
+      '另存为筛选方案',
+      { confirmButtonText: '保存方案', cancelButtonText: '取消', inputPlaceholder: '请输入方案名称，如：未结算项目' }
+    )
+    if (!value || !value.trim()) return
+    const name = value.trim()
+    await saveReportFilter({ filterName: name, filterConfig: buildFilterConfigJson() })
+    proxy.$modal.msgSuccess('方案已保存：' + name)
+    await loadFilters()
+    const match = filterSchemes.value.find(s => s.filterName === name)
+    currentFilterId.value = match ? match.id : null
+    currentFilterSchemeName.value = name
+  } finally {
+    filterSaving.value = false
+  }
 }
 
 /* 删除筛选方案：仅创建者可删（后端亦校验 create_by），删除后保留当前筛选值、解除方案绑定 */
@@ -1218,11 +1244,17 @@ async function handleDeleteFilter() {
   } catch {
     return
   }
-  await delReportFilter(scheme.id)
-  proxy.$modal.msgSuccess('筛选方案已删除')
-  await loadFilters()
-  currentFilterId.value = null
-  currentFilterSchemeName.value = ''
+  // 用下拉选项遮罩反馈；loadFilters 在成功分支内执行，由本函数 finally 统一复位
+  optionsLoading.value = true
+  try {
+    await delReportFilter(scheme.id)
+    proxy.$modal.msgSuccess('筛选方案已删除')
+    await loadFilters()
+    currentFilterId.value = null
+    currentFilterSchemeName.value = ''
+  } finally {
+    optionsLoading.value = false
+  }
 }
 
 /* 重命名筛选方案：仅创建者可重命名（后端亦校验 create_by），只改名字、不动筛选配置 */
@@ -1241,10 +1273,15 @@ async function handleRenameFilter() {
     return
   }
   if (!name) { proxy.$modal.msgWarning('方案名称不能为空'); return }
-  await renameReportFilter(scheme.id, name)
-  proxy.$modal.msgSuccess('方案已重命名')
-  currentFilterSchemeName.value = name
-  await loadFilters()
+  optionsLoading.value = true
+  try {
+    await renameReportFilter(scheme.id, name)
+    proxy.$modal.msgSuccess('方案已重命名')
+    currentFilterSchemeName.value = name
+    await loadFilters()
+  } finally {
+    optionsLoading.value = false
+  }
 }
 
 /* ═══════════ 筛选设置弹窗 ═══════════ */
@@ -1589,17 +1626,26 @@ async function exportDesignerDirect() {
 
 async function handleDeleteTemplate() {
   if (!currentTemplateId.value) return
-  await proxy.$modal.confirm(`确定删除自定义模板「${currentTemplate.value?.templateName}」吗？`)
-  await delReportTemplate(currentTemplateId.value)
-  proxy.$modal.msgSuccess('模板已删除')
-  currentTemplateId.value = null
-  currentTemplate.value = null
-  previewRows.value = []
-  previewTotal.value = 0
-  await loadTemplates()
-  if (builtinTemplates.value.length) {
-    currentTemplateId.value = builtinTemplates.value[0].id
-    await onTemplateChange()
+  try {
+    await proxy.$modal.confirm(`确定删除自定义模板「${currentTemplate.value?.templateName}」吗？`)
+  } catch {
+    return
+  }
+  optionsLoading.value = true
+  try {
+    await delReportTemplate(currentTemplateId.value)
+    proxy.$modal.msgSuccess('模板已删除')
+    currentTemplateId.value = null
+    currentTemplate.value = null
+    previewRows.value = []
+    previewTotal.value = 0
+    await loadTemplates()
+    if (builtinTemplates.value.length) {
+      currentTemplateId.value = builtinTemplates.value[0].id
+      await onTemplateChange()
+    }
+  } finally {
+    optionsLoading.value = false
   }
 }
 
@@ -1713,6 +1759,7 @@ async function loadLogs() {
 }
 
 async function handleReExport(row) {
+  const inst = ElLoading.service({ text: '正在导出，请稍候', background: 'rgba(0,0,0,0.7)' })
   try {
     const res = await reExportReport(row.id)
     const blob = res.data
@@ -1727,14 +1774,27 @@ async function handleReExport(row) {
     proxy.$modal.msgSuccess('已按原模板与原筛选重新导出')
   } catch (e) {
     proxy.$modal.msgError('重导失败，请稍后重试')
+  } finally {
+    inst.close()
   }
 }
 
 async function handleDeleteLog(row) {
-  await proxy.$modal.confirm(`确定删除该导出记录（${row.fileName}）吗？`)
-  await delReportLog(row.id)
-  proxy.$modal.msgSuccess('记录已删除')
-  loadLogs()
+  try {
+    await proxy.$modal.confirm(`确定删除该导出记录（${row.fileName}）吗？`)
+  } catch {
+    return
+  }
+  // 用导出历史表格遮罩反馈；成功后 loadLogs 自行接管 logLoading
+  logLoading.value = true
+  try {
+    await delReportLog(row.id)
+    proxy.$modal.msgSuccess('记录已删除')
+  } catch (e) {
+    logLoading.value = false
+    return
+  }
+  await loadLogs()
 }
 
 /* ═══════════ 上报记录 ═══════════ */
@@ -1755,6 +1815,7 @@ async function loadSubmitBatches() {
 
 /* 下载批次快照（上报当时的报表文件） */
 async function handleDownloadSnapshot(row) {
+  const inst = ElLoading.service({ text: '正在下载快照，请稍候', background: 'rgba(0,0,0,0.7)' })
   try {
     const res = await downloadSnapshot(row.id)
     const blob = res.data
@@ -1769,6 +1830,8 @@ async function handleDownloadSnapshot(row) {
     saveAs(new Blob([blob]), parseExportFileName(res, fallback))
   } catch (e) {
     proxy.$modal.msgError('快照下载失败，请稍后重试')
+  } finally {
+    inst.close()
   }
 }
 
@@ -1794,9 +1857,16 @@ async function handleDeleteSubmitBatch(row) {
   } catch {
     return
   }
-  await delSubmitBatch(row.id)
-  proxy.$modal.msgSuccess('批次已删除')
-  loadSubmitBatches()
+  // 用上报记录表格遮罩反馈；成功后 loadSubmitBatches 自行接管 submitLoading
+  submitLoading.value = true
+  try {
+    await delSubmitBatch(row.id)
+    proxy.$modal.msgSuccess('批次已删除')
+  } catch (e) {
+    submitLoading.value = false
+    return
+  }
+  await loadSubmitBatches()
 }
 
 /* 删除单条上报记录（仅管理员；删除后该工程编号可重新上报） */
@@ -1806,12 +1876,18 @@ async function handleDeleteSubmitLog(row) {
   } catch {
     return
   }
-  await delSubmitLog(row.id)
-  proxy.$modal.msgSuccess('记录已删除')
-  // 刷新当前批次详情
-  if (submitDetail.value?.id) {
-    const res = await getSubmitBatch(submitDetail.value.id)
-    submitDetail.value = res?.data || null
+  // 用批次详情表格遮罩反馈
+  submitDetailLoading.value = true
+  try {
+    await delSubmitLog(row.id)
+    proxy.$modal.msgSuccess('记录已删除')
+    // 刷新当前批次详情
+    if (submitDetail.value?.id) {
+      const res = await getSubmitBatch(submitDetail.value.id)
+      submitDetail.value = res?.data || null
+    }
+  } finally {
+    submitDetailLoading.value = false
   }
 }
 

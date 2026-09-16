@@ -283,11 +283,13 @@ function openDrawer(row, tab = 'overview', filter = {}) {
 
 async function handleStatusChange(row) {
   try {
+    loading.value = true
     await changeProjectStatus(row.id, row.status)
     proxy.$modal.msgSuccess("状态变更成功")
     getList()
   } catch (e) {
     proxy.$modal.msgError("状态更新失败")
+    loading.value = false
   }
 }
 

@@ -1,0 +1,39 @@
+/**
+ * 表格滚动条加粗（全局）
+ *
+ * 背景：Element Plus 默认的横向滚动条（.el-scrollbar__bar.is-horizontal）只有 6px 高，
+ * 而且 thumb 的默认不透明度只有 0.3。项目里表格列又多又宽，横向滚动条几乎必然出现，
+ * 6px 的高度用鼠标基本点不准、也拖不动，用户反馈"点半天点不到"。
+ *
+ * 处理：把横向滚动条加高到 12px、纵向加宽到 10px（都是默认值的 2 倍以内），
+ * 并把 thumb 的默认不透明度提到 0.5、hover 提到 0.8，让滚动条"看得见、点得中"。
+ *
+ * 作用域刻意限定在 `.el-table` 内：只解决表格的横向滚动条问题，
+ * 不动侧边栏（`sidebar.scss` 里自己隐藏了横向条，纵向条另有排版）等其它滚动区域。
+ *
+ * 说明：thumb 的颜色仍然引用 EP 变量（--el-scrollbar-bg-color），
+ * 这里只覆盖"尺寸 / 不透明度"，所以亮色/暗色主题都跟随原有配色。
+ */
+.el-table {
+  .el-scrollbar__bar {
+    border-radius: 6px;
+
+    &.is-horizontal {
+      height: 12px;
+      bottom: 2px;
+    }
+
+    &.is-vertical {
+      width: 10px;
+    }
+  }
+
+  /* thumb 默认更明显一点，hover 时再加深，便于鼠标点选/拖动 */
+  .el-scrollbar__thumb {
+    opacity: 0.5;
+  }
+
+  .el-scrollbar__thumb:hover {
+    opacity: 0.8;
+  }
+}

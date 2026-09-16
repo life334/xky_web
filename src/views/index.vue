@@ -79,7 +79,7 @@
     <!-- 第二行：财务卡片（4张） -->
     <div class="finance-row" v-loading="loading">
       <div class="finance-card">
-        <div class="finance-label">本月到账</div>
+        <div class="finance-label">{{ periodLabel }}到账</div>
         <div class="finance-value">¥{{ formatMoney(f.periodPayment) }}</div>
         <div class="finance-meta">
           <span>年度 ¥{{ formatMoney(f.annualPayment) }}</span>
@@ -87,7 +87,10 @@
         </div>
       </div>
       <div class="finance-card">
-        <div class="finance-label">本月产值</div>
+        <div class="finance-label">
+          {{ periodLabel }}产值
+          <span class="finance-label-tip">按办结日期 · 仅外部</span>
+        </div>
         <div class="finance-value">¥{{ formatMoney(f.periodOutput) }}</div>
         <div class="finance-meta">
           <span>年度 ¥{{ formatMoney(f.annualOutput) }}</span>
@@ -143,26 +146,31 @@
       </div>
     </div>
 
-    <!-- 第五行：合同收款进度 + 快捷入口 -->
+    <!-- 第五行：项目产值排行 + 快捷入口 -->
     <div class="bottom-row">
       <div class="bottom-card bottom-wide">
         <div class="chart-header">
-          <span class="chart-title">合同收款进度</span>
+          <span class="chart-title">项目产值排行</span>
+          <span class="chart-subtitle">TOP10 · 累计外部产值</span>
         </div>
-        <div class="contract-list" v-loading="loading">
-          <div v-for="item in dashboard.contractPaymentList" :key="item.contractNo" class="contract-item">
-            <span class="contract-code">{{ item.contractNo }}</span>
-            <el-progress
-              :percentage="Number(item.progress)"
-              :stroke-width="8"
-              :show-text="false"
-              :color="getProgressColor(Number(item.progress))"
-              class="contract-progress"
-            />
-            <span class="contract-pct" :style="{ color: getProgressColor(Number(item.progress)) }">{{ item.progress }}%</span>
-            <span class="contract-amount">¥{{ formatMoney(item.receivedAmount) }}/¥{{ formatMoney(item.contractAmount) }}</span>
+        <div class="rank-list" v-loading="loading">
+          <div
+            v-for="(item, idx) in outputTop"
+            :key="item.projectId ?? idx"
+            class="rank-item"
+            @click="goProjectDetail(item.projectId)"
+          >
+            <span class="rank-badge" :class="'rank-top-' + (idx + 1)">{{ idx + 1 }}</span>
+            <div class="rank-name">
+              <span class="rank-code" :title="item.projectCode">{{ item.projectCode || "—" }}</span>
+              <span class="rank-sub" :title="item.clientUnit || item.projectName">{{ item.clientUnit || item.projectName || "" }}</span>
+            </div>
+            <div class="rank-bar">
+              <div class="rank-bar-fill" :style="{ width: barWidth(item.output) }"></div>
+            </div>
+            <span class="rank-amount">¥{{ formatMoney(item.output) }}</span>
           </div>
-          <el-empty v-if="!loading && !dashboard.contractPaymentList?.length" description="暂无合同数据" :image-size="50" />
+          <el-empty v-if="!loading && !outputTop.length" description="暂无产值数据" :image-size="50" />
         </div>
       </div>
 
@@ -226,6 +234,14 @@ let charts = {}
 const k = computed(() => dashboard.value.kpis || {})
 const f = computed(() => dashboard.value.finance || {})
 
+// 统计周期文案（随快捷周期联动，避免选了"本年"仍写"本月"）
+const periodLabel = computed(() => {
+  if (quickPeriod.value === "month") return "本月"
+  if (quickPeriod.value === "quarter") return "本季"
+  if (quickPeriod.value === "year") return "本年"
+  return "本期"
+})
+
 const paymentRatio = computed(() => {
   const c = dashboard.value.contractPayment
   if (!c || !c.totalAmount || Number(c.totalAmount) === 0) return 0
@@ -236,6 +252,21 @@ const totalProjects = computed(() => {
   const kpi = dashboard.value.kpis || {}
   return (kpi.activeProjectCount || 0) + (kpi.completedProjects || 0)
 })
+
+// ===== 项目产值排行 TOP10 =====
+const outputTop = computed(() => dashboard.value.projectOutputTop || [])
+const maxOutput = computed(() => {
+  const list = outputTop.value
+  return list.length ? Math.max(...list.map(d => Number(d.output) || 0)) : 0
+})
+
+/** 条形宽度：按榜首值等比缩放，最小保留 6% 保证可见 */
+function barWidth(val) {
+  const max = maxOutput.value
+  if (!max) return "0%"
+  const pct = (Number(val) || 0) / max * 100
+  return Math.max(6, Math.round(pct)) + "%"
+}
 
 // ===== 初始化日期 =====
 function initDateRange() {
@@ -276,13 +307,6 @@ function formatDate(val) {
   const d = new Date(val)
   if (isNaN(d)) return val
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
-
-function getProgressColor(pct) {
-  if (pct >= 80) return "#52c41a"
-  if (pct >= 50) return "#1890ff"
-  if (pct >= 30) return "#faad14"
-  return "#ff4d4f"
 }
 
 // ===== 拉取数据 =====
@@ -696,7 +720,25 @@ $accent-purple: #722ed1;
   transition: box-shadow 0.25s ease;
   &:hover { box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06); }
 
-  .finance-label { font-size: 12px; color: $text-secondary; margin-bottom: 6px; }
+  .finance-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: $text-secondary;
+    margin-bottom: 6px;
+
+    .finance-label-tip {
+      font-size: 10px;
+      font-weight: 400;
+      color: $text-muted;
+      background: #f2f4f7;
+      border-radius: 4px;
+      padding: 1px 5px;
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+  }
   .finance-value {
     font-size: 20px;
     font-weight: 700;
@@ -760,44 +802,87 @@ $accent-purple: #722ed1;
   padding: 14px 16px 16px;
 }
 
-/* 合同收款进度 */
-.contract-list {
+/* 项目产值排行 TOP10 */
+.rank-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 6px;
   min-height: 160px;
 }
 
-.contract-item {
+.rank-item {
   display: grid;
-  grid-template-columns: 110px 1fr 50px auto;
+  grid-template-columns: 22px minmax(0, 1.1fr) minmax(70px, 1.4fr) 76px;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s ease;
 
-  .contract-code {
-    font-size: 13px;
+  &:hover { background: #f5f7fa; }
+}
+
+.rank-badge {
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: #c0c4cc;
+
+  &.rank-top-1 { background: linear-gradient(135deg, #ffc53d, #fa8c16); box-shadow: 0 2px 6px rgba(250, 140, 22, 0.35); }
+  &.rank-top-2 { background: linear-gradient(135deg, #c3cbd8, #8d9bad); }
+  &.rank-top-3 { background: linear-gradient(135deg, #e3af85, #c9834d); }
+}
+
+.rank-name {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+
+  .rank-code {
+    font-size: 12px;
     font-weight: 600;
     color: $text-primary;
-    font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .contract-progress {
-    :deep(.el-progress-bar__outer) { background: #f0f0f0; border-radius: 4px; }
-  }
-
-  .contract-pct {
-    font-size: 13px;
-    font-weight: 600;
-    text-align: right;
-  }
-
-  .contract-amount {
-    font-size: 12px;
-    color: $text-secondary;
+  .rank-sub {
+    font-size: 11px;
+    color: $text-muted;
     white-space: nowrap;
-    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
+}
+
+.rank-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: #f0f2f5;
+  overflow: hidden;
+
+  .rank-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #5aa9ff, #1890ff);
+    transition: width 0.5s ease;
+  }
+}
+
+.rank-amount {
+  font-size: 13px;
+  font-weight: 700;
+  color: $text-primary;
+  text-align: right;
+  white-space: nowrap;
 }
 
 /* 快捷入口 */

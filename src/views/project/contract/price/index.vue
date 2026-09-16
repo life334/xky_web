@@ -9,6 +9,7 @@
             placeholder="请选择合同"
             filterable
             clearable
+            :loading="optionsLoading"
             style="width: 320px"
             @change="handleContractChange"
           >
@@ -119,6 +120,7 @@ const { proxy } = getCurrentInstance()
 const loading = ref(false)
 const saving = ref(false)
 const contractOptions = ref([])
+const optionsLoading = ref(false)
 const tableData = ref([])
 
 const queryForm = reactive({
@@ -127,9 +129,10 @@ const queryForm = reactive({
 
 /** 加载合同下拉选项 */
 function loadContractOptions() {
+  optionsLoading.value = true
   listContract({ pageNum: 1, pageSize: 999 }).then(res => {
     contractOptions.value = res.rows || []
-  })
+  }).finally(() => { optionsLoading.value = false })
 }
 
 /** 切换合同 → 加载类别树+已填单价 */

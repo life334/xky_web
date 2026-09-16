@@ -5,12 +5,12 @@
             <el-input v-model="queryParams.taskName" placeholder="请输入任务名称" clearable style="width: 180px" @keyup.enter="handleQuery" />
          </el-form-item>
          <el-form-item label="所属项目" prop="projectId">
-            <el-select v-model="queryParams.projectId" placeholder="请选择项目" clearable filterable style="width: 200px">
+            <el-select v-model="queryParams.projectId" placeholder="请选择项目" clearable filterable :loading="optionsLoading" style="width: 200px">
                <el-option v-for="p in projectOptions" :key="p.id" :label="p.projectName" :value="p.id" />
             </el-select>
          </el-form-item>
          <el-form-item label="执行人" prop="userId">
-            <el-select v-model="queryParams.userId" placeholder="请选择执行人" clearable filterable style="width: 180px">
+            <el-select v-model="queryParams.userId" placeholder="请选择执行人" clearable filterable :loading="optionsLoading" style="width: 180px">
                <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
             </el-select>
          </el-form-item>
@@ -125,14 +125,14 @@
             <el-row>
                <el-col :span="12">
                   <el-form-item label="所属项目" prop="projectId">
-                     <el-select v-model="form.projectId" filterable placeholder="请选择项目" style="width: 100%">
+                     <el-select v-model="form.projectId" filterable placeholder="请选择项目" :loading="optionsLoading" style="width: 100%">
                         <el-option v-for="p in projectOptions" :key="p.id" :label="p.projectName" :value="p.id" />
                      </el-select>
                   </el-form-item>
                </el-col>
                <el-col :span="12">
                   <el-form-item label="执行人" prop="userIds">
-                     <el-select v-model="form.userIds" multiple filterable placeholder="请选择执行人（可多选）" style="width: 100%">
+                     <el-select v-model="form.userIds" multiple filterable placeholder="请选择执行人（可多选）" :loading="optionsLoading" style="width: 100%">
                         <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
                      </el-select>
                   </el-form-item>
@@ -195,7 +195,7 @@
          </el-form>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" @click="submitForm">确 定</el-button>
+               <el-button type="primary" @click="submitForm" :loading="submitLoading">确 定</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
          </template>
@@ -250,6 +250,8 @@ const single = ref(true)
 const multiple = ref(true)
 const projectOptions = ref([])
 const userOptions = ref([])
+const optionsLoading = ref(false)
+const submitLoading = ref(false)
 const detail = ref({})
 const ids = ref([])
 const viewMode = ref("flat")
@@ -337,16 +339,18 @@ function getList() {
 
 /** 加载项目列表 */
 function loadProjectList() {
+  optionsLoading.value = true
   listProject({ pageNum: 1, pageSize: 1000 }).then(response => {
     projectOptions.value = response.rows || []
-  })
+  }).finally(() => { optionsLoading.value = false })
 }
 
 /** 加载用户列表 */
 function loadUserList() {
+  optionsLoading.value = true
   listUserOptions({ pageNum: 1, pageSize: 1000 }).then(response => {
     userOptions.value = response.rows || []
-  })
+  }).finally(() => { optionsLoading.value = false })
 }
 
 /** 取消按钮 */
@@ -432,6 +436,7 @@ function handleUpdate(row) {
   loadProjectList()
   loadUserList()
   const id = row.id || ids.value[0]
+  loading.value = true
   getTask(id).then(response => {
     form.value = response.data
     // 编辑时 userId 转 userIds 数组
@@ -442,33 +447,35 @@ function handleUpdate(row) {
     }
     open.value = true
     title.value = "修改任务"
-  })
+  }).finally(() => { loading.value = false })
 }
 
 /** 查看详情 */
 function handleView(row) {
+  loading.value = true
   getTask(row.id).then(response => {
     detail.value = response.data
     detailOpen.value = true
-  })
+  }).finally(() => { loading.value = false })
 }
 
 /** 提交按钮 */
 function submitForm() {
   proxy.$refs["taskRef"].validate(valid => {
     if (valid) {
+      submitLoading.value = true
       if (form.value.id != undefined) {
         updateTask(form.value).then(response => {
           proxy.$modal.msgSuccess("修改成功")
           open.value = false
           getList()
-        })
+        }).finally(() => { submitLoading.value = false })
       } else {
         addTask(form.value).then(response => {
           proxy.$modal.msgSuccess("新增成功")
           open.value = false
           getList()
-        })
+        }).finally(() => { submitLoading.value = false })
       }
     }
   })
@@ -479,11 +486,12 @@ function handleDelete(row) {
   const idsToDelete = row.id ? [row.id] : ids.value
   const name = row.id ? row.taskName : "所选任务"
   proxy.$modal.confirm('是否确认删除"' + name + '"?').then(function() {
+    loading.value = true
     return delTask(idsToDelete.join(","))
   }).then(() => {
     getList()
     proxy.$modal.msgSuccess("删除成功")
-  }).catch(() => {})
+  }).catch(() => { loading.value = false })
 }
 
 /** 导出按钮操作 */

@@ -167,7 +167,7 @@
                      </el-popover>
                   </template>
                </span>
-               <!-- 附件：popover 预览 -->
+               <!-- 附件：数量由列表接口带出，明细在悬停时才请求（避免 N+1） -->
                <span v-else-if="col.type === 'attachment'">
                   <el-popover
                      v-if="scope.row.attachmentCount > 0"
@@ -175,6 +175,7 @@
                      :width="320"
                      trigger="hover"
                      :show-after="300"
+                     @show="loadRowAttachments(scope.row)"
                   >
                      <template #reference>
                         <el-button link type="primary" @click.stop="openSidePanel(scope.row)">
@@ -184,16 +185,32 @@
                      </template>
                      <div class="attachment-popover">
                         <div style="font-weight:600;margin-bottom:8px;font-size:13px">合同附件预览</div>
-                        <div v-for="att in scope.row._attachments" :key="att.id" class="popover-att-item">
-                           <el-icon size="14" :color="getFileIconColor(att.fileType)"><Document /></el-icon>
-                           <span style="flex:1;font-size:13px">{{ att.fileName }}</span>
-                           <el-tag v-if="att.isFinal==='1'" size="small" type="success">盖章版</el-tag>
-                        </div>
-                        <div v-if="scope.row.attachmentCount > 5" style="margin-top:8px;text-align:center;color:#909399;font-size:12px">
-                           还有 {{ scope.row.attachmentCount - 5 }} 个附件...
+                        <template v-if="scope.row._attachments">
+                           <div v-for="att in scope.row._attachments.slice(0, 5)" :key="att.id" class="popover-att-item">
+                              <el-icon size="14" :color="getFileIconColor(att.fileType)"><Document /></el-icon>
+                              <span style="flex:1;font-size:13px">{{ att.fileName }}</span>
+                              <el-tag v-if="att.isFinal==='1'" size="small" type="success">盖章版</el-tag>
+                           </div>
+                           <div v-if="scope.row.attachmentCount > 5" style="margin-top:8px;text-align:center;color:#909399;font-size:12px">
+                              还有 {{ scope.row.attachmentCount - 5 }} 个附件...
+                           </div>
+                        </template>
+                        <div v-else class="popover-att-loading">
+                           <el-icon class="is-loading" size="14"><Loading /></el-icon>
+                           <span>加载附件中...</span>
                         </div>
                      </div>
                   </el-popover>
+                  <!-- 数量未知时（后端未返回 attachmentCount）给一个兜底入口，仍可点开侧滑面板 -->
+                  <el-button
+                     v-else-if="scope.row.attachmentCount == null"
+                     link
+                     type="primary"
+                     @click.stop="openSidePanel(scope.row)"
+                  >
+                     <el-icon size="14"><Paperclip /></el-icon>
+                     查看附件
+                  </el-button>
                   <span v-else style="color:#c0c4cc;font-size:13px">无附件</span>
                </span>
                <!-- 字典标签：按列 key 选择对应字典 -->
@@ -237,7 +254,7 @@
 
       <!-- 添加或修改合同对话框 -->
       <el-dialog :title="title" :model-value="open" @update:model-value="open = $event" width="80%" append-to-body class="contract-form-dialog">
-         <el-tabs v-model="activeTab">
+         <el-tabs v-model="activeTab" @tab-change="ensureEditTabData">
             <el-tab-pane label="基本信息" name="info">
                <el-form ref="contractRef" :model="form" :rules="rules" label-width="90px">
                   <el-row :gutter="20">
@@ -433,7 +450,7 @@
 
             <!-- 附件管理 Tab -->
             <el-tab-pane label="附件资料" name="attachment">
-               <div class="attachment-manager">
+               <div class="attachment-manager" v-loading="attachmentListLoading">
                   <div
                      class="attachment-dropzone"
                      :class="{ 'is-dragover': dragOver }"
@@ -522,15 +539,15 @@
          </el-tabs>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" :loading="priceSaving" @click="submitForm">确 定</el-button>
+               <el-button type="primary" :loading="submitLoading" @click="submitForm">确 定</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
          </template>
       </el-dialog>
 
       <!-- 合同详情对话框 -->
-      <el-dialog :title="'合同详情 — ' + detail.contractNo" :model-value="detailOpen" @update:model-value="detailOpen = $event" width="80%" append-to-body>
-         <el-tabs v-model="detailActiveTab">
+      <el-dialog :title="'合同详情 — ' + detail.contractNo" :model-value="detailOpen" @update:model-value="detailOpen = $event" width="80%" append-to-body class="contract-detail-dialog">
+         <el-tabs v-model="detailActiveTab" @tab-change="ensureDetailTabData">
             <el-tab-pane label="基本信息" name="info">
                <el-descriptions :column="2" border>
                   <el-descriptions-item label="合同编号" :span="1">{{ detail.contractNo }}</el-descriptions-item>
@@ -563,8 +580,8 @@
                </el-descriptions>
             </el-tab-pane>
             <el-tab-pane label="合同单价" name="price">
-               <div v-if="detailPriceList.length > 0">
-                  <el-table :data="detailPriceList" border size="small" max-height="400">
+               <div v-if="detailPriceLoading || detailPriceList.length > 0">
+                  <el-table v-loading="detailPriceLoading" :data="detailPriceList" border size="small" max-height="400">
                      <el-table-column label="大类" align="center" prop="parentName" min-width="120" :show-overflow-tooltip="true" />
                      <el-table-column label="项目类别" align="center" prop="categoryName" min-width="140" :show-overflow-tooltip="true" />
                      <el-table-column label="计费类别" align="center" prop="billingCategory" min-width="120" :show-overflow-tooltip="true" />
@@ -585,8 +602,8 @@
             </el-tab-pane>
 
             <el-tab-pane label="附件资料" name="attachment">
-               <div v-if="detailAttachmentList.length > 0">
-                  <el-table :data="detailAttachmentList" border size="small" max-height="400">
+               <div v-if="detailAttachmentLoading || detailAttachmentList.length > 0">
+                  <el-table v-loading="detailAttachmentLoading" :data="detailAttachmentList" border size="small" max-height="400">
                      <el-table-column label="文件" align="left" min-width="200">
                         <template #default="scope">
                            <div style="display:flex;align-items:center;gap:8px">
@@ -684,54 +701,56 @@
          size="45%"
          :before-close="closeSidePanel"
       >
-         <div v-if="attachmentPreviewList.length > 0" class="side-panel-body">
-            <div v-for="att in attachmentPreviewList" :key="att.id" class="side-att-card">
-               <div class="side-att-header">
-                  <div class="side-att-title">
-                     <el-icon size="18" :color="getFileIconColor(att.fileType)">
-                        <Document />
-                     </el-icon>
-                     <span>{{ getCategoryLabel(att.fileCategory) }}</span>
-                     <el-tag v-if="att.isFinal === '1'" size="small" type="success">盖章版</el-tag>
-                     <span style="color:#909399;font-size:12px">v{{ att.version }}</span>
+         <div v-loading="sideLoading" style="min-height: 200px">
+            <div v-if="attachmentPreviewList.length > 0" class="side-panel-body">
+               <div v-for="att in attachmentPreviewList" :key="att.id" class="side-att-card">
+                  <div class="side-att-header">
+                     <div class="side-att-title">
+                        <el-icon size="18" :color="getFileIconColor(att.fileType)">
+                           <Document />
+                        </el-icon>
+                        <span>{{ getCategoryLabel(att.fileCategory) }}</span>
+                        <el-tag v-if="att.isFinal === '1'" size="small" type="success">盖章版</el-tag>
+                        <span style="color:#909399;font-size:12px">v{{ att.version }}</span>
+                     </div>
+                     <div class="side-att-actions">
+                        <el-button link type="primary" size="small" @click="previewAttachment(att)">预览</el-button>
+                        <el-button link type="primary" size="small" @click="downloadAttachment(att)">下载</el-button>
+                        <el-button link type="info" size="small" @click="toggleSideHistory(att)">
+                           🕐 历史
+                        </el-button>
+                     </div>
                   </div>
-                  <div class="side-att-actions">
-                     <el-button link type="primary" size="small" @click="previewAttachment(att)">预览</el-button>
-                     <el-button link type="primary" size="small" @click="downloadAttachment(att)">下载</el-button>
-                     <el-button link type="info" size="small" @click="toggleSideHistory(att)">
-                        🕐 历史
-                     </el-button>
+                  <div class="side-att-file">
+                     <span class="file-name">{{ att.fileName }}</span>
+                     <span class="file-meta">{{ formatFileSize(att.fileSize) }} · {{ att.fileType }}</span>
                   </div>
-               </div>
-               <div class="side-att-file">
-                  <span class="file-name">{{ att.fileName }}</span>
-                  <span class="file-meta">{{ formatFileSize(att.fileSize) }} · {{ att.fileType }}</span>
-               </div>
-               <!-- 历史版本列表 -->
-               <div v-if="sideHistoryMap[att.id] !== undefined" class="side-history-panel">
-                  <el-table :data="sideHistoryMap[att.id]" border size="small" max-height="200">
-                     <el-table-column label="版本" width="70" align="center">
-                        <template #default="scope">
-                           <el-tag size="small" :type="scope.row.version === att.version ? '' : 'info'">
-                              v{{ scope.row.version }}
-                           </el-tag>
-                        </template>
-                     </el-table-column>
-                     <el-table-column label="文件名" prop="fileName" min-width="120" show-overflow-tooltip />
-                     <el-table-column label="操作时间" width="130" align="center">
-                        <template #default="scope">{{ parseTime(scope.row.operateTime) }}</template>
-                     </el-table-column>
-                     <el-table-column label="操作" width="120" align="center">
-                        <template #default="scope">
-                           <el-button link type="primary" size="small" @click="previewAttachmentHistory(att, scope.row)">查看</el-button>
-                           <el-button v-if="scope.row.version !== att.version" link type="warning" size="small" @click="handleRestore(att, scope.row)">恢复</el-button>
-                        </template>
-                     </el-table-column>
-                  </el-table>
+                  <!-- 历史版本列表 -->
+                  <div v-if="sideHistoryMap[att.id] !== undefined" class="side-history-panel">
+                     <el-table :data="sideHistoryMap[att.id]" border size="small" max-height="200">
+                        <el-table-column label="版本" width="70" align="center">
+                           <template #default="scope">
+                              <el-tag size="small" :type="scope.row.version === att.version ? '' : 'info'">
+                                 v{{ scope.row.version }}
+                              </el-tag>
+                           </template>
+                        </el-table-column>
+                        <el-table-column label="文件名" prop="fileName" min-width="120" show-overflow-tooltip />
+                        <el-table-column label="操作时间" width="130" align="center">
+                           <template #default="scope">{{ parseTime(scope.row.operateTime) }}</template>
+                        </el-table-column>
+                        <el-table-column label="操作" width="120" align="center">
+                           <template #default="scope">
+                              <el-button link type="primary" size="small" @click="previewAttachmentHistory(att, scope.row)">查看</el-button>
+                              <el-button v-if="scope.row.version !== att.version" link type="warning" size="small" @click="handleRestore(att, scope.row)">恢复</el-button>
+                           </template>
+                        </el-table-column>
+                     </el-table>
+                  </div>
                </div>
             </div>
+            <el-empty v-else description="暂无附件" />
          </div>
-         <el-empty v-else description="暂无附件" />
       </el-drawer>
       <!-- 付款结算详情弹窗 -->
       <el-dialog
@@ -792,7 +811,7 @@ import { listContractPrice, saveContractPrice } from "@/api/project/contractPric
 import { getConfigKey } from "@/api/system/config"
 import { getDistinctValues } from "@/api/project/project"
 import { listAttachments, uploadAttachment, deleteAttachment, getAttachmentHistory, restoreVersion } from "@/api/project/contractAttachment"
-import { UploadFilled, Folder, Document, Paperclip, Search } from '@element-plus/icons-vue'
+import { UploadFilled, Folder, Document, Paperclip, Search, Loading } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import cache from '@/plugins/cache'
 
@@ -910,6 +929,7 @@ const detailActiveTab = ref("info")
 const detailPriceList = ref([])  // 合同单价明细
 const ids = ref([])
 const statusSubmitting = ref(false)
+const submitLoading = ref(false)    // 合同表单提交中（防重复提交）
 const currentContractName = ref("")
 const projectList = ref([])
 
@@ -939,11 +959,22 @@ const amountUnit = ref("wan")  // 'wan'=万元 | 'yuan'=元
 const activeTab = ref("info")
 const priceTableData = ref([])
 const priceLoading = ref(false)
-const priceSaving = ref(false)
+
+// ===== 弹窗 Tab 懒加载标记 =====
+// 打开弹窗时只请求「基本信息」，单价 / 附件在用户点开对应 Tab 时才请求，避免无谓的并发请求
+const priceTabLoaded = ref(false)            // 修改弹窗·合同单价 Tab 已加载
+const attachmentTabLoaded = ref(false)       // 修改弹窗·附件资料 Tab 已加载
+const detailPriceTabLoaded = ref(false)      // 详情弹窗·合同单价 Tab 已加载
+const detailAttachmentTabLoaded = ref(false) // 详情弹窗·附件资料 Tab 已加载
+const detailContractId = ref(null)           // 详情弹窗当前合同ID（懒加载用）
+const detailPriceLoading = ref(false)        // 详情弹窗·合同单价加载中
+const detailAttachmentLoading = ref(false)   // 详情弹窗·附件加载中
 
 // ===== 附件管理相关 =====
 const attachmentList = ref([])           // 当前活跃附件
 const attachmentLoading = ref(false)     // 附件上传中
+const attachmentListLoading = ref(false) // 附件列表加载中（弹窗内附件 Tab）
+const sideLoading = ref(false)           // 侧滑面板加载中
 const attachmentPreviewVisible = ref(false)  // 侧滑预览面板
 const attachmentPreviewList = ref([])    // 预览面板附件列表
 const attachmentPreviewTitle = ref("")   // 预览面板标题
@@ -1031,22 +1062,42 @@ function getList() {
   listContract(queryParams.value).then(response => {
     contractList.value = response.rows || []
     total.value = response.total
-    loading.value = false
-    // 解析动态字段 + 加载附件计数
+    // 只做本地解析。附件数量由列表接口一条 SQL 带出（attachmentCount），
+    // 附件明细在悬停/点击时才请求 —— 绝不在这里按行逐个调附件接口，
+    // 否则 pageSize=N 会产生 N 个并发请求，数据量大时直接卡死页面。
     contractList.value.forEach(row => {
       row.extraData = parseExtraData(row.extraData)
-      if (row.id) {
-        listAttachments(row.id).then(res => {
-          const atts = res.data || []
-          row.attachmentCount = atts.length
-          row._attachments = atts.slice(0, 5)
-        }).catch(() => {
-          row.attachmentCount = 0
-          row._attachments = []
-        })
-      }
     })
+  }).finally(() => {
+    loading.value = false
   })
+}
+
+/**
+ * 按需加载某行的附件明细（悬停附件胶囊时触发）。
+ * 已加载过则直接复用，避免反复悬停重复请求。
+ */
+function loadRowAttachments(row) {
+  if (!row || !row.id || row._attachments) return
+  listAttachments(row.id).then(res => {
+    row._attachments = res.data || []
+    // 后端未返回数量时（老版本接口）用明细长度兜底
+    if (row.attachmentCount == null) row.attachmentCount = row._attachments.length
+  }).catch(() => {
+    row._attachments = []
+  })
+}
+
+/**
+ * 附件增删后同步列表行的数量与明细缓存。
+ * 纯本地更新，不再发请求；明细置空以便下次悬停重新拉取。
+ */
+function syncRowAttachmentCount(contractId, count) {
+  if (contractId == null) return
+  const row = contractList.value.find(r => Number(r.id) === Number(contractId))
+  if (!row) return
+  row.attachmentCount = count
+  row._attachments = undefined
 }
 
 /** 取消按钮 */
@@ -1409,10 +1460,12 @@ function handleAdd() {
   priceTableData.value = []
   attachmentList.value = []
   historyMap.value = {}
+  // Tab 懒加载：不预加载类别树，等用户点开「合同单价」Tab 时再请求
+  priceTabLoaded.value = false
+  attachmentTabLoaded.value = false
   activeTab.value = "info"
   open.value = true
   title.value = "新增合同"
-  loadCategoryTreeForNew()
 }
 
 /** 新增合同时加载纯类别树（contractId=0 查全树无单价） */
@@ -1427,10 +1480,31 @@ function loadCategoryTreeForNew() {
   })
 }
 
+/** 修改/新增弹窗：按需加载当前 Tab 的数据（切 Tab 才请求，避免打开弹窗就打全量接口） */
+function ensureEditTabData(tab) {
+  const id = form.value.id
+  if (tab === "price") {
+    if (priceTabLoaded.value) return
+    priceTabLoaded.value = true
+    if (id) {
+      loadContractPrice(id)        // 修改：合同已有单价（含类别树）
+    } else {
+      loadCategoryTreeForNew()     // 新增：纯类别树
+    }
+  } else if (tab === "attachment") {
+    if (attachmentTabLoaded.value) return
+    attachmentTabLoaded.value = true
+    if (id) {
+      loadAttachments(id)
+    }
+  }
+}
+
 /** 修改 */
 function handleUpdate(row) {
   reset()
   const id = row.id || ids.value[0]
+  loading.value = true
   getContract(id).then(response => {
     form.value = response.data
     // 解析动态字段到表单顶层字段
@@ -1445,39 +1519,81 @@ function handleUpdate(row) {
     title.value = "修改合同"
     activeTab.value = "info"
     historyMap.value = {}
-    loadContractPrice(id)
-    loadAttachments(id)
+    // Tab 懒加载：只取基本信息，单价 / 附件等用户点开对应 Tab 时再请求
+    priceTabLoaded.value = false
+    attachmentTabLoaded.value = false
+    priceTableData.value = []
+    attachmentList.value = []
+  }).finally(() => {
+    loading.value = false
   })
 }
 
 /** 查看详情 */
 function handleView(row) {
+  loading.value = true
   getContract(row.id).then(response => {
     detail.value = response.data
     detail.value.extraData = parseExtraData(detail.value.extraData)
+    detailContractId.value = row.id
+    detailActiveTab.value = "info"
+    // Tab 懒加载：只取基本信息，单价 / 附件等用户点开对应 Tab 时再请求
+    detailPriceTabLoaded.value = false
+    detailAttachmentTabLoaded.value = false
+    detailPriceList.value = []
+    detailAttachmentList.value = []
     detailOpen.value = true
-    // 加载合同单价
-    listContractPrice(row.id).then(res => {
-      const all = res.data || []
-      // 按 categoryId 建索引，方便查大类名
-      const catMap = {}
-      all.forEach(item => { catMap[item.categoryId] = item })
-      // 只保留有合同单价的计费方式明细行（billingId不为空），并附上大类名
-      detailPriceList.value = all
-        .filter(item => item.price != null && item.billingId)
-        .map(item => ({
-          ...item,
-          parentName: catMap[item.parentId]?.categoryName || ''
-        }))
-    }).catch(() => {
-      detailPriceList.value = []
-    })
-    // 加载附件
-    listAttachments(row.id).then(res => {
-      detailAttachmentList.value = res.data || []
-    }).catch(() => {
-      detailAttachmentList.value = []
-    })
+  }).finally(() => {
+    loading.value = false
+  })
+}
+
+/** 详情弹窗：按需加载当前 Tab 的数据 */
+function ensureDetailTabData(tab) {
+  const id = detailContractId.value
+  if (!id) return
+  if (tab === "price") {
+    if (detailPriceTabLoaded.value) return
+    detailPriceTabLoaded.value = true
+    loadDetailPrice(id)
+  } else if (tab === "attachment") {
+    if (detailAttachmentTabLoaded.value) return
+    detailAttachmentTabLoaded.value = true
+    loadDetailAttachments(id)
+  }
+}
+
+/** 详情弹窗：加载合同单价明细（仅用户点开「合同单价」Tab 时调用） */
+function loadDetailPrice(contractId) {
+  detailPriceLoading.value = true
+  listContractPrice(contractId).then(res => {
+    const all = res.data || []
+    // 按 categoryId 建索引，方便查大类名
+    const catMap = {}
+    all.forEach(item => { catMap[item.categoryId] = item })
+    // 只保留有合同单价的计费方式明细行（billingId不为空），并附上大类名
+    detailPriceList.value = all
+      .filter(item => item.price != null && item.billingId)
+      .map(item => ({
+        ...item,
+        parentName: catMap[item.parentId]?.categoryName || ''
+      }))
+  }).catch(() => {
+    detailPriceList.value = []
+  }).finally(() => {
+    detailPriceLoading.value = false
+  })
+}
+
+/** 详情弹窗：加载附件（仅用户点开「附件资料」Tab 时调用） */
+function loadDetailAttachments(contractId) {
+  detailAttachmentLoading.value = true
+  listAttachments(contractId).then(res => {
+    detailAttachmentList.value = res.data || []
+  }).catch(() => {
+    detailAttachmentList.value = []
+  }).finally(() => {
+    detailAttachmentLoading.value = false
   })
 }
 
@@ -1502,6 +1618,7 @@ function submitForm() {
 
     const saveContract = isAdd ? addContract(form.value) : updateContract(form.value)
 
+    submitLoading.value = true
     saveContract.then(response => {
       // 新增时后端返回合同ID，修改时用已有ID
       const contractId = isAdd ? response.data : form.value.id
@@ -1512,20 +1629,21 @@ function submitForm() {
         proxy.$modal.msgSuccess(isAdd ? "新增成功" : "修改成功")
         open.value = false
         getList()
+        submitLoading.value = false
         return
       }
       // 保存单价
-      priceSaving.value = true
       saveContractPrice(priceList).then(() => {
         proxy.$modal.msgSuccess(isAdd ? "新增成功" : "修改成功")
-        priceSaving.value = false
         open.value = false
         getList()
+        submitLoading.value = false
       }).catch(() => {
-        priceSaving.value = false
+        submitLoading.value = false
       })
     }).catch(() => {
       // 合同基本信息保存失败
+      submitLoading.value = false
     })
   })
 }
@@ -1578,19 +1696,25 @@ function handleDelete(row) {
   const idsToDelete = row.id ? [row.id] : ids.value
   const name = row.id ? row.contractNo : "所选合同"
   proxy.$modal.confirm('是否确认删除合同"' + name + '"?').then(function() {
+    loading.value = true
     return delContract(idsToDelete.join(","))
   }).then(() => {
-    getList()
+    getList()   // getList 自行接管 loading 复位
     proxy.$modal.msgSuccess("删除成功")
-  }).catch(() => {})
+  }).catch(() => {
+    loading.value = false
+  })
 }
 
 /** 查看关联项目 */
 function handleShowProjects(row) {
   currentContractName.value = row.contractNo + " — " + row.contractName
+  loading.value = true
   getContractProjects(row.id).then(response => {
     projectList.value = response.data || []
     projectsOpen.value = true
+  }).finally(() => {
+    loading.value = false
   })
 }
 
@@ -1684,13 +1808,18 @@ function actionTagType(action) {
   return map[action] || 'info'
 }
 
-/** 加载附件列表 */
+/** 加载附件列表（编辑/详情弹窗 + 侧滑面板用） */
 function loadAttachments(contractId) {
   if (!contractId) return
+  attachmentListLoading.value = true
   listAttachments(contractId).then(res => {
     attachmentList.value = res.data || []
+    // 弹窗内上传/删除附件后，同步列表页该行的数量，避免列表显示旧数字（纯本地，不发请求）
+    syncRowAttachmentCount(contractId, attachmentList.value.length)
   }).catch(() => {
     attachmentList.value = []
+  }).finally(() => {
+    attachmentListLoading.value = false
   })
 }
 
@@ -1774,11 +1903,16 @@ function handleReplaceAttachment(att) {
 /** 删除附件 */
 function handleDeleteAttachment(att) {
   proxy.$modal.confirm('确定要删除附件 "' + att.fileName + '" 吗？删除后可查看历史版本。').then(() => {
+    attachmentListLoading.value = true
     deleteAttachment(att.id).then(() => {
       proxy.$modal.msgSuccess('删除成功')
-      loadAttachments(form.value.id)
+      loadAttachments(form.value.id)   // 内部 finally 复位 attachmentListLoading
+    }).catch(() => {
+      attachmentListLoading.value = false
     })
-  }).catch(() => {})
+  }).catch(() => {
+    attachmentListLoading.value = false
+  })
 }
 
 /** 切换历史版本展开 */
@@ -1803,17 +1937,22 @@ function toggleSideHistory(att) {
     delete sideHistoryMap.value[att.id]
     return
   }
+  sideLoading.value = true
   getAttachmentHistory(att.id).then(res => {
     sideHistoryMap.value[att.id] = res.data || []
-  }).catch(() => {})
+  }).catch(() => {}).finally(() => {
+    sideLoading.value = false
+  })
 }
 
 /** 恢复历史版本 */
 function handleRestore(att, logRow) {
   proxy.$modal.confirm('确定恢复 v' + logRow.version + ' 版本为当前版本吗？').then(() => {
+    attachmentListLoading.value = true   // 弹窗附件区遮罩
+    sideLoading.value = true             // 侧滑面板遮罩
     restoreVersion(att.id, logRow.id).then(() => {
       proxy.$modal.msgSuccess('版本恢复成功')
-      loadAttachments(form.value.id || detail.value?.id || 0)
+      loadAttachments(form.value.id || detail.value?.id || 0)   // 内部复位 attachmentListLoading
       // 同时刷新侧滑面板
       if (attachmentPreviewVisible.value) {
         const contractId = form.value.id || detail.value?.id
@@ -1823,8 +1962,15 @@ function handleRestore(att, logRow) {
           })
         }
       }
+    }).catch(() => {
+      attachmentListLoading.value = false
+    }).finally(() => {
+      sideLoading.value = false
     })
-  }).catch(() => {})
+  }).catch(() => {
+    attachmentListLoading.value = false
+    sideLoading.value = false
+  })
 }
 
 /** 预览附件（Axios blob + JSON 错误检测） */
@@ -1900,13 +2046,19 @@ function previewAttachmentHistory(att, logRow) {
 function openSidePanel(row) {
   attachmentPreviewTitle.value = '合同附件 — ' + (row.contractNo || '')
   const contractId = row.id
+  sideLoading.value = true
+  attachmentPreviewVisible.value = true   // 先打开抽屉，显示遮罩
+  sideHistoryMap.value = {}
   listAttachments(contractId).then(res => {
     attachmentPreviewList.value = res.data || []
-    attachmentPreviewVisible.value = true
-    sideHistoryMap.value = {}
+    // 顺带回填行上的明细缓存，悬停 popover 时无需重复请求；
+    // 若列表接口没给出数量（老接口），这里用明细长度补上
+    row._attachments = attachmentPreviewList.value
+    if (row.attachmentCount == null) row.attachmentCount = attachmentPreviewList.value.length
   }).catch(() => {
     attachmentPreviewList.value = []
-    attachmentPreviewVisible.value = true
+  }).finally(() => {
+    sideLoading.value = false
   })
 }
 
@@ -2111,6 +2263,15 @@ getConfigKey("contract.no.prefix").then(res => {
   gap: 8px;
   padding: 4px 0;
 }
+.attachment-popover .popover-att-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 0;
+  font-size: 12px;
+  color: #909399;
+}
 
 /* ===== 侧滑面板 ===== */
 .side-panel-body { padding: 0; }
@@ -2245,5 +2406,37 @@ getConfigKey("contract.no.prefix").then(res => {
   font-size: 12px;
   color: #909399;
   text-align: center;
+}
+
+/* ===== 合同详情弹窗（非 scoped：append-to-body 会渲染到 body 层级）=====
+   它是全站内容最高的一个弹窗：「基本信息」共 14 行 el-descriptions
+   （有边框单元格 padding 8px+8px + line-height 23px + 边框 ≈ 40px/行 → ≈560px）
+   加 el-tabs 导航 ≈55px，内容区 ≈615px；再加弹窗内边距 32 + 标题栏 40 + 按钮栏 48
+   = 120px，弹窗自然高度 ≈735px。
+
+   叠加全局顶部间距 6vh（src/assets/styles/land.scss 的
+   .el-dialog:not(.is-fullscreen)）与 EP 默认 50px 底距后，总占用
+   「6vh + 735 + 50」在视口高度约 835px 以下就会超过视口，于是
+   .el-overlay-dialog 出现整页纵向滚动条 —— 连标题栏都会被一起滚走。
+
+   处理：弹窗上移一点、底部留白收紧（合计让出约 60px），并把弹窗高度限制在视口内。
+   - display:flex + max-height ⇒ 弹窗永远不超过视口，整页滚动条确定性消失；
+   - 正常屏幕（视口高 ≥ 约 790px）内容装得下，内容区也不需要滚动；
+   - 更矮的屏幕上才由内容区自身滚动，标题栏/按钮栏始终可见。 */
+.el-dialog.contract-detail-dialog:not(.is-fullscreen) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 4vh - 24px);   /* 4vh 顶距 + 16px 底距 + 8px 余量 */
+  margin-top: 4vh !important;             /* 全局 6vh → 4vh，再上移一点 */
+  margin-bottom: 16px !important;         /* EP 默认 50px → 16px */
+}
+.contract-detail-dialog .el-dialog__header,
+.contract-detail-dialog .el-dialog__footer {
+  flex: 0 0 auto;                         /* 标题栏 / 按钮栏固定，不被压缩 */
+}
+.contract-detail-dialog .el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;                          /* 允许收缩，否则内容会把弹窗重新顶高 */
+  overflow-y: auto;
 }
 </style>

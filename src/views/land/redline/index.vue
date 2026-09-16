@@ -2,7 +2,7 @@
   <div class="app-container">
     <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px">
       <el-form-item label="任务" prop="taskId">
-        <el-select v-model="queryParams.taskId" placeholder="请选择任务" clearable filterable style="width: 220px" @change="handleQuery">
+        <el-select v-model="queryParams.taskId" placeholder="请选择任务" clearable filterable :loading="optionsLoading" style="width: 220px" @change="handleQuery">
           <el-option
             v-for="t in taskOptions"
             :key="t.taskId"
@@ -94,7 +94,7 @@
     <el-dialog title="导入红线" v-model="importOpen" width="500px" append-to-body>
       <el-form :model="importForm" ref="importRef" label-width="100px">
         <el-form-item label="选择任务" required>
-          <el-select v-model="importForm.taskId" placeholder="请选择所属任务" filterable style="width: 100%" @focus="loadTaskOptions">
+          <el-select v-model="importForm.taskId" placeholder="请选择所属任务" filterable :loading="optionsLoading" style="width: 100%" @focus="loadTaskOptions">
             <el-option
               v-for="t in taskOptions"
               :key="t.taskId"
@@ -175,6 +175,7 @@ const mapLoading = ref(false)
 
 // 任务选择
 const taskOptions = ref([])
+const optionsLoading = ref(false)
 const queryParams = reactive({
   pageNum: 1,
   pageSize: 10,
@@ -231,9 +232,10 @@ function handleSelectionChange(selection) {
 // 加载任务下拉选项
 function loadTaskOptions() {
   if (taskOptions.value.length > 0) return
+  optionsLoading.value = true
   listTask().then(res => {
     taskOptions.value = res.rows || []
-  })
+  }).finally(() => { optionsLoading.value = false })
 }
 
 // 切换地图视图（v-if 确保组件每次完整挂载，容器尺寸正确）
@@ -314,11 +316,12 @@ function handleDelete(row) {
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
+    loading.value = true
     return delRedline(row.redlineId)
   }).then(() => {
     getList()
     ElMessage.success('删除成功')
-  }).catch(() => {})
+  }).catch(() => { loading.value = false })
 }
 
 // 执行判定 - 红线不再参与业务逻辑，降级为参考展示

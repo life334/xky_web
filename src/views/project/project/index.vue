@@ -57,13 +57,16 @@
                   <el-select
                      v-model="queryParams.contractId"
                      filterable remote reserve-keyword clearable
-                     placeholder="输入合同编号/名称搜索"
+                     placeholder="输入合同编号/名称/委托单位搜索"
+                     no-data-text="无匹配合同（可按编号 / 名称 / 委托单位 / 联系人搜索）"
                      :remote-method="searchContracts"
                      :loading="contractLoading"
                      style="width: 100%"
                      @visible-change="onContractVisibleChange"
                   >
-                     <el-option v-for="c in contractOptions" :key="c.id" :label="fmtContractOption(c)" :value="c.id" />
+                     <el-option v-for="c in contractOptions" :key="c.id" :label="fmtContractOption(c)" :value="c.id">
+                        {{ fmtContractOption(c) }}<span v-if="c.clientUnit" class="contract-option-unit">｜{{ c.clientUnit }}</span>
+                     </el-option>
                   </el-select>
                </div>
                <div class="filter-item">
@@ -282,7 +285,8 @@
                         filterable
                         remote
                         reserve-keyword
-                        placeholder="输入合同名称/编号搜索"
+                        placeholder="输入合同名称/编号/委托单位搜索"
+                        no-data-text="无匹配合同（可按编号 / 名称 / 委托单位 / 联系人搜索）"
                         :remote-method="searchContracts"
                         :loading="contractLoading"
                         clearable
@@ -294,7 +298,9 @@
                            :key="item.id"
                            :label="fmtContractOption(item)"
                            :value="item.id"
-                        />
+                        >
+                           {{ fmtContractOption(item) }}<span v-if="item.clientUnit" class="contract-option-unit">｜{{ item.clientUnit }}</span>
+                        </el-option>
                      </el-select>
                   </el-form-item>
                </el-col>
@@ -380,7 +386,7 @@
          </el-form>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" :disabled="formLoading" @click="submitForm">确 定</el-button>
+               <el-button type="primary" :disabled="formLoading || submitLoading" :loading="submitLoading" @click="submitForm">确 定</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
          </template>
@@ -474,7 +480,7 @@
          </el-form>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" @click="submitStatusChange">确 定</el-button>
+               <el-button type="primary" :loading="submitLoading" @click="submitStatusChange">确 定</el-button>
                <el-button @click="statusOpen = false">取 消</el-button>
             </div>
          </template>
@@ -492,7 +498,7 @@
             v-model="pasteText"
             type="textarea"
             :rows="8"
-            placeholder="工程编号(Tab)委托单位(Tab)联系人(Tab)联系电话(Tab)工程项目(Tab)工程地点(Tab)作业部门(Tab)下达日期&#10;例：XK2026001	某某公司	张三	13800138000	某安置房工程	某镇某村	测绘部	2026-09-10&#10;从 Excel 复制后粘贴到此处，也可用空格分隔..."
+            placeholder="工程编号(Tab)委托单位(Tab)联系人(Tab)联系电话(Tab)工程项目(Tab)工程地点(Tab)作业部门(Tab)下达日期&#10;例：XK2026001	某某公司	张三	13800138000	某安置房工程	某镇某村	测绘部	2026-09-10&#10;从 Excel 复制后粘贴到此处；也可用空格分隔，多个连续空格会自动视为一个分隔符..."
          />
          <div style="margin-top: 10px; text-align: right;">
             <el-button type="primary" @click="parsePasteData">解析数据</el-button>
@@ -514,7 +520,7 @@
          <template #footer>
             <div class="dialog-footer">
                <span v-if="pasteRows.length > 0" style="float: left; color: #909399; line-height: 32px;">共解析到 {{ pasteRows.length }} 行数据</span>
-               <el-button type="primary" :disabled="pasteRows.length === 0" @click="submitPasteData">确认导入</el-button>
+               <el-button type="primary" :disabled="pasteRows.length === 0 || submitLoading" :loading="submitLoading" @click="submitPasteData">确认导入</el-button>
                <el-button @click="pasteOpen = false">取 消</el-button>
             </div>
          </template>
@@ -565,6 +571,8 @@ const formLoading = ref(false)
 let formSeq = 0
 const detailOpen = ref(false)
 const loading = ref(true)
+/** 表单/状态变更/批量粘贴提交中（防重复提交，绑定对应提交按钮 :loading） */
+const submitLoading = ref(false)
 const showSearch = ref(true)
 /** 表格列显隐配置（后端接口动态加载；序号、操作列固定不参与） */
 const columns = ref({})
@@ -579,6 +587,7 @@ const FALLBACK_COLUMNS = [
   { key: 'relatedProjectCode', label: '关联工程编号', type: 'text', group: 'business', prop: 'relatedProjectCode', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
   { key: 'status', label: '状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
+  { key: 'closeTime', label: '办结日期', type: 'date', group: 'business', prop: 'closeTime', defaultVisible: true },
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
   { key: 'contractName', label: '合同', type: 'text', group: 'business', prop: 'contractName', defaultVisible: false },
   { key: 'leaderNames', label: '负责人', type: 'text', group: 'business', prop: 'leaderNames', defaultVisible: true },
@@ -891,12 +900,16 @@ watch(() => form.value.engineeringProject, (val) => {
   }
 })
 
-/** 模糊搜索合同（keyword 后端 OR 匹配：编号/名称/委托单位/联系人） */
+/** 模糊搜索合同（keyword 后端 OR 匹配：编号/名称/委托单位/联系人）
+ *  说明：委托单位(client_unit) 早在后端 keyword 条件里参与 ilike 匹配，
+ *  前端此前只在占位符写"名称/编号"、下拉项也不展示委托单位，
+ *  导致用户以为不支持按委托单位查。现已在下拉项补出委托单位，命中一目了然。 */
 function searchContracts(query) {
   contractLoading.value = true
   const params = { pageNum: 1, pageSize: 50 }
-  if (query) {
-    params.keyword = query
+  const kw = (query || '').trim()
+  if (kw) {
+    params.keyword = kw
   }
   listContract(params).then(response => {
     contractOptions.value = response.rows || []
@@ -1282,14 +1295,17 @@ function handleTaskList(row) {
   })
 }
 
-/** 办结按钮操作 */
+/** 办结按钮操作（表格遮罩 loading，成功后由 getList 接管） */
 function handleComplete(row) {
   proxy.$modal.confirm('确认将项目"' + row.projectName + '"设为已办结吗？办结后不可撤销，该项目将出现在费用结算页面。').then(function() {
+    loading.value = true
     return completeProject(row.id)
   }).then(() => {
     getList()
     proxy.$modal.msgSuccess("办结成功")
-  }).catch(() => {})
+  }).catch(() => {
+    loading.value = false
+  })
 }
 
 /** 状态变更 */
@@ -1305,10 +1321,15 @@ function submitStatusChange() {
       proxy.$modal.msgError("请选择目标状态")
       return
    }
+   submitLoading.value = true
    changeProjectStatus(currentRow.value.id, targetStatus.value).then(() => {
       proxy.$modal.msgSuccess("状态变更成功")
       statusOpen.value = false
       getList()
+   }).catch(() => {
+      // 错误提示由请求拦截器统一处理
+   }).finally(() => {
+      submitLoading.value = false
    })
 }
 
@@ -1326,18 +1347,24 @@ function handlePaste() {
 }
 
 /**
- * 按分隔符切分一行粘贴文本，三级降级：
- *   1) 含 Tab            → 按 Tab 切（Excel 原生复制）
- *   2) 含 2+ 连续空格     → 按连续空格切（网页/文档复制的对齐文本）
- *   3) 其它              → 退化按单个空格切
- * 注意：第 3 级会把「含空格的字段值」也切开，属于已知取舍——
- * 用户明确要求"优先 2+ 连续空格，没有则按单空格"。若字段值本身含空格，
- * 建议改用 Tab（Excel 直接复制）粘贴，可获得精确切分。
+ * 按分隔符切分一行粘贴文本，两级：
+ *   1) 含 Tab  → 按 Tab 切（Excel 原生复制，最精确）
+ *   2) 其它    → 先把「2 个及以上连续空格」压缩成 1 个空格，再按单个空格切
+ *
+ * 归一化细节：
+ *   - 字符类写作 [^\S\t]（= 除 Tab 以外的任意空白，含半角空格 / 全角空格 / 不换行空格），
+ *     并且**显式排除 \t**：否则「A\t\tB」（Excel 中 A、B 之间夹一个空单元格）会被压成
+ *     「A B」，凭空少一列。
+ *   - 旧逻辑是「整行有 2+ 连续空格 → 按 2+ 切，否则按单空格切」，同一批数据里两种口径
+ *     混用会导致列数不一致；现统一为「先归一化再按单空格切」。
+ *
+ * 注意：字段值本身含空格时会被切开，这是该规则的固有取舍；需要精确切分请用 Tab
+ * （Excel 直接复制）粘贴。
  */
 function splitPasteLine(line) {
-   if (line.includes("\t")) return line.split("\t")
-   if (/\s{2,}/.test(line)) return line.split(/\s{2,}/)
-   return line.split(/\s/)
+   const normalized = line.replace(/[^\S\t]{2,}/g, " ")
+   if (normalized.includes("\t")) return normalized.split("\t")
+   return normalized.split(/[^\S\t]/)
 }
 
 /** 解析粘贴数据 */
@@ -1408,6 +1435,7 @@ function submitPasteData() {
       proxy.$modal.msgError("没有有效数据（工程编号不能为空）")
       return
    }
+   submitLoading.value = true
    batchAddProject(projects).then(response => {
       proxy.$modal.msgSuccess(response.msg)
       pasteOpen.value = false
@@ -1421,37 +1449,45 @@ function submitPasteData() {
       if (ids && ids.length === 1) {
          handleUpdate({ id: ids[0] })
       }
+   }).catch(() => {
+      // 错误提示由请求拦截器统一处理
+   }).finally(() => {
+      submitLoading.value = false
    })
 }
 
 /** 提交按钮 */
 function submitForm() {
   proxy.$refs["projectRef"].validate(async valid => {
-    if (valid) {
-      // 总时长由后端自动计算：进行中项目提交时不携带，后端按"安排日期→今天"重算；
-      // 办结/归档项目保留固定值（后端跳过重算）
-      const st = form.value.status
-      if (st !== 'closed' && st !== 'archived') {
-        form.value.totalDuration = null
-      }
+    if (!valid) return
+    // 总时长由后端自动计算：进行中项目提交时不携带，后端按"安排日期→今天"重算；
+    // 办结/归档项目保留固定值（后端跳过重算）
+    const st = form.value.status
+    if (st !== 'closed' && st !== 'archived') {
+      form.value.totalDuration = null
+    }
+    submitLoading.value = true
+    try {
       // 手动输入的新负责人（字符串姓名）→ 调后端建档换取 userId
       await resolveNewLeaders()
       const savedId = form.value.id
       if (savedId != undefined) {
-        updateProject(form.value).then(response => {
-          proxy.$modal.msgSuccess("修改成功")
-          open.value = false
-          loadLeaderList()
-          refreshListStayOnRow(savedId)
-        })
+        await updateProject(form.value)
+        proxy.$modal.msgSuccess("修改成功")
+        open.value = false
+        loadLeaderList()
+        refreshListStayOnRow(savedId)
       } else {
-        addProject(form.value).then(response => {
-          proxy.$modal.msgSuccess("新增成功")
-          open.value = false
-          loadLeaderList()
-          refreshListStayOnRow(undefined)
-        })
+        await addProject(form.value)
+        proxy.$modal.msgSuccess("新增成功")
+        open.value = false
+        loadLeaderList()
+        refreshListStayOnRow(undefined)
       }
+    } catch (e) {
+      // 建档失败等错误已由 resolveNewLeaders / 请求拦截器提示，这里仅防止未捕获异常中断流程
+    } finally {
+      submitLoading.value = false
     }
   })
 }
@@ -1488,6 +1524,8 @@ async function resolveNewLeaders() {
  *  记录仍在当前筛选结果中 → 跳到它所在页；已被移出（改动了筛选字段）→ 回到第 1 页 */
 function refreshListStayOnRow(id) {
   const pageSize = queryParams.value.pageSize || 10
+  // 复用列表遮罩：置 true，后续交给 getList 接管复位（避免提前关掉遮罩）
+  loading.value = true
   listProject({ ...queryParams.value, pageNum: 1, pageSize: 10000 }).then(response => {
     const rows = response.rows || []
     const idx = id != undefined ? rows.findIndex(r => r.id === id) : -1
@@ -1568,6 +1606,11 @@ loadDistinctValues()
 /* 负责人下拉中的离职用户选项：灰色弱化显示 */
 .leader-dimissed {
   color: #909399;
+}
+/* 合同下拉项：编号+名称｜委托单位 —— 灰字展示，让"按委托单位搜索"命中的原因可见 */
+.contract-option-unit {
+  color: #909399;
+  font-size: 12px;
 }
 .status-capsule {
   display: inline-flex;

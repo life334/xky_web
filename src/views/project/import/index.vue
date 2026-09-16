@@ -405,7 +405,7 @@
 
 <script setup>
 import { ref, reactive, computed, getCurrentInstance, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
   previewImport, commitImport, getImportStatus,
@@ -578,12 +578,14 @@ onBeforeUnmount(() => {
 })
 
 // ============ 下载 ============
+// 裸 axios + saveAs 无内置遮罩，统一在此加一次全屏 loading（覆盖 4 个下载入口）
 function blobDownload(promise, filename) {
+  const inst = ElLoading.service({ text: '正在导出，请稍候', background: 'rgba(0,0,0,0.7)' })
   promise.then(res => {
     const data = res.data || res
     const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     saveAs(blob, filename)
-  }).catch(e => ElMessage.error('下载失败：' + (e.message || e)))
+  }).catch(e => ElMessage.error('下载失败：' + (e.message || e))).finally(() => inst.close())
 }
 function downloadProblemFile(type) {
   if (!preview.token) return

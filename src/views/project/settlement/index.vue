@@ -50,7 +50,7 @@
                </div>
                <div class="filter-item">
                   <div class="filter-item-label">委托单位</div>
-                  <el-select v-model="queryParams.clientUnit" filterable clearable placeholder="全部单位" style="width:100%" @change="handleQuery">
+                  <el-select v-model="queryParams.clientUnit" filterable clearable placeholder="全部单位" style="width:100%" :loading="distinctLoading" @change="handleQuery">
                      <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
                   </el-select>
                </div>
@@ -899,6 +899,10 @@ const currentProjectCategoryId = ref(null)
 const workloadLoading = ref(false)
 /** 到账信息弹窗内容加载中 */
 const paymentLoading = ref(false)
+/** 基础数据（类别树/计费项/用户）懒加载中（单一 ref，被多入口 await 时由缓存机制保证不会互相提前关掉遮罩） */
+const baseDataLoading = ref(false)
+/** 委托单位去重值（筛选下拉）加载中 */
+const distinctLoading = ref(false)
 
 // 新增：智能查询面板
 const assignDateRange = ref([])
@@ -1196,8 +1200,7 @@ function getList(resetPage = true) {
     Object.keys(expandDetails).forEach(k => delete expandDetails[k])
     expandedKeys.value = []
     currentRow.value = null
-    loading.value = false
-  }).catch(() => {
+  }).finally(() => {
     loading.value = false
   })
 }
@@ -1503,6 +1506,7 @@ let baseDataPending = null // 进行中的 Promise（防止并发重复请求）
 function ensureBaseData() {
   if (baseDataCache) return baseDataCache
   if (!baseDataPending) {
+    baseDataLoading.value = true
     baseDataPending = Promise.all([
       categoryTreeselectFull(),
       listUserOptions({ pageNum: 1, pageSize: 1000 }),
@@ -1518,7 +1522,7 @@ function ensureBaseData() {
     }).catch(err => {
       baseDataPending = null
       throw err
-    })
+    }).finally(() => { baseDataLoading.value = false })
   }
   return baseDataPending
 }
@@ -1531,6 +1535,7 @@ function handleEdit(row) {
   editProjectLocation.value = row.projectLocation || ""
 
   // 加载数据：基础数据走缓存（二次点击秒回），仅项目明细每次请求
+  loading.value = true
   Promise.all([ensureBaseData(), getSettlementDetail(row.projectId)])
     .then(([base, detailRes]) => {
       categoryOptions.value = base.categoryOptions
@@ -1617,7 +1622,7 @@ function handleEdit(row) {
       leaderOptions.value = filtered.length > 0 ? filtered : userOptions.value
 
       editOpen.value = true
-    })
+    }).finally(() => { loading.value = false })
 }
 
 /** 打开工作量弹窗（先立即开窗显示 loading，数据就绪后填充内容，避免点击后空白等待） */
@@ -2256,9 +2261,10 @@ function handleExport() {
 
 /** 加载委托单位去重值 */
 function loadDistinctValues() {
+  distinctLoading.value = true
   getDistinctValues('client_unit').then(res => {
     clientUnitOptions.value = (res.data || []).filter(Boolean)
-  }).catch(() => {})
+  }).catch(() => {}).finally(() => { distinctLoading.value = false })
 }
 
 loadColumns()
