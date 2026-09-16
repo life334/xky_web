@@ -227,6 +227,8 @@
                <span v-else-if="col.type === 'date' && scope.row[col.prop]">{{ col.key === 'createTime' || col.key === 'updateTime' ? parseTime(scope.row[col.prop]) : parseDate(scope.row[col.prop]) }}</span>
                <!-- 动态字段：从 extra_data JSONB 取值 -->
                <span v-else-if="col.type === 'dynamic'"><span v-if="scope.row.extraData && scope.row.extraData[col.key] != null">{{ scope.row.extraData[col.key] }}</span></span>
+               <!-- 是否结算：字符标志位 0/1，需转中文（否则列表显示 0 / 1） -->
+               <span v-else-if="col.key === 'isSettled'">{{ settledFlagText(scope.row[col.prop]) }}</span>
                <!-- 其他：直接显示 -->
                <span v-else>{{ scope.row[col.prop] }}</span>
             </template>
@@ -814,6 +816,7 @@ import { listAttachments, uploadAttachment, deleteAttachment, getAttachmentHisto
 import { UploadFilled, Folder, Document, Paperclip, Search, Loading } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import cache from '@/plugins/cache'
+import { paymentTypeText, attachmentCategoryText, settledFlagText } from '@/utils/projStatus'
 
 const { proxy } = getCurrentInstance()
 
@@ -1743,10 +1746,11 @@ function parseDate(val) {
 
 // ===== 附件管理方法 =====
 
-/** 获取分类中文标签 */
+/** 获取分类中文标签：优先字典，字典未命中（如 acceptance / invoice 未配）回退统一中文映射 */
 function getCategoryLabel(cat) {
   const found = fileCategoryDict.value.find(c => c.value === cat)
-  return found ? found.label : cat
+  if (found) return found.label
+  return attachmentCategoryText(cat)
 }
 
 /** 付款进度百分比 */
@@ -1775,10 +1779,9 @@ function paymentTypeTag(type) {
   return map[type] || 'info'
 }
 
-/** 付款类型 → 中文 */
+/** 付款类型 → 中文（走统一映射，含 refund 退款；原先本地 map 漏 refund 会显英文） */
 function paymentTypeLabel(type) {
-  const map = { advance: '预付款', progress: '进度款', final: '尾款' }
-  return map[type] || type
+  return paymentTypeText(type)
 }
 
 /** 格式化文件大小 */

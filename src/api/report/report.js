@@ -209,7 +209,18 @@ export function getSubmitStatus(projectCodes) {
   })
 }
 
-// 删除单条上报记录（仅管理员；删除后该工程编号可重新上报）
+// 修改历史导入补录记录的上报时间（仅管理员；后端只接受 batch_id 为空的补录行）
+export function updateSubmitLogTime(id, submitTime) {
+  return request({
+    url: '/report/submit/log/' + id + '/time',
+    method: 'put',
+    data: { submitTime: submitTime }
+  })
+}
+
+// 删除单条上报记录（仅管理员；仅真实上报行）
+// ⚠️ 删除不等于可重新上报：唯一索引 uk_submit_log_code 不排除已删行，
+//    软删后工程编号仍占位，重报会被 on conflict do nothing 静默跳过
 export function delSubmitLog(id) {
   return request({
     url: '/report/submit/log/' + id,

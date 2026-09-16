@@ -158,8 +158,8 @@
          </el-table-column>
          <el-table-column v-for="col in visibleColumns" :key="col.key" :label="col.label" align="center" :prop="col.prop" :show-overflow-tooltip="false" :min-width="colWidth(col)">
             <template #default="scope">
-               <!-- 状态：字典标签 -->
-               <dict-tag v-if="col.type === 'dict'" :options="proj_project_status" :value="scope.row[col.prop]" />
+               <!-- 字典字段：按列 key 选择对应字典（status 之外还有 dataSource 等） -->
+               <dict-tag v-if="col.type === 'dict'" :options="dictOptionsFor(col)" :value="scope.row[col.prop]" />
                <!-- 日期字段 -->
                <span v-else-if="col.type === 'date' && scope.row[col.prop]">{{ parseTime(scope.row[col.prop], '{y}-{m}-{d}') }}</span>
                <!-- 工期要求：X天 -->
@@ -447,7 +447,7 @@
             <el-table-column label="总时长(天)" align="center" prop="totalDuration" width="100" />
             <el-table-column label="状态" align="center" prop="status" width="100">
                <template #default="scope">
-                  <dict-tag :options="proj_task_status" :value="scope.row.status" />
+                  <dict-tag :options="taskStatusTagOptions" :value="scope.row.status" />
                </template>
             </el-table-column>
             <el-table-column label="创建时间" align="center" prop="createTime" width="170">
@@ -554,13 +554,17 @@ import ExcelImportDialog from "@/components/ExcelImportDialog"
 import { ArrowRight } from '@element-plus/icons-vue'
 import { checkRole } from "@/utils/permission"
 import { countWorkdays } from "@/utils/workday"
+import { withTaskStatusAliases } from "@/utils/projStatus"
 import { nextTick } from "vue"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
 /** 格式化日期 YYYY-MM-DD */
 function fmt(d) { return d.toISOString().slice(0, 10) }
 
 const { proxy } = getCurrentInstance()
-const { proj_project_status, proj_task_status } = useDict("proj_project_status", "proj_task_status")
+const { proj_project_status, proj_task_status, proj_project_source } = useDict("proj_project_status", "proj_task_status", "proj_project_source")
+
+/** 渲染用任务状态字典：补充导入旧码 finished，避免 <dict-tag> 原样打印英文（详见 utils/projStatus.js） */
+const taskStatusTagOptions = computed(() => withTaskStatusAliases(proj_task_status.value))
 const searchMemory = useSearchMemoryStore()
 
 const projectList = ref([])
@@ -641,6 +645,25 @@ function colWidth(col) {
   if (col.type === 'duration' || col.type === 'total' || col.type === 'dict') return 100
   if (col.type === 'dynamic') return 140
   return 140
+}
+
+/**
+ * 字典列 → 字典项。
+ * 后端 getListColumns 下发的 type='dict' 列不止「状态」，还有「项目来源」等，
+ * 必须按 col.key 选字典，否则 dataSource 之类会拿项目状态字典去匹配而显示英文原值。
+ * 项目来源字典（sql/14_add_project_source_dict.sql）未部署时用内置项兜底，
+ * 避免退化成空白。
+ */
+function dictOptionsFor(col) {
+  if (col.key === 'dataSource') {
+    const dict = proj_project_source.value || []
+    if (dict.length) return dict
+    return [
+      { value: 'manual', label: '手动录入', elTagType: 'info' },
+      { value: 'import', label: 'Excel 导入', elTagType: 'primary' }
+    ]
+  }
+  return proj_project_status.value
 }
 
 const title = ref("")

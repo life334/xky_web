@@ -17,7 +17,7 @@
         <div class="header-left">
           <div class="project-title">
             <span class="status-tag" :class="'tag-' + normalizeStatus(project.status)">
-              <span class="dot"></span>{{ project.status }}
+              <span class="dot"></span>{{ projectStatusText(project.status) }}
             </span>
             <h2>{{ project.projectName }}</h2>
           </div>
@@ -94,11 +94,11 @@
                 <el-radio-button label="done">已完成</el-radio-button>
               </el-radio-group>
             </div>
-            <div v-for="t in filteredTasks" :key="t.id" class="task-row" :class="{ overdue: t.isOverdue, done: t.status === 'completed' }">
+            <div v-for="t in filteredTasks" :key="t.id" class="task-row" :class="{ overdue: t.isOverdue, done: isTaskDone(t.status) }">
               <el-checkbox
-                :model-value="t.status === 'completed'"
+                :model-value="isTaskDone(t.status)"
                 @change="(v) => toggleTask(t, v)"
-                :disabled="t.status === 'completed'"
+                :disabled="isTaskDone(t.status)"
               />
               <div class="task-main">
                 <div class="task-name">
@@ -112,7 +112,7 @@
                   <span v-if="t.actualFinishDate">实际完成：{{ parseTime(t.actualFinishDate, '{y}-{m}-{d}') }}</span>
                 </div>
               </div>
-              <el-tag :type="taskStatusType(t.status)" size="small" effect="light">{{ t.status }}</el-tag>
+              <el-tag :type="taskStatusTagType(t.status)" size="small" effect="light">{{ taskStatusText(t.status) }}</el-tag>
             </div>
           </div>
         </el-tab-pane>
@@ -129,7 +129,7 @@
               </div>
               <div class="contract-name">{{ c.contractName }}</div>
               <div class="contract-meta">
-                <span>类型：{{ c.contractType || '-' }}</span>
+                <span>类型：{{ contractTypeText(c.contractType) || '-' }}</span>
                 <span>签署：{{ parseTime(c.signDate, '{y}-{m}-{d}') }}</span>
               </div>
               <div class="contract-amount">
@@ -200,7 +200,7 @@
             <div v-for="m in materials" :key="m.id" class="material-row" :class="{ pending: m.submitStatus !== 'submitted' }">
               <el-icon class="file-icon"><Document /></el-icon>
               <div class="mat-main">
-                <div class="mat-type">{{ m.resultType || m.materialName || '-' }}</div>
+                <div class="mat-type">{{ materialResultTypeText(m.resultType) || m.materialName || '-' }}</div>
                 <div class="mat-meta">提交时间：{{ m.submitTime ? parseTime(m.submitTime, '{y}-{m}-{d}') : '—' }} <span v-if="m.receiverName">| 领取人：{{ m.receiverName }}</span></div>
               </div>
               <dict-tag :options="proj_material_submit_status" :value="m.submitStatus" />
@@ -220,6 +220,7 @@ import { listContract } from '@/api/project/contract'
 import { listPayment } from '@/api/project/payment'
 import { getSettlementOverview } from '@/api/project/settlement'
 import { listMaterial } from '@/api/project/material'
+import { projectStatusText, taskStatusText, taskStatusTagType, isTaskDone, contractTypeText, materialResultTypeText } from '@/utils/projStatus'
 
 const { proxy } = getCurrentInstance()
 
@@ -252,16 +253,6 @@ function normalizeStatus(status) {
     "已取消": "cancelled"
   }
   return map[status] || status || ''
-}
-
-function taskStatusType(status) {
-  const map = {
-    "pending": "info",
-    "ongoing": "",
-    "completed": "success",
-    "paused": "warning"
-  }
-  return map[status] || "info"
 }
 
 function paymentStatusType(p) {
@@ -315,7 +306,7 @@ const taskFilter = ref('all')
 const filteredTasks = computed(() => {
   if (taskFilter.value === 'overdue') return tasks.value.filter(t => t.isOverdue)
   if (taskFilter.value === 'pending') return tasks.value.filter(t => t.status === 'pending')
-  if (taskFilter.value === 'done') return tasks.value.filter(t => t.status === 'completed')
+  if (taskFilter.value === 'done') return tasks.value.filter(t => isTaskDone(t.status))
   return tasks.value
 })
 
@@ -362,7 +353,7 @@ async function loadTaskStats() {
     const response = await listTask({ projectId: props.projectId, pageNum: 1, pageSize: 1000 })
     const taskData = response.rows || []
     project.value.taskTotal = taskData.length
-    project.value.taskDone = taskData.filter(t => t.status === 'completed').length
+    project.value.taskDone = taskData.filter(t => isTaskDone(t.status)).length
     project.value.taskProgress = project.value.taskTotal > 0 ? Math.round(project.value.taskDone / project.value.taskTotal * 100) : 0
   } catch (e) {}
 }
@@ -466,14 +457,14 @@ async function loadMaterials() {
 }
 
 function calculateIsOverdue(task) {
-  if (!task.requiredFinishDate || task.status === 'completed') return false
+  if (!task.requiredFinishDate || isTaskDone(task.status)) return false
   const deadline = new Date(task.requiredFinishDate)
   const today = new Date()
   return deadline < today
 }
 
 function calculateOverdueDays(task) {
-  if (!task.requiredFinishDate || task.status === 'completed') return 0
+  if (!task.requiredFinishDate || isTaskDone(task.status)) return 0
   const deadline = new Date(task.requiredFinishDate)
   const today = new Date()
   const diff = Math.floor((today - deadline) / (1000 * 60 * 60 * 24))

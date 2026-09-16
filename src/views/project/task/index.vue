@@ -97,7 +97,7 @@
          </el-table-column>
          <el-table-column label="状态" align="center" prop="status" width="100">
             <template #default="scope">
-               <dict-tag :options="proj_task_status" :value="scope.row.status" />
+               <dict-tag :options="taskStatusTagOptions" :value="scope.row.status" />
             </template>
          </el-table-column>
          <el-table-column label="创建时间" align="center" prop="createTime" width="170">
@@ -213,7 +213,7 @@
             <el-descriptions-item label="工期要求">{{ detail.durationRequire || '-' }}</el-descriptions-item>
             <el-descriptions-item label="总时长(天)">{{ detail.totalDuration != null ? detail.totalDuration : '-' }}</el-descriptions-item>
             <el-descriptions-item label="状态">
-               <dict-tag :options="proj_task_status" :value="detail.status" />
+               <dict-tag :options="taskStatusTagOptions" :value="detail.status" />
             </el-descriptions-item>
             <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建者">{{ detail.createBy || '-' }}</el-descriptions-item>
@@ -235,9 +235,18 @@ import { listTask, getTask, addTask, updateTask, delTask } from "@/api/project/t
 import { listProject } from "@/api/project/project"
 import { listUserOptions } from "@/api/system/user"
 import { countWorkdays } from "@/utils/workday"
+import { withTaskStatusAliases } from "@/utils/projStatus"
 
 const { proxy } = getCurrentInstance()
 const { proj_task_status } = useDict("proj_task_status")
+
+/**
+ * 渲染用任务状态字典：补充「Excel 导入」写入的旧码 finished。
+ * 字典标签在未命中时会原样打印原始值（DictTag showValue 默认 true），
+ * 存量导入任务（status=finished）不补别名就会显示英文。
+ * 仅用于 <dict-tag>；筛选下拉仍用原始 proj_task_status，避免出现两个「已完成」选项。
+ */
+const taskStatusTagOptions = computed(() => withTaskStatusAliases(proj_task_status.value))
 
 const taskList = ref([])
 const open = ref(false)

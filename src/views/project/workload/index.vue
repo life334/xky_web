@@ -89,9 +89,9 @@
          </el-table-column>
          <el-table-column label="单价来源" align="center" prop="priceSource" min-width="90">
             <template #default="scope">
-               <el-tag v-if="scope.row.priceSource === 'contract'" type="primary">合同价</el-tag>
-               <el-tag v-else-if="scope.row.priceSource === 'dict'" type="info">默认价</el-tag>
-               <el-tag v-else-if="scope.row.priceSource === 'manual'" type="warning">手动</el-tag>
+               <el-tag v-if="priceSourceText(scope.row.priceSource)" :type="priceSourceTagType(scope.row.priceSource)">
+                  {{ priceSourceText(scope.row.priceSource) }}
+               </el-tag>
                <span v-else style="color: #c0c4cc">—</span>
             </template>
          </el-table-column>
@@ -111,6 +111,7 @@ import { listWorkload } from "@/api/project/workload"
 import { listProject } from "@/api/project/project"
 import { categoryTreeselect } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
+import { priceSourceText, priceSourceTagType } from "@/utils/projStatus"
 
 const { proxy } = getCurrentInstance()
 

@@ -156,9 +156,16 @@
         <!-- 勾选列：默认全选，去勾选的记录不导出 / 不上报 -->
         <el-table-column type="selection" width="42" align="center" />
         <!-- 上报状态标记列（仅 zdyw/byx 模板预览展示，不参与导出列） -->
+        <!-- 口径与「上报时间」列一致：该模板的上报时间列有值即为「已上报」；悬停可看来源 -->
         <el-table-column v-if="showSubmitStatus" label="上报状态" width="82" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.__submitted" type="success" size="small" effect="plain">已上报</el-tag>
+            <el-tooltip
+              v-if="row.__submitSource"
+              :content="row.__submitSource === 'history' ? '历史项目：上报时间按到账时间推导，无系统上报记录' : '已通过「导出并上报领导」上报'"
+              placement="top"
+            >
+              <el-tag type="success" size="small" effect="plain">已上报</el-tag>
+            </el-tooltip>
             <el-tag v-else type="info" size="small" effect="plain">未上报</el-tag>
           </template>
         </el-table-column>
@@ -533,31 +540,97 @@
       </template>
     </el-dialog>
 
-    <!-- ═══════════ ⑧ 上报记录弹窗 ═══════════ -->
+    <!-- ═══════════ ⑧ 上报记录弹窗（按批次 / 按记录 两个页签） ═══════════ -->
     <el-dialog v-model="submitDialogVisible" title="上报记录" width="88%" append-to-body>
-      <el-table v-loading="submitLoading" :data="submitBatches" border size="small" max-height="460">
-        <el-table-column label="批次号" prop="batchNo" width="150" />
-        <el-table-column label="模板" prop="templateName" min-width="150" show-overflow-tooltip />
-        <el-table-column label="上报时间" prop="submitTime" width="150" />
-        <el-table-column label="操作人" prop="submitBy" width="90" />
-        <el-table-column label="记录数" prop="projectCount" width="70" align="right" />
-        <el-table-column label="筛选方案" prop="filterDesc" min-width="140" show-overflow-tooltip />
-        <el-table-column label="备注" prop="remark" min-width="120" show-overflow-tooltip />
-        <el-table-column label="快照" width="90" align="center">
-          <template #default="{ row }">
-            <el-button v-if="row.snapshotFile" link type="primary" size="small" @click="handleDownloadSnapshot(row)">下载</el-button>
-            <el-tag v-else size="small" type="info" effect="plain">无</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="130" align="center" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleViewSubmitDetail(row)">详情</el-button>
-            <el-button v-if="isAdmin" link type="danger" size="small" @click="handleDeleteSubmitBatch(row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <el-tabs v-model="submitTab" @tab-change="handleSubmitTabChange">
+        <!-- 页签一：按批次（一次「导出并上报领导」= 一个批次） -->
+        <el-tab-pane label="按批次" name="batch">
+          <el-table v-loading="submitLoading" :data="submitBatches" border size="small" max-height="460">
+            <el-table-column label="批次号" prop="batchNo" width="150" />
+            <el-table-column label="模板" prop="templateName" min-width="150" show-overflow-tooltip />
+            <el-table-column label="上报时间" prop="submitTime" width="150" />
+            <el-table-column label="操作人" width="90">
+              <template #default="{ row }">{{ submitByText(row.submitBy) }}</template>
+            </el-table-column>
+            <el-table-column label="记录数" prop="projectCount" width="70" align="right" />
+            <el-table-column label="筛选方案" prop="filterDesc" min-width="140" show-overflow-tooltip />
+            <el-table-column label="备注" prop="remark" min-width="120" show-overflow-tooltip />
+            <el-table-column label="快照" width="90" align="center">
+              <template #default="{ row }">
+                <el-button v-if="row.snapshotFile" link type="primary" size="small" @click="handleDownloadSnapshot(row)">下载</el-button>
+                <el-tag v-else size="small" type="info" effect="plain">无</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="130" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="handleViewSubmitDetail(row)">详情</el-button>
+                <el-button v-if="isAdmin" link type="danger" size="small" @click="handleDeleteSubmitBatch(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
+        <!-- 页签二：按记录（历史导入补录行没有批次，只在本页签可见） -->
+        <el-tab-pane label="按记录" name="log">
+          <div class="submit-log-bar">
+            <el-input v-model="submitLogQuery.projectCode" placeholder="工程编号" clearable style="width: 200px"
+                      @keyup.enter="handleSearchSubmitLog" @clear="handleSearchSubmitLog" />
+            <el-button type="primary" :loading="submitLogLoading" @click="handleSearchSubmitLog">查询</el-button>
+            <span class="submit-log-tip">
+              「历史导入」行是导入时按到账时间补录的（非系统上报），不出现在批次里，可修改上报时间、不可删除
+            </span>
+          </div>
+          <el-table v-loading="submitLogLoading" :data="submitLogs" border size="small" max-height="420">
+            <el-table-column label="工程编号" prop="projectCode" width="150" />
+            <el-table-column label="工程名称" prop="projectName" min-width="180" show-overflow-tooltip />
+            <el-table-column label="单位名称" prop="unitName" min-width="150" show-overflow-tooltip />
+            <el-table-column label="上报时间" width="130" align="center">
+              <template #default="{ row }">{{ parseTime(row.submitTime, '{y}-{m}-{d}') || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="来源" width="110" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="!row.batchId" type="warning" size="small" effect="plain">历史导入</el-tag>
+                <el-tag v-else type="success" size="small" effect="plain">系统上报</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="批次号" width="150" align="center">
+              <template #default="{ row }">{{ row.batchNo || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="操作人" width="100" show-overflow-tooltip>
+              <template #default="{ row }">{{ submitByText(row.submitBy) }}</template>
+            </el-table-column>
+            <el-table-column v-if="isAdmin" label="操作" width="140" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button v-if="!row.batchId" link type="primary" size="small" @click="handleEditLogTime(row)">修改时间</el-button>
+                <el-button v-else link type="danger" size="small" @click="handleDeleteSubmitLog(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <pagination v-show="submitLogTotal > 0" :total="submitLogTotal"
+                      v-model:page="submitLogQuery.pageNum" v-model:limit="submitLogQuery.pageSize"
+                      @pagination="loadSubmitLogs" />
+        </el-tab-pane>
+      </el-tabs>
       <template #footer>
         <el-button @click="submitDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ═══════════ ⑧-1 修改历史上报时间（仅历史导入补录行） ═══════════ -->
+    <el-dialog v-model="logTimeVisible" title="修改上报时间" width="440px" append-to-body>
+      <el-form label-width="90px">
+        <el-form-item label="工程编号">{{ logTimeForm.projectCode || '—' }}</el-form-item>
+        <el-form-item label="上报时间">
+          <el-date-picker v-model="logTimeForm.submitTime" type="date" value-format="YYYY-MM-DD"
+                          placeholder="请选择上报时间" style="width: 100%" />
+        </el-form-item>
+      </el-form>
+      <div class="log-time-tip">
+        历史导入的定线项目在线下已上报过（一个定线项目只允许上报一次），此处仅用于修正取错的上报时间（如到账年份录错）。
+      </div>
+      <template #footer>
+        <el-button @click="logTimeVisible = false">取消</el-button>
+        <el-button type="primary" :loading="logTimeSaving" @click="handleSaveLogTime">保存</el-button>
       </template>
     </el-dialog>
 
@@ -568,7 +641,7 @@
           <el-descriptions-item label="批次号">{{ submitDetail.batchNo }}</el-descriptions-item>
           <el-descriptions-item label="模板">{{ submitDetail.templateName }}</el-descriptions-item>
           <el-descriptions-item label="上报时间">{{ submitDetail.submitTime }}</el-descriptions-item>
-          <el-descriptions-item label="操作人">{{ submitDetail.submitBy }}</el-descriptions-item>
+          <el-descriptions-item label="操作人">{{ submitByText(submitDetail.submitBy) }}</el-descriptions-item>
           <el-descriptions-item label="记录数">{{ submitDetail.projectCount }}</el-descriptions-item>
           <el-descriptions-item label="备注">{{ submitDetail.remark || '—' }}</el-descriptions-item>
           <el-descriptions-item label="筛选方案" :span="3">{{ submitDetail.filterDesc || '—' }}</el-descriptions-item>
@@ -600,11 +673,13 @@ import {
   getFieldPool, listReportTemplate, getReportTemplate, saveReportTemplate, delReportTemplate, saveTemplateDefaultFilter,
   listReportFilter, getReportFilter, saveReportFilter, delReportFilter, renameReportFilter,
   previewReport, exportReport, exportReportByConfig, listReportLog, reExportReport, delReportLog,
-  submitReport, listSubmitBatch, getSubmitBatch, downloadSnapshot, delSubmitBatch, delSubmitLog
+  submitReport, listSubmitBatch, getSubmitBatch, downloadSnapshot, delSubmitBatch, delSubmitLog,
+  listSubmitLog, updateSubmitLogTime
 } from '@/api/report/report'
 import { categoryTreeselect } from '@/api/project/category'
 import useUserStore from '@/store/modules/user'
 import { checkRole } from '@/utils/permission'
+import { submitByText } from '@/utils/projStatus'
 
 const { proxy } = getCurrentInstance()
 const userStore = useUserStore()
@@ -624,6 +699,8 @@ const FILTER_MAP = {
   leaderName: { widget: 'input', mapKey: 'leaderName' },
   projectCategoryId: { widget: 'select', mapKey: 'categoryId', source: 'category' },
   projectStatus: { widget: 'multiSelect', mapKey: 'projectStatus' },
+  /* 上报状态（已上报/未上报）：与「上报时间」列同源，后端 SQL 判定的服务端筛选，导出同样生效 */
+  submitStatus: { widget: 'select', mapKey: 'submitStatus', source: 'field' },
   contractNo: { widget: 'input', mapKey: 'contractNo' },
   contractName: { widget: 'input', mapKey: 'contractName' },
   contractPeriod: { widget: 'input', mapKey: 'contractPeriod' },
@@ -670,7 +747,8 @@ const previewLoading = ref(false)
 const headerTree = ref([])          // 多级表头树（后端 preview 返回）
 const previewTableRef = ref(null)   // 预览表格引用（勾选全选）
 const previewCodes = ref([])        // 全量工程编号（与后端 rows 顺序一致，供勾选导出）
-const submittedMap = reactive({})   // { projectCode: submitTime } 已上报状态
+const submittedMap = reactive({})   // { projectCode: submitTime } 已上报状态（真实上报记录）
+const submitSourceMap = reactive({}) // { projectCode: 'log' | 'history' } 上报状态来源（与「上报时间」列同源）
 const uncheckedCodes = ref(new Set()) // 用户主动去勾选的工程编号
 const exporting = ref(false)
 const submitting = ref(false)
@@ -689,11 +767,23 @@ const monthSubmitted = ref(false)   // 当月是否已上报过（后端 preview
 
 /* 上报记录弹窗 */
 const submitDialogVisible = ref(false)
+const submitTab = ref('batch')      // batch=按批次 / log=按记录
 const submitLoading = ref(false)
 const submitBatches = ref([])
 const submitDetailVisible = ref(false)
 const submitDetail = ref(null)
 const submitDetailLoading = ref(false)
+
+/* 上报记录弹窗 · 按记录页签（含历史导入补录行：batchId 为空） */
+const submitLogs = ref([])
+const submitLogLoading = ref(false)
+const submitLogTotal = ref(0)
+const submitLogQuery = reactive({ pageNum: 1, pageSize: 20, projectCode: '' })
+
+/* 修改历史上报时间（仅历史导入补录行可改） */
+const logTimeVisible = ref(false)
+const logTimeSaving = ref(false)
+const logTimeForm = reactive({ id: null, projectCode: '', submitTime: '' })
 
 /* 筛选设置弹窗 */
 const filterDialogVisible = ref(false)
@@ -1005,6 +1095,9 @@ async function doPreview() {
     // 已上报状态表 { code: submitTime }
     Object.keys(submittedMap).forEach(k => delete submittedMap[k])
     Object.assign(submittedMap, d.submitted || {})
+    // 上报状态来源 { code: 'log' | 'history' }：与「上报时间」列同源，避免两列口径矛盾
+    Object.keys(submitSourceMap).forEach(k => delete submitSourceMap[k])
+    Object.assign(submitSourceMap, d.submitSource || {})
     // 当月是否已上报过：置灰工具栏复选框并取消勾选
     monthSubmitted.value = !!d.monthSubmitted
     if (monthSubmitted.value) submitAsReport.value = false
@@ -1013,6 +1106,7 @@ async function doPreview() {
       ;(arr || []).forEach((v, i) => { o['c' + i] = v })
       o.__code = previewCodes.value[idx] || ''
       o.__submitted = !!submittedMap[o.__code]
+      o.__submitSource = submitSourceMap[o.__code] || ''
       return o
     })
     // 预览刷新后默认全部勾选
@@ -1800,6 +1894,9 @@ async function handleDeleteLog(row) {
 /* ═══════════ 上报记录 ═══════════ */
 function openSubmitDialog() {
   submitDialogVisible.value = true
+  submitTab.value = 'batch'
+  submitLogQuery.projectCode = ''
+  submitLogQuery.pageNum = 1
   loadSubmitBatches()
 }
 
@@ -1810,6 +1907,56 @@ async function loadSubmitBatches() {
     submitBatches.value = res?.rows || res?.data || []
   } finally {
     submitLoading.value = false
+  }
+}
+
+/* 页签切换：切到「按记录」才请求，避免打开弹窗时多打一次接口 */
+function handleSubmitTabChange(name) {
+  if (name === 'log') loadSubmitLogs()
+}
+
+/* 按记录列表（含历史导入补录行：batchId 为空，不出现在批次里） */
+async function loadSubmitLogs() {
+  submitLogLoading.value = true
+  try {
+    const res = await listSubmitLog(submitLogQuery)
+    submitLogs.value = res?.rows || []
+    submitLogTotal.value = res?.total ?? submitLogs.value.length
+  } finally {
+    submitLogLoading.value = false
+  }
+}
+
+/* 按工程编号查询（回到第一页） */
+function handleSearchSubmitLog() {
+  submitLogQuery.pageNum = 1
+  loadSubmitLogs()
+}
+
+/* 修改历史上报时间：只对历史导入补录行开放（真实上报行的按钮不渲染，后端同样只认 batch_id 为空的行） */
+function handleEditLogTime(row) {
+  logTimeForm.id = row.id
+  logTimeForm.projectCode = row.projectCode
+  logTimeForm.submitTime = row.submitTime ? (proxy.parseTime(row.submitTime, '{y}-{m}-{d}') || '') : ''
+  logTimeVisible.value = true
+}
+
+/* 保存历史补录的上报时间 */
+async function handleSaveLogTime() {
+  if (!logTimeForm.submitTime) {
+    proxy.$modal.msgWarning('请选择上报时间')
+    return
+  }
+  logTimeSaving.value = true
+  try {
+    await updateSubmitLogTime(logTimeForm.id, logTimeForm.submitTime)
+    proxy.$modal.msgSuccess('上报时间已修改')
+    logTimeVisible.value = false
+    await loadSubmitLogs()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一弹出，此处只需复位按钮
+  } finally {
+    logTimeSaving.value = false
   }
 }
 
@@ -1848,11 +1995,14 @@ async function handleViewSubmitDetail(row) {
   }
 }
 
-/* 删除上报批次（仅管理员；批次内上报记录一并删除，对应工程可重新上报） */
+/* 删除上报批次（仅管理员；批次内上报记录一并删除）
+   ⚠️ 删除不等于可重新上报：唯一索引 uk_submit_log_code 为整表唯一（不含 del_flag 谓词），
+   软删后工程编号仍占位，重报会被 on conflict do nothing 静默跳过
+   —— 「一个定线项目只允许上报一次」由库层强制。 */
 async function handleDeleteSubmitBatch(row) {
   try {
     await proxy.$modal.confirm(
-      `确定删除上报批次「${row.batchNo}」吗？\n批次内 ${row.projectCount ?? ''} 条上报记录将一并删除（删除后对应工程编号可重新上报）。`
+      `确定删除上报批次「${row.batchNo}」吗？\n批次内 ${row.projectCount ?? ''} 条上报记录将一并删除。\n注意：删除后这些工程编号仍不可重新上报（一个定线项目只允许上报一次）。`
     )
   } catch {
     return
@@ -1869,25 +2019,32 @@ async function handleDeleteSubmitBatch(row) {
   await loadSubmitBatches()
 }
 
-/* 删除单条上报记录（仅管理员；删除后该工程编号可重新上报） */
+/* 删除单条上报记录（仅管理员；仅真实上报行有该入口，历史导入补录行走「修改时间」）
+   ⚠️ 删除不等于可重新上报：工程编号仍被唯一索引占位，重报会被静默跳过。 */
 async function handleDeleteSubmitLog(row) {
   try {
-    await proxy.$modal.confirm(`确定删除工程「${row.projectCode}」的上报记录吗？\n删除后该工程编号可重新上报。`)
+    await proxy.$modal.confirm(
+      `确定删除工程「${row.projectCode}」的上报记录吗？\n注意：删除后该工程编号仍不可重新上报（一个定线项目只允许上报一次）。`
+    )
   } catch {
     return
   }
-  // 用批次详情表格遮罩反馈
-  submitDetailLoading.value = true
+  // 两个入口共用本函数（批次详情弹窗 / 上报记录弹窗「按记录」页签）→ 各用所在表格的遮罩
+  const inLogTab = submitTab.value === 'log'
+  const mask = inLogTab ? submitLogLoading : submitDetailLoading
+  mask.value = true
   try {
     await delSubmitLog(row.id)
     proxy.$modal.msgSuccess('记录已删除')
-    // 刷新当前批次详情
-    if (submitDetail.value?.id) {
+    if (inLogTab) {
+      await loadSubmitLogs()
+    } else if (submitDetail.value?.id) {
+      // 刷新当前批次详情
       const res = await getSubmitBatch(submitDetail.value.id)
       submitDetail.value = res?.data || null
     }
   } finally {
-    submitDetailLoading.value = false
+    mask.value = false
   }
 }
 
@@ -2753,6 +2910,27 @@ function leafWidth(leaf) {
     .no { color: var(--el-color-danger); font-weight: 600; }
     .tip-sub { color: var(--el-text-color-secondary); font-size: 12px; }
   }
+}
+
+/* 上报记录弹窗 · 按记录页签（含历史导入补录行：batchId 为空） */
+.submit-log-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  .submit-log-tip {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+}
+
+/* 修改历史上报时间弹窗的说明文字 */
+.log-time-tip {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
 }
 
 /* 预览区「按单位合并单元格」开关 */

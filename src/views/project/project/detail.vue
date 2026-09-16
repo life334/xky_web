@@ -176,9 +176,7 @@
                </el-table-column>
                <el-table-column label="开票状态" align="center" prop="invoiceStatus" min-width="90">
                   <template #default="scope">
-                     <el-tag v-if="scope.row.invoiceStatus === '未开'" type="info">未开</el-tag>
-                     <el-tag v-else-if="scope.row.invoiceStatus === '已开'" type="success">已开</el-tag>
-                     <el-tag v-else-if="scope.row.invoiceStatus === '已作废'" type="danger">已作废</el-tag>
+                     <el-tag v-if="invoiceStatusText(scope.row.invoiceStatus)" :type="invoiceStatusTagType(scope.row.invoiceStatus)">{{ invoiceStatusText(scope.row.invoiceStatus) }}</el-tag>
                   </template>
                </el-table-column>
             </el-table>
@@ -257,10 +255,7 @@
                   <el-table-column label="付款单位" align="center" prop="payUnit" min-width="150" />
                   <el-table-column label="开票状态" align="center" prop="invoiceStatus" min-width="90">
                      <template #default="scope">
-                        <el-tag v-if="scope.row.invoiceStatus === '未开'" type="info">未开</el-tag>
-                        <el-tag v-else-if="scope.row.invoiceStatus === '已开'" type="success">已开</el-tag>
-                        <el-tag v-else-if="scope.row.invoiceStatus === '已作废'" type="danger">已作废</el-tag>
-                        <span v-else-if="scope.row.invoiceStatus">{{ scope.row.invoiceStatus }}</span>
+                        <el-tag v-if="invoiceStatusText(scope.row.invoiceStatus)" :type="invoiceStatusTagType(scope.row.invoiceStatus)">{{ invoiceStatusText(scope.row.invoiceStatus) }}</el-tag>
                      </template>
                   </el-table-column>
                   <el-table-column label="发票号码" align="center" prop="invoiceNo" min-width="130" />
@@ -372,9 +367,10 @@ import cache from '@/plugins/cache'
 import { listCategory, categoryTreeselect } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { countWorkdays } from "@/utils/workday"
+import { invoiceStatusText, invoiceStatusTagType } from "@/utils/projStatus"
 
 const { proxy } = getCurrentInstance()
-const { proj_payment_type, proj_project_status, proj_material_result_type, proj_material_status } = useDict('proj_payment_type', 'proj_project_status', 'proj_material_result_type', 'proj_material_status')
+const { proj_payment_type, proj_project_status, proj_material_result_type, proj_material_status, proj_material_submit_status } = useDict('proj_payment_type', 'proj_project_status', 'proj_material_result_type', 'proj_material_status', 'proj_material_submit_status')
 const route = useRoute()
 
 const projectId = route.params.projectId
@@ -455,7 +451,9 @@ function materialColWidth(col) {
 function materialDictOptions(key) {
   if (key === 'resultType') return proj_material_result_type.value
   if (key === 'status') return proj_material_status.value
+  if (key === 'submitStatus') return proj_material_submit_status.value
   if (key === 'guarantorFlag') return [{ value: 'Y', label: '需要' }, { value: 'N', label: '不需要' }]
+  if (key === 'archiveFlag') return [{ value: 'Y', label: '已归档' }, { value: 'N', label: '未归档' }]
   return []
 }
 function materialUserNick(userId) {

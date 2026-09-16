@@ -178,9 +178,7 @@
                         </el-table-column>
                         <el-table-column label="开票状态" align="center" width="100">
                            <template #default="s">
-                              <el-tag v-if="s.row.invoiceStatus === '已开'" type="success" size="small">已开</el-tag>
-                              <el-tag v-else-if="s.row.invoiceStatus === '已作废'" type="danger" size="small">已作废</el-tag>
-                              <el-tag v-else-if="s.row.invoiceStatus === '未开'" type="info" size="small">未开</el-tag>
+                              <el-tag v-if="invoiceStatusText(s.row.invoiceStatus)" :type="invoiceStatusTagType(s.row.invoiceStatus)" size="small">{{ invoiceStatusText(s.row.invoiceStatus) }}</el-tag>
                               <span v-else class="cell-placeholder">-</span>
                            </template>
                         </el-table-column>
@@ -418,6 +416,7 @@ import { getSettlementDetail, getSettlementOverview } from "@/api/project/settle
 import { listProject } from "@/api/project/project"
 import { listUserOptions } from "@/api/system/user"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
+import { invoiceStatusText, invoiceStatusTagType } from "@/utils/projStatus"
 import cache from '@/plugins/cache'
 
 
