@@ -35,6 +35,25 @@ export function collectionUnsettledList(query) {
   })
 }
 
+// 到账明细（与到账汇总同一驱动与筛选条件；dimension 默认 payTime，KPI 卡片下钻也用它）
+export function collectionReceivedDetail(query) {
+  return request({
+    url: '/project/collection/receivedDetail',
+    method: 'get',
+    params: query
+  })
+}
+
+// 到账统计（合计 + 分组明细）
+// dimension=payTime(默认) | closeTime；groupBy=none(默认) | month | quarter | year | clientUnit | leader | paymentType | category
+export function collectionPaymentSummary(query) {
+  return request({
+    url: '/project/collection/paymentSummary',
+    method: 'get',
+    params: query
+  })
+}
+
 // 按项目查询催收记录
 export function collectionLog(projectId) {
   return request({

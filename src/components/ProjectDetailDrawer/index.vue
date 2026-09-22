@@ -154,8 +154,8 @@
           <div v-if="paymentLoading" class="tab-loading"><el-icon class="is-loading"><Loading /></el-icon></div>
           <div v-else class="payment-timeline">
             <div v-for="p in payments" :key="p.id" class="timeline-item" :class="{ overdue: p.isOverdue }">
-              <div class="timeline-dot" :class="p.receivedStatus === 'received' ? 'received' : 'pending'">
-                <el-icon v-if="p.receivedStatus === 'received'"><Check /></el-icon>
+              <div class="timeline-dot" :class="p.payTime ? 'received' : 'pending'">
+                <el-icon v-if="p.payTime"><Check /></el-icon>
                 <el-icon v-else><Clock /></el-icon>
               </div>
               <div class="timeline-body">
@@ -167,8 +167,7 @@
                   </el-tag>
                 </div>
                 <div class="timeline-meta">
-                  付款时间：{{ parseTime(p.paymentTime, '{y}-{m}-{d}') }}
-                  <span v-if="p.receivedTime"> | 到账：{{ parseTime(p.receivedTime, '{y}-{m}-{d}') }}</span>
+                  到账时间：{{ p.payTime ? parseTime(p.payTime, '{y}-{m}-{d}') : '—' }}
                   <span v-if="p.isOverdue" class="overdue-warn">超期 {{ p.overdueDays }} 天</span>
                 </div>
               </div>
@@ -232,8 +231,9 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:visible'])
 
-const { proj_payment_received_status, proj_material_submit_status, proj_payment_type } = useDict(
-  'proj_payment_received_status', 'proj_material_submit_status', 'proj_payment_type'
+// received_status 已废弃（到账判定统一看 payTime），不再加载该字典
+const { proj_material_submit_status, proj_payment_type } = useDict(
+  'proj_material_submit_status', 'proj_payment_type'
 )
 
 const localVisible = computed({
@@ -256,16 +256,13 @@ function normalizeStatus(status) {
 }
 
 function paymentStatusType(p) {
-  if (p.receivedStatus === 'received') return 'success'
+  if (p.payTime) return 'success'
   if (p.isOverdue) return 'danger'
   return 'warning'
 }
 
 function paymentStatusLabel(p) {
-  if (p.receivedStatus === 'received') {
-    const dict = (proj_payment_received_status.value || []).find(d => d.value === 'received')
-    return dict ? dict.label : '已到账'
-  }
+  if (p.payTime) return '已到账'
   if (p.isOverdue) return '超期未到账'
   return '待到账'
 }
@@ -372,7 +369,7 @@ async function loadPaymentStats() {
     const response = await listPayment({ projectId: props.projectId, pageNum: 1, pageSize: 100 })
     const paymentData = response.rows || []
     project.value.paymentCount = paymentData.length
-    project.value.paidCount = paymentData.filter(p => p.receivedStatus === 'received').length
+    project.value.paidCount = paymentData.filter(p => p.payTime).length
     project.value.paymentRate = project.value.paymentCount > 0 ? Math.round(project.value.paidCount / project.value.paymentCount * 100) : 0
   } catch (e) {}
 }
@@ -471,22 +468,17 @@ function calculateOverdueDays(task) {
   return diff > 0 ? diff : 0
 }
 
+/**
+ * 付款是否「超期未到账」。
+ * 到账判定统一看 payTime（有到账日期即已到账）；库里没有「应付/计划到账时间」字段，
+ * 因此没有到账日期时无法判定超期 ⇒ 恒 false（同时修掉原先读 p.paymentTime 这个不存在字段的无效判断）。
+ */
 function calculatePaymentOverdue(payment) {
-  if (payment.receivedStatus === 'received') return false
-  if (!payment.paymentTime) return false
-  const paymentDate = new Date(payment.paymentTime)
-  const today = new Date()
-  const diff = Math.floor((today - paymentDate) / (1000 * 60 * 60 * 24))
-  return diff > 7
+  return false
 }
 
 function calculatePaymentOverdueDays(payment) {
-  if (payment.receivedStatus === 'received') return 0
-  if (!payment.paymentTime) return 0
-  const paymentDate = new Date(payment.paymentTime)
-  const today = new Date()
-  const diff = Math.floor((today - paymentDate) / (1000 * 60 * 60 * 24))
-  return diff > 7 ? diff - 7 : 0
+  return 0
 }
 
 watch(() => props.visible, async (v) => {
