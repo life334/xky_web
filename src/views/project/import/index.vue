@@ -39,22 +39,34 @@
             <div class="stat-pill stat-total">总行数 <b>{{ preview.totalRows ?? 0 }}</b></div>
             <div class="stat-pill stat-ready">可导入 ✅ <b>{{ preview.readyCount ?? 0 }}</b></div>
             <div v-if="(preview.existsCount ?? 0) > 0" class="stat-pill stat-skip">已存在·将跳过 ⏭️ <b>{{ preview.existsCount ?? 0 }}</b></div>
+            <div v-if="(preview.payWriteCount ?? 0) > 0" class="stat-pill stat-payonly">待补到账 💰 <b>{{ preview.payWriteCount ?? 0 }}</b></div>
             <div class="stat-pill stat-warn">待修正 ⚠️ <b>{{ preview.warningCount ?? 0 }}</b></div>
             <div class="stat-pill stat-err">无法导入 ❌ <b>{{ preview.errorCount ?? 0 }}</b></div>
             <div style="flex:1"></div>
             <el-button @click="step = 0; resetAll()">重选文件</el-button>
-            <el-button type="primary" :disabled="(preview.readyCount ?? 0) === 0" :loading="committing" @click="doCommit">
-              确认导入（{{ preview.readyCount ?? 0 }}行）
+            <el-button type="primary" :disabled="!(preview.readyCount ?? 0) && !(preview.payWriteCount ?? 0)" :loading="committing" @click="doCommit">
+              确认导入（{{ commitButtonText }}）
             </el-button>
           </div>
 
-          <!-- 已存在工程编号提示（整组跳过，不写入） -->
+          <!-- 已存在工程编号提示（项目/工作量整组跳过；到账信息仍会补写） -->
           <div v-if="(preview.existsCount ?? 0) > 0" class="problem-section">
             <div class="problem-card problem-skip">
               <div class="problem-icon">⏭️</div>
               <div class="problem-body">
-                <div class="problem-title">{{ preview.existsCount }} 行（{{ (preview.existsCodes || []).length }} 个工程编号）已存在于系统中{{ (preview.readyCount ?? 0) === 0 ? '，本次没有可导入的数据' : '，导入时将整组跳过' }}</div>
-                <div class="problem-desc">已存在的工程编号不会覆盖、也不会重复写入（不产生子项/任务/付款/资料）。如需更新，请先在系统中处理原项目，或修改 Excel 中的工程编号后重新导入。</div>
+                <div class="problem-title">{{ preview.existsCount }} 行（{{ (preview.existsCodes || []).length }} 个工程编号）已存在于系统中{{ (preview.readyCount ?? 0) === 0 && (preview.payWriteCount ?? 0) === 0 ? '，本次没有可导入的数据' : '，项目/工作量将整组跳过' }}</div>
+                <div class="problem-desc">已存在的工程编号不会重复创建项目、子项、任务、负责人和资料，也不会覆盖项目信息与工作量；到账信息<strong>仅在本次金额/到账时间与系统现值不同时才补写</strong>（同类型付款按最新值覆盖），与系统一致的不做任何改动。</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 待补到账提示（编号已存在，本次只补写到账信息） -->
+          <div v-if="(preview.payWriteCount ?? 0) > 0" class="problem-section">
+            <div class="problem-card problem-payonly">
+              <div class="problem-icon">💰</div>
+              <div class="problem-body">
+                <div class="problem-title">{{ preview.payWriteCount }} 个已存在项目的到账信息将被补写，不新建项目</div>
+                <div class="problem-desc">这些工程编号在系统中已有对应项目，且本文件带的到账（金额或到账时间）<strong>与系统现值不同</strong>：提交时<strong>只覆盖写入到账信息</strong>（同类型付款按最新值覆盖），项目、工作量、负责人、任务等一律跳过、不做任何改动。与系统一致的到账行不会重复写入。</div>
               </div>
             </div>
           </div>
@@ -106,9 +118,11 @@
             <el-table :data="preview.rows" border stripe size="small" height="50vh">
               <el-table-column type="index" label="序" width="50" />
               <el-table-column prop="excelRow" label="Excel行" width="75" />
-              <el-table-column label="状态" width="110" align="center">
+              <el-table-column label="状态" width="120" align="center">
                 <template #default="{ row }">
-                  <el-tag v-if="row.existsInDb" type="warning" size="small">已存在·跳过</el-tag>
+                  <el-tag v-if="row.payOnly" type="primary" size="small">仅补充到账</el-tag>
+                  <el-tag v-else-if="row.existsInDb && row.payChanged" type="primary" size="small">已存在·补到账</el-tag>
+                  <el-tag v-else-if="row.existsInDb" type="warning" size="small">已存在·跳过</el-tag>
                   <el-tag v-else type="success" size="small">可导入</el-tag>
                 </template>
               </el-table-column>
@@ -149,11 +163,12 @@
               <el-card shadow="never" class="sum-card sum-ok">
                 <div class="sum-label">导入成功</div>
                 <div class="sum-num">{{ result.successCount ?? 0 }}</div>
+                <div v-if="(result.payWriteCount ?? 0) > 0" class="sum-hint">其中补到账 {{ result.payWriteCount }} 项</div>
               </el-card>
             </el-col>
             <el-col :span="8">
               <el-card shadow="never" class="sum-card sum-skip">
-                <div class="sum-label">跳过（工程编号已存在）</div>
+                <div class="sum-label">跳过（已存在·无需更新）</div>
                 <div class="sum-num">{{ result.skippedCount ?? 0 }}</div>
                 <el-button v-if="result.skippedCount > 0" link type="primary" size="small" @click="downloadResultFile('skipped')">下载跳过明细</el-button>
               </el-card>
@@ -166,6 +181,15 @@
               </el-card>
             </el-col>
           </el-row>
+          <el-collapse v-if="result.payWriteDetails && result.payWriteDetails.length" class="mt20">
+            <el-collapse-item name="paywrite" :title="'补到账明细（' + result.payWriteDetails.length + '行）'">
+              <el-table :data="result.payWriteDetails" size="small" border stripe max-height="300">
+                <el-table-column label="Excel行号" prop="excelRow" width="100" align="center" />
+                <el-table-column label="工程编号" prop="projectCode" width="180" />
+                <el-table-column label="处理说明" prop="reason" show-overflow-tooltip />
+              </el-table>
+            </el-collapse-item>
+          </el-collapse>
           <el-collapse v-if="result.skippedDetails && result.skippedDetails.length" class="mt20">
             <el-collapse-item name="skip" :title="'跳过明细（' + result.skippedDetails.length + '行）'">
               <el-table :data="result.skippedDetails" size="small" border stripe max-height="300">
@@ -428,16 +452,27 @@ const problemCollapse = ref(['problems']) // 默认折叠
 const preview = reactive({
   token: '', totalRows: 0, readyCount: 0, warningCount: 0, errorCount: 0,
   existsCount: 0, existsCodes: [],
+  payOnlyCount: 0, payWriteCount: 0, unmatchedPayCodes: [],
   problemSummary: null,
   rows: [],
   problemRows: []
 })
 
-const result = reactive({ logId: null, successCount: 0, skippedCount: 0, failedCount: 0, failedDetails: [], skippedDetails: [] })
+const result = reactive({ logId: null, successCount: 0, skippedCount: 0, failedCount: 0, payWriteCount: 0, failedDetails: [], skippedDetails: [], payWriteDetails: [] })
 
 const hasProblems = computed(() =>
   (preview.warningCount > 0) || (preview.errorCount > 0)
 )
+
+// 确认按钮文案：有新建行时显行数；只有已存在项目的到账要补写时显项目数
+const commitButtonText = computed(() => {
+  const ready = preview.readyCount ?? 0
+  const pay = preview.payWriteCount ?? 0
+  if (ready > 0 && pay > 0) return `${ready}行 + 补到账${pay}项`
+  if (ready > 0) return `${ready}行`
+  if (pay > 0) return `补到账${pay}项`
+  return '0行'
+})
 
 // 合同类型字典值 → 中文标签（兼容旧中文原文）
 function contractTypeLabel(v) {
@@ -477,6 +512,9 @@ async function doPreview() {
     preview.readyCount = d.readyCount
     preview.existsCount = d.existsCount ?? 0
     preview.existsCodes = d.existsCodes || []
+    preview.payOnlyCount = d.payOnlyCount ?? 0
+    preview.payWriteCount = d.payWriteCount ?? 0
+    preview.unmatchedPayCodes = d.unmatchedPayCodes || []
     preview.warningCount = d.warningCount
     preview.errorCount = d.errorCount
     preview.problemSummary = d.problemSummary
@@ -485,6 +523,7 @@ async function doPreview() {
     problemCollapse.value = [] // 默认折叠
     step.value = 1
     const msg = `解析完成：${d.totalRows}行总计，${d.readyCount}行可导入`
+      + ((d.payWriteCount ?? 0) > 0 ? `，${d.payWriteCount}个已存在项目的到账将补写` : '')
       + (d.warningCount > 0 ? `，${d.warningCount}行待修正` : '')
       + (d.errorCount > 0 ? `，${d.errorCount}行无法导入` : '')
     ElMessage.success(msg)
@@ -514,14 +553,24 @@ function fillImportResult(d) {
   result.successCount = d.successCount
   result.skippedCount = d.skippedCount
   result.failedCount = d.failedCount
+  result.payWriteCount = d.payWriteCount ?? 0
   result.failedDetails = Array.isArray(d.failedDetails) ? d.failedDetails : []
   result.skippedDetails = Array.isArray(d.skippedDetails) ? d.skippedDetails : []
+  result.payWriteDetails = Array.isArray(d.payWriteDetails) ? d.payWriteDetails : []
+}
+// 结果提示：补到账是「已存在项目、本次只更新了到账」，计入成功，单独注明便于理解
+function importResultText(d) {
+  const pay = d.payWriteCount ?? 0
+  return `导入完成：成功 ${d.successCount ?? 0}`
+    + (pay > 0 ? `（其中补到账 ${pay} 项）` : '')
+    + `，跳过 ${d.skippedCount ?? 0}，失败 ${d.failedCount ?? 0}`
 }
 async function doCommit() {
   try {
     await ElMessageBox.confirm(
       `确认导入 ${preview.readyCount} 行可导入数据？（同一工程编号的多条记录将合并为同一项目的多个子项；待修正/无法导入的行将自动跳过`
-      + ((preview.existsCount ?? 0) > 0 ? `；另有 ${preview.existsCount} 行因工程编号已存在将整组跳过，不覆盖也不重复写入` : '')
+      + ((preview.existsCount ?? 0) > 0 ? `；另有 ${preview.existsCount} 行因工程编号已存在，项目/工作量将整组跳过、不重复写入` : '')
+      + ((preview.payWriteCount ?? 0) > 0 ? `；其中 ${preview.payWriteCount} 个已存在项目的到账信息将覆盖写入（同类型付款按最新值覆盖）` : '')
       + '）',
       '确认导入', { type: 'warning' }
     )
@@ -535,7 +584,7 @@ async function doCommit() {
       // 极小数据量下后台可能瞬间完成，直接展示结果
       fillImportResult(d)
       step.value = 2
-      ElMessage.success('导入完成')
+      ElMessage.success(importResultText(d))
       committing.value = false
       return
     }
@@ -551,7 +600,7 @@ async function doCommit() {
           closeImportLoading()
           fillImportResult(sd)
           step.value = 2
-          ElMessage.success(`导入完成：成功 ${sd.successCount ?? 0}，跳过 ${sd.skippedCount ?? 0}，失败 ${sd.failedCount ?? 0}`)
+          ElMessage.success(importResultText(sd))
           committing.value = false
         } else if (sd.status === 'expired') {
           clearInterval(importPollTimer); importPollTimer = null
@@ -628,9 +677,10 @@ function resetAll() {
   Object.assign(preview, {
     token: '', totalRows: 0, readyCount: 0, warningCount: 0, errorCount: 0,
     existsCount: 0, existsCodes: [],
+    payOnlyCount: 0, payWriteCount: 0, unmatchedPayCodes: [],
     problemSummary: null, rows: [], problemRows: []
   })
-  Object.assign(result, { logId: null, successCount: 0, skippedCount: 0, failedCount: 0, failedDetails: [], skippedDetails: [] })
+  Object.assign(result, { logId: null, successCount: 0, skippedCount: 0, failedCount: 0, payWriteCount: 0, failedDetails: [], skippedDetails: [], payWriteDetails: [] })
 }
 
 // ============ 合同导入 ============
@@ -775,6 +825,7 @@ function resetCAll() {
   &.stat-warn  { background: #fdf6ec; color: #e6a23c; }
   &.stat-dup   { background: #f4f4f5; color: #909399; }
   &.stat-skip  { background: #f4f4f5; color: #909399; }
+  &.stat-payonly { background: #ecf5ff; color: #409eff; }
   &.stat-err   { background: #fef0f0; color: #f56c6c; }
 }
 /* 问题摘要卡片 */
@@ -786,6 +837,7 @@ function resetCAll() {
 .problem-warn { border-color: #e6a23c40; background: #fdf6ec; }
 .problem-dup  { border-color: #90939940; background: #f4f4f5; }
 .problem-skip { border-color: #90939940; background: #f4f4f5; }
+.problem-payonly { border-color: #409eff40; background: #ecf5ff; }
 .problem-err  { border-color: #f56c6c40; background: #fef0f0; }
 .problem-icon { font-size: 20px; }
 .problem-body { flex: 1; }
@@ -810,6 +862,7 @@ function resetCAll() {
   text-align: center; border: none !important;
   .sum-label { font-size: 13px; color: #909399; }
   .sum-num   { font-size: 30px; font-weight: 700; margin: 6px 0 4px; }
+  .sum-hint  { font-size: 12px; color: #67c23a; margin-bottom: 4px; }
   &.sum-ok   .sum-num { color: #67c23a; }
   &.sum-skip .sum-num { color: #909399; }
   &.sum-fail .sum-num { color: #f56c6c; }

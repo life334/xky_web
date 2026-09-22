@@ -1,3 +1,16 @@
+# ── 依赖构建脚本授权（pnpm 配置）────────────────────────────────────────────
+# pnpm 11 起用 allowBuilds 取代了 ignoredBuiltDependencies（后者在 pnpm ≤10 才生效，
+# 这里保留一份以兼容旧版本 pnpm / CI）。
+#   allowBuilds: true  → 允许该依赖执行安装/构建脚本
+#   allowBuilds: false → 显式忽略，且不再触发 ERR_PNPM_IGNORED_BUILDS 报错
+# 注意：值必须是布尔，且之前被写成占位文本 "set this to true or false" 时会被当作
+#       "未决"，在 pnpm 11 的 strictDepBuilds（v11 默认开启）下直接让 install 失败。
+# 以下三个包在本项目一直是被忽略的状态（与 git HEAD 的 ignoredBuiltDependencies 一致）。
+allowBuilds:
+  '@parcel/watcher': false
+  esbuild: false
+  vue-demi: false
+
 ignoredBuiltDependencies:
   - '@parcel/watcher'
   - esbuild

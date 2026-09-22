@@ -79,8 +79,9 @@ const router = useRouter()
 const { proxy } = getCurrentInstance()
 
 const loginForm = ref({
-  username: "admin",
-  password: "admin123",
+  // 预填账号由环境变量控制：仅在 .env.development 中配置，生产环境留空
+  username: import.meta.env.VITE_APP_DEFAULT_USERNAME || "",
+  password: import.meta.env.VITE_APP_DEFAULT_PASSWORD || "",
   rememberMe: false,
   code: "",
   uuid: ""
