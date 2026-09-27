@@ -51,3 +51,21 @@ export function exportWorkload(query) {
     params: query
   })
 }
+
+// 产值统计（合计 + 分组明细；产值按项目办结时间归属）
+export function workloadOutputSummary(query) {
+  return request({
+    url: '/project/workload/outputSummary',
+    method: 'get',
+    params: query
+  })
+}
+
+// 产值明细（下钻，分页，与产值统计同一口径与筛选）
+export function workloadOutputDetail(query) {
+  return request({
+    url: '/project/workload/outputDetail',
+    method: 'get',
+    params: query
+  })
+}

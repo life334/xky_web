@@ -106,6 +106,38 @@
                      @change="onAssignDateChange"
                   />
                </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">办结日期</div>
+                  <el-date-picker
+                     v-model="closeDateRange"
+                     value-format="YYYY-MM-DD"
+                     type="daterange"
+                     range-separator="-"
+                     start-placeholder="开始"
+                     end-placeholder="结束"
+                     style="width: 100%"
+                     @change="onCloseDateChange"
+                  />
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">项目小类</div>
+                  <el-select v-model="queryParams.projectCategoryId" filterable clearable placeholder="全部小类" style="width: 100%" @change="handleQuery">
+                     <el-option v-for="c in subCategoryOptions" :key="c.id" :label="c.label" :value="c.id" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">合同状态</div>
+                  <el-select v-model="queryParams.contractStatus" clearable placeholder="全部" style="width: 100%" @change="handleQuery">
+                     <el-option label="已关联合同" value="bound" />
+                     <el-option label="未关联合同" value="unbound" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">工期超期</div>
+                  <el-select v-model="queryParams.overdue" clearable placeholder="全部" style="width: 100%" @change="handleQuery">
+                     <el-option label="仅看在办超期（手动录入）" value="true" />
+                  </el-select>
+               </div>
             </div>
             <!-- 快捷日期 -->
             <div class="quick-date-row">
@@ -556,6 +588,7 @@ import { checkRole } from "@/utils/permission"
 import { countWorkdays } from "@/utils/workday"
 import { withTaskStatusAliases } from "@/utils/projStatus"
 import { nextTick } from "vue"
+import { useRoute } from "vue-router"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
 /** 格式化日期 YYYY-MM-DD */
 function fmt(d) { return d.toISOString().slice(0, 10) }
@@ -845,7 +878,11 @@ const data = reactive({
     engineeringProject: undefined,
     clientUnit: undefined,
     assignDateBegin: undefined,
-    assignDateEnd: undefined
+    assignDateEnd: undefined,
+    contractStatus: undefined,
+    overdue: undefined,
+    closeDateBegin: undefined,
+    closeDateEnd: undefined
   },
   rules: {
     projectCode: [{ required: true, message: "工程编号不能为空", trigger: "blur" }]
@@ -1015,6 +1052,18 @@ function onAssignDateChange(val) {
   } else {
     queryParams.value.assignDateBegin = undefined
     queryParams.value.assignDateEnd = undefined
+  }
+}
+
+/** 办结日期变化 */
+const closeDateRange = ref([])
+function onCloseDateChange(val) {
+  if (val && val.length === 2) {
+    queryParams.value.closeDateBegin = val[0]
+    queryParams.value.closeDateEnd = val[1]
+  } else {
+    queryParams.value.closeDateBegin = undefined
+    queryParams.value.closeDateEnd = undefined
   }
 }
 
@@ -1201,6 +1250,11 @@ function resetQuery() {
   queryParams.value.clientUnit = undefined
   queryParams.value.assignDateBegin = undefined
   queryParams.value.assignDateEnd = undefined
+  queryParams.value.contractStatus = undefined
+  queryParams.value.overdue = undefined
+  queryParams.value.closeDateBegin = undefined
+  queryParams.value.closeDateEnd = undefined
+  closeDateRange.value = []
   currentSchemeName.value = ''
   handleQuery()
 }
@@ -1584,6 +1638,29 @@ function handleExport() {
   }, `project_${new Date().getTime()}.xlsx`)
 }
 
+// ===== 首页驾驶舱下钻预置（契约 §7.3：query 携带 leaderId/categoryId/clientUnit/contractStatus/overdue/beginDate/endDate/dateField/id）=====
+const route = useRoute()
+const drillQuery = route.query || {}
+if (drillQuery.leaderId) queryParams.value.leaderId = Number(drillQuery.leaderId)
+if (drillQuery.categoryId) queryParams.value.projectCategoryId = Number(drillQuery.categoryId)
+if (drillQuery.clientUnit) queryParams.value.clientUnit = drillQuery.clientUnit
+if (drillQuery.contractStatus) queryParams.value.contractStatus = String(drillQuery.contractStatus)
+if (drillQuery.overdue) queryParams.value.overdue = String(drillQuery.overdue)
+if (drillQuery.beginDate && drillQuery.endDate) {
+  if (drillQuery.dateField === 'close') {
+    queryParams.value.closeDateBegin = drillQuery.beginDate
+    queryParams.value.closeDateEnd = drillQuery.endDate
+    closeDateRange.value = [drillQuery.beginDate, drillQuery.endDate]
+  } else {
+    queryParams.value.assignDateBegin = drillQuery.beginDate
+    queryParams.value.assignDateEnd = drillQuery.endDate
+    assignDateRange.value = [drillQuery.beginDate, drillQuery.endDate]
+  }
+}
+if (Object.keys(drillQuery).some(k => ['leaderId', 'categoryId', 'clientUnit', 'contractStatus', 'overdue', 'beginDate', 'endDate'].includes(k))) {
+  advancedVisible.value = true
+}
+
 getList()
 // 全局工程编号回填：仅回填输入框，不自动查询（用户点「查询」才生效）
 if (searchMemory.projectCode && !queryParams.value.projectCode) {
@@ -1594,6 +1671,10 @@ loadSavedSchemes()
 loadCategoryTree()
 loadLeaderList()
 loadDistinctValues()
+// 从首页 TOP10 / 风险清单点进来（query.id）：列表渲染后打开该项目的修改弹窗
+if (drillQuery.id) {
+  nextTick(() => handleUpdate({ id: Number(drillQuery.id) }))
+}
 </script>
 
 <style scoped>

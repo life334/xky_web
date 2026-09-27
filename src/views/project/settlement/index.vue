@@ -1,5 +1,7 @@
 <template>
    <div class="app-container">
+      <el-tabs v-model="viewTab" class="settlement-tabs" @tab-change="handleViewTabChange">
+      <el-tab-pane label="结算录入" name="list">
       <!-- Row 1: 全局搜索 -->
       <div class="search-bar-row">
          <div class="search-input-wrapper">
@@ -353,6 +355,120 @@
          <el-tag :type="effectiveStatusMeta(currentRow).type" effect="dark">{{ effectiveStatusMeta(currentRow).text }}</el-tag>
       </div>
 
+      </el-tab-pane>
+
+      <!-- ========== 页签二：产值统计（镜像回款页「到账统计」交互） ========== -->
+      <el-tab-pane label="产值统计" name="output">
+         <!-- Row 1: 统计口径 + 快捷区间 -->
+         <div class="status-capsule-row">
+            <span class="capsule-group-label">统计口径</span>
+            <span class="status-capsule active">按办结时间</span>
+            <span class="capsule-sep" />
+            <span class="capsule-group-label">快捷区间</span>
+            <span v-for="q in OUTPUT_QUICKS" :key="q.value" class="status-capsule" :class="{ active: outputQuick === q.value }" @click="setOutputQuick(q.value)">{{ q.label }}</span>
+         </div>
+
+         <!-- Row 2: 区间 / 分组 / 操作 -->
+         <div class="search-bar-row">
+            <el-date-picker v-model="outputRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" class="sum-range-picker" @change="handleOutputQuery" />
+            <el-select v-model="outputGroupBy" style="width: 190px" @change="handleOutputQuery">
+               <el-option v-for="g in OUTPUT_GROUPS" :key="g.value" :label="g.label" :value="g.value" />
+            </el-select>
+            <el-button type="primary" size="small" @click="handleOutputQuery">查询</el-button>
+            <el-button size="small" @click="resetOutputQuery">重置</el-button>
+            <el-button type="warning" plain icon="Download" size="small" style="margin-left: auto" @click="handleOutputExport" v-hasPermi="['project:settlement:export']">导出产值明细</el-button>
+         </div>
+
+         <!-- Row 3: 高级筛选 -->
+         <div class="advanced-toggle-row" @click="outputAdvancedVisible = !outputAdvancedVisible">
+            <span>{{ outputAdvancedVisible ? '▲' : '▼' }} 高级筛选</span>
+         </div>
+
+         <!-- Row 4: 高级面板 -->
+         <el-collapse-transition>
+            <div v-show="outputAdvancedVisible" class="advanced-filter-panel">
+               <div class="filter-grid">
+                  <div class="filter-item">
+                     <div class="filter-item-label">工程编号/项目名称</div>
+                     <el-input v-model="outputQuery.keyword" placeholder="编号或名称关键词" clearable @keyup.enter="handleOutputQuery" @clear="handleOutputQuery" />
+                  </div>
+                  <div class="filter-item">
+                     <div class="filter-item-label">委托单位</div>
+                     <el-select v-model="outputQuery.clientUnit" filterable clearable placeholder="全部单位" style="width:100%" :loading="distinctLoading" @change="handleOutputQuery">
+                        <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                     </el-select>
+                  </div>
+                  <div class="filter-item">
+                     <div class="filter-item-label">负责人</div>
+                     <el-select v-model="outputQuery.leaderId" filterable clearable placeholder="全部负责人" style="width:100%" @change="handleOutputQuery">
+                        <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
+                     </el-select>
+                  </div>
+                  <div class="filter-item">
+                     <div class="filter-item-label">项目小类</div>
+                     <el-select v-model="outputQuery.projectCategoryId" filterable clearable placeholder="全部小类" style="width:100%" @change="handleOutputQuery">
+                        <el-option v-for="c in categoryOptions" :key="c.id" :label="c.name" :value="c.id" />
+                     </el-select>
+                  </div>
+               </div>
+               <div class="quick-filter-row">
+                  <span class="collapse-link" @click="outputAdvancedVisible = false">收起 ▲</span>
+               </div>
+            </div>
+         </el-collapse-transition>
+
+         <!-- Row 5: 合计指标（内外产值不相加：内部=成本 / 外部=结算基准） -->
+         <el-row v-loading="outputLoading" :gutter="16" class="sum-metric-row">
+            <el-col :span="8">
+               <div class="sum-metric">
+                  <div class="sum-metric-label">内部产值(元) · 按办结时间</div>
+                  <div class="sum-metric-value">{{ formatMoney(outputSummary.internalOutput) }}</div>
+               </div>
+            </el-col>
+            <el-col :span="8">
+               <div class="sum-metric">
+                  <div class="sum-metric-label">外部产值(元) · 按办结时间</div>
+                  <div class="sum-metric-value" style="color:#409eff">{{ formatMoney(outputSummary.externalOutput) }}</div>
+               </div>
+            </el-col>
+            <el-col :span="8">
+               <div class="sum-metric">
+                  <div class="sum-metric-label">办结项目数</div>
+                  <div class="sum-metric-value">{{ outputSummary.projectCount || 0 }}</div>
+               </div>
+            </el-col>
+         </el-row>
+
+         <!-- Row 6: 分组明细 -->
+         <el-table v-if="outputGroupBy !== 'none'" v-loading="outputLoading" :data="outputGroups" stripe border max-height="420" v-hover-h-scroll @row-click="handleOutputDrill">
+            <el-table-column label="分组维度" align="left" min-width="180">
+               <template #default="scope">{{ scope.row.label || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="办结项目数" align="center" prop="projectCount" width="110" />
+            <el-table-column label="内部产值(元)" align="right" width="160">
+               <template #default="scope">{{ formatMoney(scope.row.internalOutput) }}</template>
+            </el-table-column>
+            <el-table-column label="外部产值(元)" align="right" width="160">
+               <template #default="scope"><span style="font-weight:600">{{ formatMoney(scope.row.externalOutput) }}</span></template>
+            </el-table-column>
+            <el-table-column label="外部产值占比" align="left" min-width="200">
+               <template #default="scope">
+                  <el-progress :percentage="outputShare(scope.row)" :stroke-width="10" color="#409eff" />
+               </template>
+            </el-table-column>
+            <el-table-column label="操作" align="center" width="90" fixed="right">
+               <template #default="scope">
+                  <el-button link type="primary" size="small" @click.stop="handleOutputDrill(scope.row)">明细</el-button>
+               </template>
+            </el-table-column>
+         </el-table>
+         <el-empty v-else description="选择分组维度后可按维度查看产值分布，点行可下钻明细" :image-size="70" />
+
+         <div v-if="outputGroupBy === 'leader'" class="sum-tip">⚠️ 一个项目有多位负责人时，该项目产值会在每位负责人下各计一次（合计不受影响）。</div>
+         <div class="sum-tip">产值按<b>办结时间</b>归属，未办结项目不计入；内部产值含「管线新测 / 管线修测」保底 6000；<b>内外产值不相加</b>（内部=成本、外部=结算基准）。</div>
+      </el-tab-pane>
+      </el-tabs>
+
       <!-- 工作量明细弹窗（公共组件 WorkloadDialog，回款页共用同一实现） -->
       <WorkloadDialog
          v-model="workloadOpen"
@@ -363,6 +479,35 @@
          :engineering-project="editEngineeringProject"
          @saved="refreshAll(false)"
       />
+
+      <!-- 产值明细下钻弹窗（产值统计页签） -->
+      <el-dialog
+         :model-value="outputDrill.open"
+         @update:model-value="outputDrill.open = $event"
+         :title="outputDrill.title"
+         append-to-body
+         destroy-on-close
+         :close-on-click-modal="false"
+         class="scrollbar"
+         width="1080px"
+         draggable
+      >
+         <el-table v-loading="outputDrill.loading" :data="outputDrill.rows" stripe border max-height="440" v-hover-h-scroll>
+            <el-table-column label="工程编号" prop="projectCode" width="140" align="center" />
+            <el-table-column label="项目名称" prop="projectName" min-width="200" align="left" show-overflow-tooltip />
+            <el-table-column label="委托单位" prop="clientUnit" min-width="180" align="left" show-overflow-tooltip />
+            <el-table-column label="办结时间" width="115" align="center">
+               <template #default="scope">{{ String(scope.row.closeTime || '').slice(0, 10) }}</template>
+            </el-table-column>
+            <el-table-column label="内部产值(元)" width="145" align="right">
+               <template #default="scope">{{ formatMoney(scope.row.internalOutput) }}</template>
+            </el-table-column>
+            <el-table-column label="外部产值(元)" width="145" align="right">
+               <template #default="scope"><span style="font-weight:600">{{ formatMoney(scope.row.externalOutput) }}</span></template>
+            </el-table-column>
+         </el-table>
+         <pagination v-show="outputDrill.total > 0" :total="outputDrill.total" v-model:page="outputDrill.pageNum" v-model:limit="outputDrill.pageSize" @pagination="loadOutputDetail" />
+      </el-dialog>
 
       <!-- 到账信息弹窗 -->
       <el-dialog
@@ -590,6 +735,7 @@
 <script setup name="Settlement">
 import { ElMessageBox } from 'element-plus'
 import { treeListSettlement, getSettlementDetail, saveSettlement, saveWorkload, savePayment, getSettlementColumns, getSettlementEntryStatusCounts } from "@/api/project/settlement"
+import { workloadOutputSummary, workloadOutputDetail } from "@/api/project/workload"
 import WorkloadDialog from "@/components/WorkloadDialog"
 import { categoryTreeselectFull, listBilling } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
@@ -2058,6 +2204,185 @@ function loadDistinctValues() {
   }).catch(() => {}).finally(() => { distinctLoading.value = false })
 }
 
+// ============================================================
+// ===== 产值统计（页签二）：口径 = 项目办结时间，内外产值不相加 =====
+// ============================================================
+const OUTPUT_QUICKS = [
+   { label: '本月', value: 'month' },
+   { label: '本季', value: 'quarter' },
+   { label: '本年', value: 'year' },
+   { label: '近12个月', value: 'last12' },
+   { label: '全部', value: 'all' }
+]
+const OUTPUT_GROUPS = [
+   { label: '不分组（仅合计）', value: 'none' },
+   { label: '按委托单位', value: 'clientUnit' },
+   { label: '按负责人', value: 'leader' },
+   { label: '按项目小类', value: 'category' },
+   { label: '按月', value: 'month' },
+   { label: '按季', value: 'quarter' },
+   { label: '按年', value: 'year' }
+]
+const viewTab = ref('list')
+const outputQuick = ref('all')
+const outputRange = ref([])
+const outputGroupBy = ref('none')
+const outputAdvancedVisible = ref(false)
+const outputLoading = ref(false)
+const outputSummary = ref({})
+const outputGroups = ref([])
+const outputQuery = ref({ keyword: undefined, clientUnit: undefined, leaderId: undefined, projectCategoryId: undefined })
+const outputDrill = reactive({ open: false, title: '', loading: false, rows: [], total: 0, pageNum: 1, pageSize: 10, drillParams: {} })
+
+function pad2(n) { return String(n).padStart(2, '0') }
+function fmtYMD(y, m, d) { return y + '-' + pad2(m) + '-' + pad2(d) }
+/** 某年某月（1-12）最后一天 */
+function lastDayOf(y, m) { return new Date(y, m, 0).getDate() }
+
+/** 快捷区间 → [begin, end]，口径与后端 date_trunc 一致 */
+function outputQuickRange(quick) {
+   const now = new Date()
+   const y = now.getFullYear()
+   const m = now.getMonth()
+   if (quick === 'month') return [fmtYMD(y, m + 1, 1), fmtYMD(y, m + 1, lastDayOf(y, m + 1))]
+   if (quick === 'quarter') {
+      const qs = Math.floor(m / 3) * 3 + 1
+      return [fmtYMD(y, qs, 1), fmtYMD(y, qs + 2, lastDayOf(y, qs + 2))]
+   }
+   if (quick === 'year') return [fmtYMD(y, 1, 1), fmtYMD(y, 12, 31)]
+   if (quick === 'last12') return [fmtYMD(y, m - 10, 1), fmtYMD(y, m + 1, lastDayOf(y, m + 1))]
+   return []
+}
+
+/** 组装产值统计查询参数（extra 优先级最高，用于下钻追加分组限制） */
+function buildOutputParams(extra) {
+   const r = outputRange.value && outputRange.value.length === 2 ? outputRange.value : []
+   return {
+      groupBy: outputGroupBy.value,
+      begin: r[0],
+      end: r[1],
+      ...outputQuery.value,
+      ...(extra || {})
+   }
+}
+
+/** 查询产值统计（合计 + 分组明细） */
+function getOutputSummary() {
+   outputLoading.value = true
+   workloadOutputSummary(buildOutputParams()).then(res => {
+      const d = res.data || {}
+      outputSummary.value = d.summary || {}
+      outputGroups.value = d.groups || []
+   }).catch(() => {
+      outputSummary.value = {}
+      outputGroups.value = []
+   }).finally(() => { outputLoading.value = false })
+}
+
+/** 快捷区间胶囊 */
+function setOutputQuick(v) {
+   outputQuick.value = v
+   outputRange.value = outputQuickRange(v)
+   getOutputSummary()
+}
+
+/** 手动查询（改日期/筛选条件后） */
+function handleOutputQuery() {
+   outputQuick.value = 'custom'
+   getOutputSummary()
+}
+
+/** 重置产值统计 */
+function resetOutputQuery() {
+   outputQuick.value = 'all'
+   outputRange.value = []
+   outputGroupBy.value = 'none'
+   outputQuery.value = { keyword: undefined, clientUnit: undefined, leaderId: undefined, projectCategoryId: undefined }
+   getOutputSummary()
+}
+
+/** 分组占比（按各组外部产值绝对值分摊，总额恒 100%） */
+function outputShare(row) {
+   const total = outputGroups.value.reduce((s, r) => s + Math.abs(Number(r.externalOutput || 0)), 0)
+   if (!total) return 0
+   return Math.min(100, Math.round(Math.abs(Number(row.externalOutput || 0)) * 100 / total))
+}
+
+/** 由分组标签推导日期区间（月/季/年） */
+function outputLabelRange(group, label) {
+   const s = String(label || '')
+   if (group === 'year') {
+      const y = Number(s)
+      if (!y) return null
+      return [fmtYMD(y, 1, 1), fmtYMD(y, 12, 31)]
+   }
+   if (group === 'month') {
+      const parts = s.split('-')
+      const y = Number(parts[0])
+      const m = Number(parts[1])
+      if (!y || !m) return null
+      return [fmtYMD(y, m, 1), fmtYMD(y, m, lastDayOf(y, m))]
+   }
+   if (group === 'quarter') {
+      const hit = /^(\d{4})-Q(\d)$/.exec(s)
+      if (!hit) return null
+      const y = Number(hit[1])
+      const q = Number(hit[2])
+      const sm = (q - 1) * 3 + 1
+      return [fmtYMD(y, sm, 1), fmtYMD(y, sm + 2, lastDayOf(y, sm + 2))]
+   }
+   return null
+}
+
+/** 分组行下钻：时间维度按 label 推导区间，其他维度按 key 追加对应筛选 */
+function handleOutputDrill(row) {
+   const g = outputGroupBy.value
+   if (g === 'none') return
+   const extra = {}
+   if (g === 'month' || g === 'quarter' || g === 'year') {
+      const r = outputLabelRange(g, row.label)
+      if (!r) { proxy.$modal.msgWarning('无法解析该分组的时间区间'); return }
+      extra.begin = r[0]
+      extra.end = r[1]
+   } else if (g === 'clientUnit') {
+      extra.clientUnit = row.key
+   } else if (g === 'leader') {
+      extra.leaderId = row.key
+   } else if (g === 'category') {
+      extra.projectCategoryId = row.key
+   }
+   outputDrill.title = '产值明细 — ' + (row.label || '')
+   outputDrill.pageNum = 1
+   outputDrill.rows = []
+   outputDrill.total = 0
+   outputDrill.drillParams = buildOutputParams(extra)
+   outputDrill.open = true
+   loadOutputDetail()
+}
+
+/** 加载产值明细（下钻弹窗分页） */
+function loadOutputDetail() {
+   outputDrill.loading = true
+   workloadOutputDetail({ pageNum: outputDrill.pageNum, pageSize: outputDrill.pageSize, ...outputDrill.drillParams }).then(res => {
+      outputDrill.rows = res.rows || []
+      outputDrill.total = Number(res.total) || 0
+   }).catch(() => { outputDrill.rows = [] }).finally(() => { outputDrill.loading = false })
+}
+
+/** 导出产值明细（按当前口径与筛选，不含分组维度限制） */
+function handleOutputExport() {
+   const params = buildOutputParams()
+   delete params.groupBy
+   delete params.pageNum
+   delete params.pageSize
+   proxy.download('/project/workload/outputExport', params, '产值明细_' + new Date().getTime() + '.xlsx')
+}
+
+/** 页签切换：首次进入产值统计时查询 */
+function handleViewTabChange(name) {
+   if (name === 'output') getOutputSummary()
+}
+
 loadColumns()
 refreshAll()
 // 全局工程编号回填：仅回填输入框，不自动查询（用户点「查询」才生效）
@@ -2559,5 +2884,25 @@ onActivated(() => {
   font-style: normal;
   font-weight: 400;
   color: #909399;
+}
+
+/* ===== 产值统计页签 ===== */
+.settlement-tabs :deep(.el-tabs__header) { margin-bottom: 12px; }
+.sum-metric-row { margin-bottom: 12px; }
+.sum-metric {
+   background: #f5f7fa;
+   border: 1px solid #ebeef5;
+   border-radius: 10px;
+   padding: 12px 16px;
+}
+.sum-metric-label { font-size: 12px; color: #909399; }
+.sum-metric-value { font-size: 20px; font-weight: 600; color: #303133; margin-top: 4px; }
+.sum-tip { font-size: 12px; color: #909399; margin-top: 8px; line-height: 1.7; }
+/* 日期区间控件固定宽度（EP 的 .el-input__wrapper 自带 flex-grow:1 且挂在控件根节点上，
+   作为 flex 行直接子元素会被拉伸吃满整行；只写 width 无效），必须 :deep() 命中。 */
+.search-bar-row :deep(.sum-range-picker) {
+   flex: 0 1 auto;
+   width: 480px;
+   min-width: 240px;
 }
 </style>

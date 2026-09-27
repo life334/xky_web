@@ -633,6 +633,7 @@ import { listUserOptions } from "@/api/system/user"
 import { paymentTypeText } from "@/utils/projStatus"
 import { categoryTreeselectFull } from "@/api/project/category"
 import WorkloadDialog from "@/components/WorkloadDialog"
+import { useRoute } from "vue-router"
 
 const { proxy } = getCurrentInstance()
 const { proj_payment_type } = useDict('proj_payment_type')
@@ -1347,6 +1348,21 @@ function handleSummaryExport() {
    delete params.pageNum
    delete params.pageSize
    proxy.download('/project/collection/paymentExport', params, '到账明细_' + new Date().getTime() + '.xlsx')
+}
+
+// ===== 首页驾驶舱下钻预置（到账统计 tab + 区间/筛选；参数名与 buildSummaryParams 对齐）=====
+const route = useRoute()
+const drillQuery = route.query || {}
+if (drillQuery.tab === 'summary') {
+   activeTab.value = 'summary'
+   if (drillQuery.beginDate && drillQuery.endDate) {
+      summaryQuick.value = 'custom'
+      summaryRange.value = [drillQuery.beginDate, drillQuery.endDate]
+   }
+   if (drillQuery.clientUnit) summaryQuery.value.clientUnit = drillQuery.clientUnit
+   if (drillQuery.leaderId) summaryQuery.value.leaderId = Number(drillQuery.leaderId)
+   if (drillQuery.projectCategoryId) summaryQuery.value.projectCategoryId = Number(drillQuery.projectCategoryId)
+   getSummary()
 }
 
 getList()
