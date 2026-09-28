@@ -18,11 +18,12 @@ export function collectionClientList(query) {
   })
 }
 
-// 统计卡
-export function collectionStats() {
+// 统计卡（口径随列表筛选联动，入参即列表查询条件 + 到账窗口 curBegin/curEnd/prevBegin/prevEnd）
+export function collectionStats(query) {
   return request({
     url: '/project/collection/stats',
-    method: 'get'
+    method: 'get',
+    params: query
   })
 }
 

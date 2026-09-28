@@ -19,10 +19,10 @@
                <div class="stat-body">
                   <div class="stat-icon" style="background: #f0f9eb; color: #67c23a"><el-icon><Wallet /></el-icon></div>
                   <div class="stat-info">
-                     <div class="stat-label">本月已回款</div>
-                     <div class="stat-value">{{ money(stats.monthReceived) }}</div>
+                     <div class="stat-label">{{ receivedLabel }}</div>
+                     <div class="stat-value">{{ money(stats.windowReceived) }}</div>
                      <div class="stat-sub">
-                        较上月
+                        较{{ receivedCompareLabel }}
                         <span :style="{ color: monthTrend >= 0 ? '#f56c6c' : '#67c23a' }">
                            {{ monthTrend >= 0 ? '↑' : '↓' }} {{ money(Math.abs(monthTrend)) }}
                         </span>
@@ -51,13 +51,22 @@
                   <div class="stat-icon" style="background: #fdf6ec; color: #e6a23c"><el-icon><Timer /></el-icon></div>
                   <div class="stat-info">
                      <div class="stat-label">待结算提醒</div>
-                     <div class="stat-value">{{ unsettledTotal || 0 }}</div>
+                     <div class="stat-value">{{ stats.unsettledCount || 0 }}</div>
                      <div class="stat-sub">已办结未录产值，应收无法计算</div>
                   </div>
                </div>
             </el-card>
          </el-col>
       </el-row>
+
+      <!-- 统计口径提示：卡片是否随下方筛选联动 -->
+      <div class="stat-scope-row">
+         <span class="stat-scope-text">{{ hasActiveFilter ? '统计范围：已按下方筛选条件统计' : '统计范围：全部（未设筛选条件）' }}</span>
+         <span v-if="hasActiveFilter" class="stat-scope-link" @click="resetQuery">清除筛选</span>
+         <el-tooltip placement="top" effect="light" :content="SCOPE_TIP">
+            <span class="scope-badge">?</span>
+         </el-tooltip>
+      </div>
 
       <!-- ========== 页签：待回款 / 待结算 ========== -->
       <el-tabs v-model="activeTab" class="collection-tabs" @tab-change="handleTabChange">
@@ -192,10 +201,11 @@
             </el-table>
 
             <!-- 客户视图 -->
-            <el-table v-else v-loading="loading" :data="clientList" stripe border v-hover-h-scroll @expand-change="handleClientExpand">
+            <el-table v-else class="client-table" :row-key="clientRowKey" v-loading="loading" :data="clientList" stripe border v-hover-h-scroll @expand-change="handleClientExpand">
                <el-table-column type="expand">
                   <template #default="scope">
-                     <el-table :data="scope.row.projectRows || []" size="small" border style="margin: 4px 24px" v-loading="scope.row.expanding">
+                     <div class="expand-caption">仅显示命中当前筛选条件的项目（共 {{ scope.row.projectCount }} 个）</div>
+                     <el-table :data="scope.row.projectRows || []" size="small" border style="margin: 4px 24px" v-loading="scope.row.expanding" empty-text="无符合条件的项目">
                         <el-table-column label="工程编号" align="center" prop="projectCode" min-width="110" />
                         <el-table-column label="项目名称" align="left" prop="projectName" min-width="150" :show-overflow-tooltip="true" />
                         <el-table-column label="办结时间" align="center" min-width="95">
@@ -228,7 +238,12 @@
                   </template>
                </el-table-column>
                <el-table-column label="客户全称" align="left" prop="clientUnit" min-width="200" :show-overflow-tooltip="true" />
-               <el-table-column label="项目数" align="center" prop="projectCount" min-width="80" />
+               <el-table-column label="项目数(命中/全部)" align="center" min-width="125">
+                  <template #default="scope">
+                     <span>{{ scope.row.projectCount }}</span>
+                     <span v-if="scope.row.totalCount != null" class="client-count-total"> / {{ scope.row.totalCount }}</span>
+                  </template>
+               </el-table-column>
                <el-table-column label="应收合计(元)" align="right" prop="receivable" min-width="130">
                   <template #default="scope">{{ money(scope.row.receivable) }}</template>
                </el-table-column>
@@ -764,12 +779,28 @@ const data = reactive({
 
 const { queryParams, unsettledQuery, payRules, logRules } = toRefs(data)
 
-/** 本月回款环比 */
+/** 当前窗口到账 环比 对比窗口（未填到账时间时=本月 vs 上月） */
 const monthTrend = computed(() => {
-   const m = Number(stats.value.monthReceived || 0)
-   const l = Number(stats.value.lastMonthReceived || 0)
-   return m - l
+   return Number(stats.value.windowReceived || 0) - Number(stats.value.windowPrevReceived || 0)
 })
+
+/** 卡片②口径文案：填了「到账时间」区间 → 区间模式 */
+const receivedLabel = computed(() => (payTimeRange.value && payTimeRange.value.length === 2) ? '区间已回款' : '本月已回款')
+const receivedCompareLabel = computed(() => (payTimeRange.value && payTimeRange.value.length === 2) ? '上一区间' : '上月')
+
+/** 是否有生效筛选（决定统计范围提示与「清除筛选」入口） */
+const hasActiveFilter = computed(() => {
+   const q = queryParams.value
+   return !!(q.keyword || q.projectName || q.clientUnit || q.collectStatus || q.leaderId
+      || q.ageBegin != null || q.ageEnd != null
+      || (closeTimeRange.value && closeTimeRange.value.length === 2)
+      || (payTimeRange.value && payTimeRange.value.length === 2))
+})
+
+/** 统计口径说明（卡片②口径与其他三张不同，必须显式告知） */
+const SCOPE_TIP = '① 待回款 / ③ 超账期 / ④ 待结算：随全部筛选条件联动。'
+   + '② 到账额：只随「委托单位 / 负责人 / 关键词 / 完成时间」联动（账龄、催收状态不参与）；'
+   + '未填「到账时间」时统计本月并与上月对比，填了则统计该区间并与前一等长区间对比。' 
 
 const overdueCount = computed(() => stats.value.overdueCount || 0)
 
@@ -853,7 +884,8 @@ function getList() {
          loading.value = false
       }).catch(() => { loading.value = false })
    } else {
-      collectionClientList({ ...buildParams(), projectName: undefined }).then(res => {
+      clientListVersion++   // 新一批数据 ⇒ 旧展开键失效，避免残留展开行显示未加载的空面板
+      collectionClientList(buildParams()).then(res => {
          clientList.value = res.rows
          total.value = res.total
          loading.value = false
@@ -881,10 +913,16 @@ function buildParams() {
    return params
 }
 
-/** 查询统计卡 */
+/** 查询统计卡：口径随筛选联动（入参 = 列表筛选条件 + 到账窗口） */
 function getStats() {
    statsLoading.value = true
-   collectionStats().then(res => { stats.value = res.data || {} }).finally(() => { statsLoading.value = false })
+   const params = { ...buildParams(), ...receivedWindow() }
+   delete params.pageNum
+   delete params.pageSize
+   collectionStats(params)
+      .then(res => { stats.value = res.data || {} })
+      .catch(() => { /* 统计失败不阻塞列表 */ })
+      .finally(() => { statsLoading.value = false })
 }
 
 /** 查询待结算列表 */
@@ -902,8 +940,10 @@ function getUnsettledList() {
    collectionUnsettledList(params).then(res => {
       unsettledList.value = res.rows
       unsettledTotal.value = res.total
-      unsettledLoading.value = false
-   }).catch(() => { unsettledLoading.value = false })
+   }).catch(() => {
+      unsettledList.value = []
+      unsettledTotal.value = 0
+   }).finally(() => { unsettledLoading.value = false })
 }
 
 /** 加载负责人下拉（全量用户，仅首次） */
@@ -915,9 +955,10 @@ function loadUserOptions() {
    }).catch(() => { /* 下拉加载失败不影响主流程 */ }).finally(() => { userLoading.value = false })
 }
 
-/** 待回款搜索 */
+/** 待回款搜索（列表 + 统计卡同步刷新） */
 function handleQuery() {
    queryParams.value.pageNum = 1
+   getStats()
    getList()
 }
 
@@ -934,6 +975,7 @@ function resetQuery() {
    q.pageNum = 1
    closeTimeRange.value = []
    payTimeRange.value = []
+   getStats()
    getList()
 }
 
@@ -984,15 +1026,34 @@ function handleTabChange(name) {
    }
 }
 
-/** 客户视图展开：懒加载该客户欠款项目明细 */
+/** 列表版本号：每次重新查询自增，用于让上一批的展开键整体失效（见 clientRowKey） */
+let clientListVersion = 0
+
+/**
+  * 客户视图行键（EP 必需，不能省）
+  * ⚠️ EP 的 table 对 data 是 `watch(..., { deep: true })`，行内任何字段变更（如懒加载写
+  *    row.expanding / row.projectRows）都会触发 setData → updateExpandRows()；而**没有 row-key
+  *    时该函数直接把 expandRows 清空**（element-plus/.../store/expand.mjs 的 else 分支）
+  *    ⇒ 表现为「第一次点击只发请求、面板不展开，必须再点一次」。
+  * 带上 clientListVersion ⇒ 同一次查询内键稳定（行内写入不再清空展开态），
+  * 重新查询后键全变 ⇒ 展开态整体收起（与无 row-key 时代的旧行为一致）。
+  */
+function clientRowKey(row) {
+   return `${clientListVersion}::${row.clientUnit || '__NO_CLIENT__'}`
+}
+
+/**
+  * 客户视图展开：懒加载「命中当前筛选条件」的该客户项目明细
+  * ⚠️ 必须带上全部筛选条件（clientUnit 强制覆盖为该行客户），否则父行数字与子表条数不一致
+  */
 function handleClientExpand(row, expanded) {
-   if (expanded.length > 0 && !row.projectRows) {
-      row.expanding = true
-      collectionList({ pageNum: 1, pageSize: 999, clientUnit: row.clientUnit }).then(res => {
-         row.projectRows = res.rows
-         row.expanding = false
-      }).catch(() => { row.expanding = false })
-   }
+   if (expanded.length === 0) return
+   if (row.projectRows || row.expanding) return   // 已加载 / 加载中 ⇒ 不重复请求（防连点打两次接口）
+   row.expanding = true
+   const params = { ...buildParams(), pageNum: 1, pageSize: 999, clientUnit: row.clientUnit }
+   collectionList(params).then(res => {
+      row.projectRows = res.rows || []
+   }).catch(() => { row.projectRows = [] }).finally(() => { row.expanding = false })
 }
 
 /** 录入工作量（待结算列表） */
@@ -1035,21 +1096,72 @@ function currentMonthRange() {
    }
 }
 
+/** 日期工具：YYYY-MM-DD 字符串 ↔ 本地 Date */
+function fmtD(d) {
+   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function parseD(s) {
+   return new Date(`${s}T00:00:00`)
+}
+function shiftD(s, days) {
+   const d = parseD(s)
+   d.setDate(d.getDate() + days)
+   return fmtD(d)
+}
+
+/**
+ * 到账统计窗口
+ * 未填「到账时间」→ 当前月 vs 上月；填了 → 该区间 vs 紧邻其前的等长区间
+ */
+function receivedWindow() {
+   const r = payTimeRange.value
+   if (r && r.length === 2) {
+      const days = Math.round((parseD(r[1]) - parseD(r[0])) / 86400000) + 1
+      const prevEnd = shiftD(r[0], -1)
+      const prevBegin = shiftD(prevEnd, -(days - 1))
+      return { curBegin: r[0], curEnd: r[1], prevBegin, prevEnd }
+   }
+   const m = currentMonthRange()
+   const prevEnd = shiftD(m.begin, -1)
+   const prevBegin = `${parseD(prevEnd).getFullYear()}-${String(parseD(prevEnd).getMonth() + 1).padStart(2, '0')}-01`
+   return { curBegin: m.begin, curEnd: m.end, prevBegin, prevEnd }
+}
+
+/** 到账窗口的 [begin, end]（供到账明细下钻，receivedDetail 用 begin/end 参数） */
+function receivedWindowRange() {
+   const w = receivedWindow()
+   return { begin: w.curBegin, end: w.curEnd }
+}
+
 /** 加载统计卡明细（按卡片类型路由到对应接口） */
 function loadCardDetail() {
    cardDialog.loading = true
    const base = { pageNum: cardDialog.pageNum, pageSize: cardDialog.pageSize }
+   // 与卡片完全同一套筛选条件，保证「卡片数字 = 明细条数」
+   const filters = buildParams()
+   delete filters.pageNum
+   delete filters.pageSize
    let req
    if (cardDialog.type === 'received') {
-      req = collectionReceivedDetail({ ...base, ...currentMonthRange() })
+      // 卡片②只跟随项目级子集（与后端 selectReceivedStats 同口径）
+      req = collectionReceivedDetail({
+         ...base,
+         keyword: filters.keyword,
+         clientUnit: filters.clientUnit,
+         leaderId: filters.leaderId,
+         closeTimeBegin: filters.closeTimeBegin,
+         closeTimeEnd: filters.closeTimeEnd,
+         ...receivedWindowRange()
+      })
    } else if (cardDialog.type === 'overdue') {
-      req = collectionList({ ...base, ageBegin: 6 })
+      // 超账期=账龄≥6月，与用户账龄筛选取交集
+      req = collectionList({ ...base, ...filters, ageBegin: Math.max(6, Number(filters.ageBegin || 0)) })
    } else if (cardDialog.type === 'unsettled') {
-      req = collectionUnsettledList(base)
+      req = collectionUnsettledList({ ...base, ...filters })
    } else if (cardDialog.type === 'summaryDrill') {
       req = collectionReceivedDetail({ ...base, ...cardDialog.drillParams })
    } else {
-      req = collectionList(base)
+      req = collectionList({ ...base, ...filters })
    }
    req.then(res => {
       cardDialog.rows = res.rows || []
@@ -1380,7 +1492,55 @@ onActivated(() => {
 </script>
 
 <style scoped>
-.stat-row { margin-bottom: 12px; }
+.stat-row { margin-bottom: 4px; }
+
+.stat-scope-row {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   margin: 0 0 12px;
+   font-size: 12px;
+   color: #909399;
+}
+.stat-scope-link { color: #409eff; cursor: pointer; }
+.scope-badge {
+   display: inline-flex;
+   width: 14px; height: 14px;
+   border: 1px solid #c0c4cc;
+   border-radius: 50%;
+   color: #909399;
+   font-size: 10px;
+   align-items: center; justify-content: center;
+   cursor: help;
+}
+.client-count-total { color: #909399; }
+.expand-caption { margin: 6px 24px 0; font-size: 12px; color: #909399; }
+
+/* 客户视图展开列：EP 默认只有 ~12px 的小三角可点（稍偏就落在 padding 上没反应）
+   ⇒ 去掉单元格内边距，把可点热区撑满整格，并加大图标、hover 高亮给出可视反馈 */
+.client-table :deep(td.el-table__expand-column) { padding: 0; }
+.client-table :deep(td.el-table__expand-column .cell) {
+   padding: 0;
+   height: 100%;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+}
+.client-table :deep(.el-table__expand-icon) {
+   width: 100%;
+   height: 100%;
+   min-height: 40px;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   font-size: 16px;
+   border-radius: 4px;
+   transition: color 0.2s, background-color 0.2s;
+}
+.client-table :deep(.el-table__expand-icon:hover) {
+   color: #409eff;
+   background-color: rgba(64, 158, 255, 0.1);
+}
 .stat-card :deep(.el-card__body) { padding: 16px; }
 .stat-card-clickable { cursor: pointer; transition: box-shadow 0.2s; }
 .stat-body { display: flex; align-items: center; gap: 14px; }
