@@ -76,7 +76,7 @@
             <div class="metric-card metric-material">
               <div class="metric-label">成果资料</div>
               <div class="big-num">{{ project.materialCount }}</div>
-              <div class="sub-text">已提交 {{ project.materialSubmitted }} 项</div>
+              <div class="sub-text">已领取 {{ project.materialReceived }} 项</div>
             </div>
           </div>
         </el-tab-pane>
@@ -195,13 +195,16 @@
         <el-tab-pane :label="`资料 (${materials.length})`" name="materials" lazy>
           <div v-if="materialLoading" class="tab-loading"><el-icon class="is-loading"><Loading /></el-icon></div>
           <div v-else class="material-list">
-            <div v-for="m in materials" :key="m.id" class="material-row" :class="{ pending: m.submitStatus !== 'submitted' }">
+            <div v-for="m in materials" :key="m.id" class="material-row" :class="{ pending: m.status === 'pending' }">
               <el-icon class="file-icon"><Document /></el-icon>
               <div class="mat-main">
                 <div class="mat-type">{{ materialResultTypeText(m.resultType) || m.materialName || '-' }}</div>
                 <div class="mat-meta">提交时间：{{ m.submitTime ? parseTime(m.submitTime, '{y}-{m}-{d}') : '—' }} <span v-if="m.receiverName">| 领取人：{{ m.receiverName }}</span></div>
               </div>
-              <dict-tag :options="proj_material_submit_status" :value="m.submitStatus" />
+              <div class="mat-tags">
+                <dict-tag :options="proj_material_status" :value="m.status" />
+                <span v-if="m.archiveFlag === 'Y'" class="arch-tag">已归档</span>
+              </div>
             </div>
           </div>
         </el-tab-pane>
@@ -231,8 +234,9 @@ const props = defineProps({
 const emit = defineEmits(['update:visible'])
 
 // received_status 已废弃（到账判定统一看 payTime），不再加载该字典
-const { proj_material_submit_status, proj_payment_type } = useDict(
-  'proj_material_submit_status', 'proj_payment_type'
+// 资料状态 = 领取介质 4 态派生列（后端 materialStatusExpr）；归档为独立维度 archiveFlag
+const { proj_material_status, proj_payment_type } = useDict(
+  'proj_material_status', 'proj_payment_type'
 )
 
 const localVisible = computed({
@@ -332,7 +336,7 @@ async function loadOverview() {
     internalOutput: 0,
     externalOutput: 0,
     materialCount: 0,
-    materialSubmitted: 0
+    materialReceived: 0
   }
 
   await Promise.all([
@@ -389,7 +393,7 @@ async function loadMaterialStats() {
     const response = await listMaterial({ projectId: props.projectId, pageNum: 1, pageSize: 100 })
     const materialData = response.rows || []
     project.value.materialCount = materialData.length
-    project.value.materialSubmitted = materialData.filter(m => m.submitStatus === 'submitted').length
+    project.value.materialReceived = materialData.filter(m => m.status !== 'pending').length
   } catch (e) {}
 }
 
@@ -999,6 +1003,21 @@ function handleExport() {
 }
 .material-row.pending {
   border-left: 3px solid #e6a23c;
+}
+.material-row .mat-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.material-row .arch-tag {
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 18px;
+  border-radius: 3px;
+  color: #b88230;
+  background: #fdf6ec;
+  border: 1px solid #f5dab1;
 }
 .material-row .file-icon {
   font-size: 18px;

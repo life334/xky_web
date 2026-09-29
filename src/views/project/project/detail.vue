@@ -409,7 +409,9 @@ const materialFallbackColumns = [
   { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
   { key: 'resultType', label: '成果类型', type: 'dict', group: 'business', prop: 'resultType', defaultVisible: true },
   { key: 'archiveDir', label: '存档目录', type: 'text', group: 'business', prop: 'archiveDir', defaultVisible: true },
-  { key: 'status', label: '状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
+  { key: 'status', label: '资料状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
+  { key: 'receiveTime', label: '领取时间', type: 'date', group: 'business', prop: 'receiveTime', defaultVisible: true },
+  { key: 'archiveFlag', label: '归档状态', type: 'dict', group: 'business', prop: 'archiveFlag', defaultVisible: true },
   { key: 'remark', label: '备注', type: 'text', group: 'business', prop: 'remark', defaultVisible: true },
   { key: 'guarantorFlag', label: '是否担保', type: 'dict', group: 'business', prop: 'guarantorFlag', defaultVisible: false },
   { key: 'guarantorId', label: '担保人', type: 'user', group: 'business', prop: 'guarantorId', defaultVisible: false },
@@ -443,7 +445,7 @@ async function loadMaterialColumns() {
 }
 function materialColWidth(col) {
   if (col.type === 'date') return 110
-  if (col.type === 'dict') return 100
+  if (col.type === 'dict') return 120
   if (col.type === 'user') return 110
   return 130
 }

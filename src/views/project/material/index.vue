@@ -37,10 +37,17 @@
                      <el-option v-for="dict in proj_material_result_type" :key="dict.value" :label="dict.label" :value="dict.value" />
                   </el-select>
                </div>
+               <div class="filter-item" v-if="false">
+                  <div class="filter-item-label">资料状态</div>
+                  <el-select v-model="queryParams.status" clearable placeholder="全部状态" style="width:100%" @change="handleQuery">
+                     <el-option v-for="dict in proj_material_status" :key="dict.value" :label="dict.label" :value="dict.value" />
+                  </el-select>
+               </div>
                <div class="filter-item">
-                  <div class="filter-item-label">提交状态</div>
-                  <el-select v-model="queryParams.submitStatus" clearable placeholder="全部状态" style="width:100%" @change="handleQuery">
-                     <el-option v-for="dict in proj_material_submit_status" :key="dict.value" :label="dict.label" :value="dict.value" />
+                  <div class="filter-item-label">归档状态</div>
+                  <el-select v-model="queryParams.archiveFlag" clearable placeholder="全部" style="width:100%" @change="handleQuery">
+                     <el-option label="已归档" value="Y" />
+                     <el-option label="未归档" value="N" />
                   </el-select>
                </div>
                <div class="filter-item">
@@ -219,7 +226,7 @@
          </el-table-column>
          <el-table-column label="操作" align="center" min-width="160" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
-               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:material:edit']">领取/修改</el-button>
+               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:material:edit']">登记 / 领取</el-button>
                <el-button link type="info" size="small" @click="handleFlow(scope.row)">历史记录</el-button>
             </template>
          </el-table-column>
@@ -237,18 +244,19 @@
          append-to-body
          draggable
       >
-         <!-- 顶部分割线：与标题栏区分 -->
-         <div class="dialog-top-divider"></div>
-         <!-- 资料属性（可编辑） -->
+         <!-- 状态条：当前资料状态 + 派生说明 -->
+         <div class="material-status-bar">
+            <span class="msb-label">当前状态</span>
+            <el-tag :type="currentStatusMeta.type" effect="dark" size="small">{{ currentStatusMeta.text }}</el-tag>
+            <span class="msb-tip">{{ currentStatusTip }}</span>
+         </div>
+
          <el-form ref="materialRef" :model="form" :rules="rules" label-width="90px">
+            <!-- ① 资料信息（档案管理员登记：成果类型 / 存档目录 / 登记备注） -->
+            <div class="form-group-title">资料信息</div>
             <el-row :gutter="20">
-               <el-col :span="12">
-                  <el-form-item label="交付时间" prop="submitTime">
-                     <el-date-picker v-model="form.submitTime" type="datetime" placeholder="选择交付时间" value-format="YYYY-MM-DD HH:mm:ss" style="width: 100%" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="12">
-                  <el-form-item label="成果类型" prop="resultType">
+               <el-col :span="8">
+                  <el-form-item label="成果类型" prop="resultType" :rules="[{ required: true, message: '请选择成果类型', trigger: 'change' }]">
                      <el-select v-model="form.resultType" placeholder="请选择成果类型" clearable filterable style="width: 100%">
                         <el-option
                            v-for="dict in proj_material_result_type"
@@ -259,35 +267,7 @@
                      </el-select>
                   </el-form-item>
                </el-col>
-            </el-row>
-            <el-row :gutter="20">
-               <el-col :span="12">
-                  <el-form-item label="联系人" prop="contactName">
-                     <el-input v-model="form.contactName" placeholder="请输入联系人" maxlength="50" />
-                  </el-form-item>
-               </el-col>
-               <el-col :span="12">
-                  <el-form-item label="联系电话" prop="contactPhone">
-                     <el-input v-model="form.contactPhone" placeholder="请输入联系电话" maxlength="30" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <el-row :gutter="20">
-               <el-col :span="12">
-                  <el-form-item label="是否担保">
-                     <el-checkbox v-model="form.guarantorFlag" true-value="Y" false-value="N">需要担保人</el-checkbox>
-                  </el-form-item>
-               </el-col>
-               <el-col :span="12">
-                  <el-form-item v-if="form.guarantorFlag === 'Y'" label="担保人" prop="guarantorId" :rules="[{ required: true, message: '请选择担保人', trigger: 'change' }]">
-                     <el-select v-model="form.guarantorId" filterable clearable placeholder="请选择担保人" style="width: 100%" :loading="optionsLoading">
-                        <el-option v-for="u in userOptions" :key="u.userId" :label="u.nickName" :value="u.userId" />
-                     </el-select>
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <el-row :gutter="20">
-               <el-col :span="24">
+               <el-col :span="16">
                   <el-form-item label="存档目录" prop="archiveDir">
                      <el-input v-model="form.archiveDir" placeholder="请输入存档目录" maxlength="500" />
                   </el-form-item>
@@ -295,18 +275,70 @@
             </el-row>
             <el-row :gutter="20">
                <el-col :span="24">
-                  <el-form-item label="档案室归档">
-                     <el-checkbox v-model="form.archiveFlag" true-value="Y" false-value="N">已档案室归档</el-checkbox>
+                  <el-form-item label="登记备注" prop="remark">
+                     <el-input v-model="form.remark" type="textarea" placeholder="资料登记说明（长期保留，不随领取覆盖）" maxlength="500" :rows="2" />
                   </el-form-item>
                </el-col>
             </el-row>
-            <el-row :gutter="20">
-               <el-col :span="24">
-                  <el-form-item label="备注" prop="remark">
-                     <el-input v-model="form.remark" type="textarea" placeholder="请输入备注" maxlength="500" :rows="3" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
+
+            <!-- ②③ 登记完成后出现：领取信息 + 归档 -->
+            <template v-if="isRegistered">
+               <div class="form-group-title">领取信息<span class="form-group-sub">每次领取都会追加一条历史记录</span></div>
+               <el-row :gutter="20">
+                  <el-col :span="12">
+                     <el-form-item label="联系人" prop="contactName">
+                        <el-input v-model="form.contactName" placeholder="请输入联系人" maxlength="50" />
+                     </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                     <el-form-item label="联系电话" prop="contactPhone">
+                        <el-input v-model="form.contactPhone" placeholder="请输入联系电话" maxlength="30" />
+                     </el-form-item>
+                  </el-col>
+               </el-row>
+               <el-row :gutter="20">
+                  <el-col :span="12">
+                     <el-form-item label="是否担保">
+                        <el-checkbox v-model="form.guarantorFlag" true-value="Y" false-value="N" @change="onGuarantorFlagChange">需要担保人</el-checkbox>
+                     </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                     <el-form-item v-if="form.guarantorFlag === 'Y'" label="担保人" prop="guarantorName" :rules="[{ required: true, message: '请输入担保人姓名', trigger: 'blur' }]">
+                        <el-input v-model="form.guarantorName" placeholder="请输入担保人姓名（手动输入）" maxlength="50" />
+                     </el-form-item>
+                  </el-col>
+               </el-row>
+               <el-row :gutter="20">
+                  <el-col :span="12">
+                     <el-form-item label="领取类型" required>
+                        <el-select v-model="form.pickupType" placeholder="请选择领取类型" clearable style="width: 100%">
+                           <el-option
+                              v-for="dict in proj_material_pickup_type"
+                              :key="dict.value"
+                              :label="dict.label"
+                              :value="dict.value"
+                           />
+                        </el-select>
+                     </el-form-item>
+                  </el-col>
+               </el-row>
+               <el-row :gutter="20">
+                  <el-col :span="24">
+                     <el-form-item label="领取备注" prop="borrowRemark">
+                        <el-input v-model="form.borrowRemark" placeholder="本次领取说明（追加到领取历史，不覆盖登记备注）" maxlength="500" />
+                     </el-form-item>
+                  </el-col>
+               </el-row>
+
+               <div class="form-group-title">归档</div>
+               <el-row :gutter="20">
+                  <el-col :span="24">
+                     <el-form-item label="档案室归档">
+                        <el-checkbox v-model="form.archiveFlag" true-value="Y" false-value="N">已档案室归档</el-checkbox>
+                     </el-form-item>
+                  </el-col>
+               </el-row>
+            </template>
          </el-form>
          <!-- 领取历史记录（内嵌时间轴） -->
          <div class="flow-history-block">
@@ -328,6 +360,7 @@
                               <span v-if="item.snapshotObj.contactName" class="flow-snap-item">联系人：{{ item.snapshotObj.contactName }}</span>
                               <span v-if="item.snapshotObj.contactPhone" class="flow-snap-item">电话：{{ item.snapshotObj.contactPhone }}</span>
                               <span v-if="item.snapshotObj.resultType" class="flow-snap-item">成果类型：{{ resultTypeLabel(item.snapshotObj.resultType) }}</span>
+                              <span v-if="item.pickupType" class="flow-snap-item">领取类型：{{ pickupTypeLabel(item.pickupType) }}</span>
                            </div>
                            <p v-if="item.remark" class="flow-remark">备注：{{ item.remark }}</p>
                         </el-card>
@@ -339,7 +372,8 @@
          </div>
          <template #footer>
             <div class="dialog-footer">
-               <el-button type="primary" @click="submitForm" :loading="submitLoading">确认领取</el-button>
+               <el-button :type="isRegistered ? '' : 'primary'" @click="submitRegister" :loading="submitLoading">保存登记</el-button>
+               <el-button v-if="isRegistered" type="primary" @click="submitForm" :loading="submitLoading">确认领取</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
          </template>
@@ -360,6 +394,7 @@
                      <span v-if="item.snapshotObj.contactName" class="flow-snap-item">联系人：{{ item.snapshotObj.contactName }}</span>
                      <span v-if="item.snapshotObj.contactPhone" class="flow-snap-item">电话：{{ item.snapshotObj.contactPhone }}</span>
                      <span v-if="item.snapshotObj.resultType" class="flow-snap-item">成果类型：{{ resultTypeLabel(item.snapshotObj.resultType) }}</span>
+                     <span v-if="item.pickupType" class="flow-snap-item">领取类型：{{ pickupTypeLabel(item.pickupType) }}</span>
                   </div>
                   <p v-if="item.remark" class="flow-remark">备注：{{ item.remark }}</p>
                </el-card>
@@ -415,10 +450,9 @@
 </template>
 
 <script setup name="Material">
-import { listMaterial, getMaterial, delMaterial, borrowMaterial, getFlowList, getMaterialStatusCounts, getMaterialColumns, checkPayment, toggleArchive } from "@/api/project/material"
+import { listMaterial, getMaterial, delMaterial, updateMaterial, borrowMaterial, getFlowList, getMaterialStatusCounts, getMaterialColumns, checkPayment, toggleArchive } from "@/api/project/material"
 import { getSettlementDetail, getSettlementOverview } from "@/api/project/settlement"
 import { listProject } from "@/api/project/project"
-import { listUserOptions } from "@/api/system/user"
 import { listContract } from "@/api/project/contract"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
 import { invoiceStatusText, invoiceStatusTagType } from "@/utils/projStatus"
@@ -429,7 +463,7 @@ const { proxy } = getCurrentInstance()
 const searchMemory = useSearchMemoryStore()
 
 // 字典
-const { proj_material_result_type, proj_material_status, proj_material_submit_status } = useDict("proj_material_result_type", "proj_material_status", "proj_material_submit_status")
+const { proj_material_result_type, proj_material_status, proj_material_pickup_type } = useDict("proj_material_result_type", "proj_material_status", "proj_material_pickup_type")
 // 字典：项目来源（manual=手动录入 / import=Excel 导入）；字典未部署时用内置项兜底，避免下拉为空
 const { proj_project_source } = useDict("proj_project_source")
 const sourceOptions = computed(() => {
@@ -464,9 +498,8 @@ const FALLBACK_COLUMNS = [
   { key: 'status', label: '资料状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
   { key: 'receiveTime', label: '领取时间', type: 'date', group: 'business', prop: 'receiveTime', defaultVisible: true },
   { key: 'archiveFlag', label: '归档状态', type: 'dict', group: 'business', prop: 'archiveFlag', defaultVisible: true },
-  { key: 'submitStatus', label: '提交状态', type: 'dict', group: 'business', prop: 'submitStatus', defaultVisible: false },
   { key: 'guarantorFlag', label: '是否担保', type: 'dict', group: 'business', prop: 'guarantorFlag', defaultVisible: false },
-  { key: 'guarantorId', label: '担保人', type: 'user', group: 'business', prop: 'guarantorId', defaultVisible: false },
+  { key: 'guarantorName', label: '担保人', type: 'text', group: 'business', prop: 'guarantorName', defaultVisible: false },
   { key: 'remark', label: '备注', type: 'text', group: 'business', prop: 'remark', defaultVisible: true },
   { key: 'id', label: 'ID', type: 'number', group: 'system', prop: 'id', defaultVisible: false },
   { key: 'createBy', label: '创建人', type: 'text', group: 'system', prop: 'createBy', defaultVisible: false },
@@ -523,17 +556,15 @@ function colWidth(col) {
 function dictOptions(key) {
   if (key === 'resultType') return proj_material_result_type.value
   if (key === 'status') return proj_material_status.value
-  if (key === 'submitStatus') return proj_material_submit_status.value
+  if (key === 'pickupType') return proj_material_pickup_type.value
   if (key === 'guarantorFlag') return [{ value: 'Y', label: '需要' }, { value: 'N', label: '不需要' }]
   if (key === 'archiveFlag') return [{ value: 'Y', label: '已归档' }, { value: 'N', label: '未归档' }]
   return []
 }
 
-/** 用户ID → 昵称（担保人列显示） */
-function userNick(userId) {
-  if (!userId) return ''
-  const u = userOptions.value.find(u => u.userId === userId)
-  return u ? u.nickName : userId
+/** 列显隐面板中 user 类型列的兜底显示（当前已无 user 列，保留分支避免模板失配） */
+function userNick(val) {
+  return val == null ? '' : val
 }
 
 const title = ref("")
@@ -542,7 +573,6 @@ const single = ref(true)
 const multiple = ref(true)
 const ids = ref([])
 const projectOptions = ref([])
-const userOptions = ref([])
 const optionsLoading = ref(false)    // 下拉选项加载中
 const submitLoading = ref(false)     // 表单提交中（防重复提交）
 
@@ -575,7 +605,7 @@ const data = reactive({
     projectLocation: undefined,
     resultType: undefined,
     status: undefined,
-    submitStatus: undefined,
+    archiveFlag: undefined,
     contractId: undefined,
     dataSource: undefined,
     closeDateBegin: undefined,
@@ -589,9 +619,9 @@ const { queryParams, form, rules } = toRefs(data)
 /** 加载下拉选项 */
 function loadOptions() {
   optionsLoading.value = true
-  const p1 = listProject({ pageNum: 1, pageSize: 999 }).then(r => { projectOptions.value = r.rows || [] })
-  const p2 = listUserOptions({ pageNum: 1, pageSize: 1000 }).then(r => { userOptions.value = r.rows || [] })
-  Promise.all([p1, p2]).finally(() => { optionsLoading.value = false })
+  listProject({ pageNum: 1, pageSize: 999 })
+    .then(r => { projectOptions.value = r.rows || [] })
+    .finally(() => { optionsLoading.value = false })
 }
 
 /** 查询 */
@@ -613,8 +643,8 @@ function reset() {
     id: undefined, projectId: undefined, submitTime: undefined,
     contactName: undefined, contactPhone: undefined,
     resultType: undefined, archiveDir: undefined, remark: undefined,
-    guarantorFlag: 'N', guarantorId: undefined,
-    archiveFlag: 'N'
+    guarantorFlag: 'N', guarantorName: undefined, borrowRemark: undefined,
+    pickupType: undefined, archiveFlag: 'N'
   }
   proxy.resetForm("materialRef")
 }
@@ -628,7 +658,7 @@ function resetQuery() {
   queryParams.value.projectLocation = undefined
   queryParams.value.resultType = undefined
   queryParams.value.status = undefined
-  queryParams.value.submitStatus = undefined
+  queryParams.value.archiveFlag = undefined
   queryParams.value.contractId = undefined
   queryParams.value.dataSource = undefined
   queryParams.value.closeDateBegin = undefined
@@ -638,7 +668,7 @@ function resetQuery() {
 
 /** 状态胶囊 computed（字典驱动） */
 const statusCapsules = computed(() => {
-  const dict = (proj_material_status.value || []).filter(d => d.value !== 'returned')
+  const dict = proj_material_status.value || []
   const counts = statusCounts.value || {}
   const total = Object.values(counts).reduce((sum, c) => sum + (Number(c) || 0), 0)
   const items = [{ label: '全部', value: undefined, count: total }]
@@ -647,6 +677,40 @@ const statusCapsules = computed(() => {
   })
   return items
 })
+
+/** 是否已完成资料登记（登记后填写了成果类型） */
+const isRegistered = computed(() => !!form.value.resultType)
+
+/** 当前资料状态（打开时取派生列；未登记按未领取展示） */
+const currentStatusMeta = computed(() => {
+  const st = form.value.resultType ? form.value.status : 'pending'
+  if (st === 'received_both') return { text: '已领取(电子+纸质)', type: 'success' }
+  if (st === 'received_paper') return { text: '已领取(纸质版)', type: 'primary' }
+  if (st === 'received_electronic') return { text: '已领取(电子版)', type: 'primary' }
+  return { text: '未领取', type: 'info' }
+})
+
+/** 状态说明（指导下一步操作） */
+const currentStatusTip = computed(() => {
+  if (!form.value.resultType) return '请先登记成果类型与存档目录'
+  const archivedTip = form.value.archiveFlag === 'Y' ? '；已档案室归档' : ''
+  if (form.value.status && form.value.status !== 'pending') {
+    return '已有领取记录；再次领取会追加一条历史记录' + archivedTip
+  }
+  return '已完成登记，尚未领取' + archivedTip
+})
+
+/** 领取类型字典翻译 */
+function pickupTypeLabel(val) {
+  if (!val) return ''
+  const d = (proj_material_pickup_type.value || []).find(x => x.value === val)
+  return d ? d.label : val
+}
+
+/** 取消担保时清掉担保人姓名 */
+function onGuarantorFlagChange(val) {
+  if (val !== 'Y') form.value.guarantorName = undefined
+}
 
 /** 加载状态统计 */
 function loadStatusCounts() {
@@ -750,10 +814,10 @@ function handleUpdate(row) {
       if (!form.value.contactName) form.value.contactName = proj.contactName
       if (!form.value.contactPhone) form.value.contactPhone = proj.contactPhone
     }
-    // 交付时间即领取时间，打开编辑页自动刷新为当前时刻（含时分秒）
-    form.value.submitTime = proxy.parseTime(new Date(), '{y}-{m}-{d} {h}:{i}:{s}')
+    // 本次领取备注每次新填（不沿用登记备注）
+    form.value.borrowRemark = undefined
     open.value = true
-    title.value = "领取/修改资料"
+    title.value = isRegistered.value ? "资料领取 / 修改" : "资料登记"
     // 加载历史记录供编辑页内嵌时间轴展示
     loadFlowList(id)
   }).finally(() => {
@@ -762,6 +826,8 @@ function handleUpdate(row) {
 }
 
 function submitForm() {
+  // 领取类型必填（只在「确认领取」时校验，「保存登记」不受影响）
+  if (!form.value.pickupType) { proxy.$modal.msgWarning("请选择领取类型（电子版 / 纸质版 / 电子+纸质版）"); return }
   proxy.$refs["materialRef"].validate(valid => {
     if (!valid) return
     // 交付时间即领取时间，未填默认当前
@@ -784,6 +850,30 @@ function submitForm() {
   })
 }
 
+/** 保存资料登记（成果类型 / 存档目录 / 登记备注 / 归档标志；不产生领取记录） */
+function submitRegister() {
+  proxy.$refs["materialRef"].validate(valid => {
+    if (!valid) return
+    submitLoading.value = true
+    const payload = {
+      id: form.value.id,
+      projectId: form.value.projectId,
+      resultType: form.value.resultType,
+      archiveDir: form.value.archiveDir,
+      remark: form.value.remark,
+      guarantorFlag: form.value.guarantorFlag,
+      guarantorName: form.value.guarantorFlag === 'Y' ? form.value.guarantorName : null,
+      archiveFlag: form.value.archiveFlag
+    }
+    updateMaterial(payload).then(() => {
+      proxy.$modal.msgSuccess("登记保存成功")
+      open.value = false
+      getList()
+      loadStatusCounts()
+    }).finally(() => { submitLoading.value = false })
+  })
+}
+
 /** 执行领取保存：更新主表 + 追加历史记录 */
 function doBorrow() {
   submitLoading.value = true
@@ -791,6 +881,7 @@ function doBorrow() {
     proxy.$modal.msgSuccess("领取成功")
     open.value = false
     getList()
+    loadStatusCounts()
   }).finally(() => { submitLoading.value = false })
 }
 
@@ -1146,6 +1237,21 @@ loadStatusCounts()
   padding: 16px; text-align: center; color: #909399; font-size: 13px;
   background: #fff; border: 1px dashed #e4e7ed; border-radius: 6px;
 }
+
+/* ===== 资料登记 / 领取弹窗 ===== */
+.material-status-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 12px; margin-bottom: 14px;
+  background: #f5f7fa; border: 1px solid #e4e7ed; border-radius: 6px;
+}
+.msb-label { font-size: 13px; color: #909399; }
+.msb-tip { font-size: 12px; color: #909399; }
+.form-group-title {
+  font-size: 13px; font-weight: 600; color: #303133;
+  margin: 4px 0 12px; padding-left: 8px;
+  border-left: 3px solid #409eff; line-height: 16px;
+}
+.form-group-sub { font-size: 12px; font-weight: 400; color: #909399; margin-left: 8px; }
 
 /* 领取历史时间轴 */
 .flow-history-block {
