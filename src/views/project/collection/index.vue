@@ -332,7 +332,7 @@
             <el-table v-loading="unsettledLoading" :data="unsettledList" stripe border v-hover-h-scroll>
                <el-table-column label="工程编号" align="center" prop="projectCode" min-width="120" />
                <el-table-column label="项目名称" align="left" prop="projectName" min-width="180" :show-overflow-tooltip="true" />
-               <el-table-column label="工程项目" align="left" prop="engineeringProject" min-width="140" :show-overflow-tooltip="true" />
+               <el-table-column label="项目类别" align="left" prop="engineeringProject" min-width="140" :show-overflow-tooltip="true" />
                <el-table-column label="客户全称" align="left" prop="clientUnit" min-width="180" :show-overflow-tooltip="true" />
                <el-table-column label="办结时间" align="center" prop="closeTime" min-width="100">
                   <template #default="scope">{{ fmtDate(scope.row.closeTime) }}</template>
@@ -838,7 +838,7 @@ const CARD_COLUMNS = {
    unsettled: [
       { label: '工程编号', prop: 'projectCode', width: 140, align: 'center' },
       { label: '项目名称', prop: 'projectName', minWidth: 180, align: 'left', tip: true },
-      { label: '工程项目', prop: 'engineeringProject', minWidth: 150, align: 'left', tip: true },
+      { label: '项目类别', prop: 'engineeringProject', minWidth: 150, align: 'left', tip: true },
       { label: '客户全称', prop: 'clientUnit', minWidth: 180, align: 'left', tip: true },
       { label: '办结时间', prop: 'closeTime', width: 110, align: 'center', type: 'date' },
       { label: '已收金额(元)', prop: 'received', width: 125, align: 'right', type: 'money' }
@@ -1342,10 +1342,14 @@ function loadCategoryOptions() {
    if (categoryOptions.value.length > 0) return
    categoryLoading.value = true
    categoryTreeselectFull().then(res => {
+      // 只取叶子节点（小类）：项目只能挂小类，列出大类会选不到任何数据
       const flat = []
       const walk = nodes => (nodes || []).forEach(n => {
-         flat.push({ id: n.id, name: n.name || n.label })
-         if (n.children && n.children.length) walk(n.children)
+         if (n.children && n.children.length) {
+            walk(n.children)
+         } else {
+            flat.push({ id: n.id, name: n.name || n.label })
+         }
       })
       walk(res.data)
       categoryOptions.value = flat
@@ -1680,4 +1684,5 @@ onActivated(() => {
    width: 480px;
    min-width: 240px;
 }
+
 </style>

@@ -40,7 +40,6 @@
               <div class="metric-label">基础信息</div>
               <div class="metric-body">
                 <div class="row"><span>项目类别</span><b>{{ project.categoryName || '-' }}</b></div>
-                <div class="row"><span>工程项目</span><b>{{ project.engineeringProject || '-' }}</b></div>
                 <div class="row"><span>工程地点</span><b>{{ project.projectLocation || '-' }}</b></div>
               </div>
             </div>

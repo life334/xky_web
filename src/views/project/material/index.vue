@@ -44,16 +44,20 @@
                   </el-select>
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">交付时间</div>
-                  <el-date-picker v-model="submitTimeRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onSubmitTimeChange" />
+                  <div class="filter-item-label">合同</div>
+                  <el-select v-model="queryParams.contractId" filterable remote reserve-keyword clearable placeholder="输入合同编号/名称/委托单位搜索" no-data-text="无匹配合同（可按编号 / 名称 / 委托单位 / 联系人搜索）" :remote-method="searchContracts" :loading="contractLoading" style="width:100%" @visible-change="onContractVisibleChange">
+                     <el-option v-for="c in contractOptions" :key="c.id" :label="fmtContractOption(c)" :value="c.id" />
+                  </el-select>
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">联系人</div>
-                  <el-input v-model="queryParams.contactName" placeholder="联系人" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+                  <div class="filter-item-label">项目来源</div>
+                  <el-select v-model="queryParams.dataSource" clearable placeholder="全部来源" style="width:100%" @change="handleQuery">
+                     <el-option v-for="dict in sourceOptions" :key="dict.value" :label="dict.label" :value="dict.value" />
+                  </el-select>
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">联系电话</div>
-                  <el-input v-model="queryParams.contactPhone" placeholder="联系电话" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+                  <div class="filter-item-label">办结日期</div>
+                  <el-date-picker v-model="closeDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onCloseDateChange" />
                </div>
                <div class="filter-item">
                   <div class="filter-item-label">工程编号</div>
@@ -415,6 +419,7 @@ import { listMaterial, getMaterial, delMaterial, borrowMaterial, getFlowList, ge
 import { getSettlementDetail, getSettlementOverview } from "@/api/project/settlement"
 import { listProject } from "@/api/project/project"
 import { listUserOptions } from "@/api/system/user"
+import { listContract } from "@/api/project/contract"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
 import { invoiceStatusText, invoiceStatusTagType } from "@/utils/projStatus"
 import cache from '@/plugins/cache'
@@ -425,6 +430,16 @@ const searchMemory = useSearchMemoryStore()
 
 // 字典
 const { proj_material_result_type, proj_material_status, proj_material_submit_status } = useDict("proj_material_result_type", "proj_material_status", "proj_material_submit_status")
+// 字典：项目来源（manual=手动录入 / import=Excel 导入）；字典未部署时用内置项兜底，避免下拉为空
+const { proj_project_source } = useDict("proj_project_source")
+const sourceOptions = computed(() => {
+  const dict = proj_project_source.value || []
+  if (dict.length) return dict
+  return [
+    { value: 'manual', label: '手动录入' },
+    { value: 'import', label: 'Excel 导入' }
+  ]
+})
 
 const materialList = ref([])
 const open = ref(false)
@@ -438,7 +453,7 @@ const COLUMNS_STORAGE_KEY = 'material-list-columns'
 /** 兜底清单：后端接口不可用（如后端未重启）时使用，保证表格不退化（与后端 getListColumns 默认可见列一致） */
 const FALLBACK_COLUMNS = [
   { key: 'projectCode', label: '工程编号', type: 'text', group: 'business', prop: 'projectCode', defaultVisible: true },
-  { key: 'engineeringProject', label: '委托任务', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
+  { key: 'engineeringProject', label: '项目类别', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: true },
   { key: 'submitTime', label: '交付时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
@@ -532,7 +547,9 @@ const optionsLoading = ref(false)    // 下拉选项加载中
 const submitLoading = ref(false)     // 表单提交中（防重复提交）
 
 // 新增：智能查询面板
-const submitTimeRange = ref([])
+const closeDateRange = ref([])
+const contractOptions = ref([])
+const contractLoading = ref(false)
 const statusCounts = ref({})
 const advancedVisible = ref(false)
 
@@ -554,15 +571,15 @@ const data = reactive({
     pageSize: 10,
     keyword: undefined,
     projectId: undefined,
-    contactName: undefined,
-    contactPhone: undefined,
     projectCode: undefined,
     projectLocation: undefined,
     resultType: undefined,
     status: undefined,
     submitStatus: undefined,
-    submitTimeBegin: undefined,
-    submitTimeEnd: undefined
+    contractId: undefined,
+    dataSource: undefined,
+    closeDateBegin: undefined,
+    closeDateEnd: undefined
   },
   rules: {}
 })
@@ -604,18 +621,18 @@ function reset() {
 
 function handleQuery() { queryParams.value.pageNum = 1; searchMemory.setProjectCode(queryParams.value.projectCode); getList() }
 function resetQuery() {
-  submitTimeRange.value = []
+  closeDateRange.value = []
   queryParams.value.keyword = undefined
   queryParams.value.projectId = undefined
-  queryParams.value.contactName = undefined
-  queryParams.value.contactPhone = undefined
   queryParams.value.projectCode = undefined
   queryParams.value.projectLocation = undefined
   queryParams.value.resultType = undefined
   queryParams.value.status = undefined
   queryParams.value.submitStatus = undefined
-  queryParams.value.submitTimeBegin = undefined
-  queryParams.value.submitTimeEnd = undefined
+  queryParams.value.contractId = undefined
+  queryParams.value.dataSource = undefined
+  queryParams.value.closeDateBegin = undefined
+  queryParams.value.closeDateEnd = undefined
   handleQuery()
 }
 
@@ -647,14 +664,38 @@ function handleStatusClick(status) {
   handleQuery()
 }
 
-/** 交付时间变更 */
-function onSubmitTimeChange(val) {
+/** 合同下拉：远程搜索（按编号 / 名称 / 委托单位 / 联系人） */
+function searchContracts(query) {
+  contractLoading.value = true
+  const params = { pageNum: 1, pageSize: 50 }
+  const kw = (query || '').trim()
+  if (kw) { params.keyword = kw }
+  listContract(params).then(response => {
+    contractOptions.value = response.rows || []
+  }).finally(() => { contractLoading.value = false })
+}
+
+/** 合同下拉：展开时若无数据则预加载 */
+function onContractVisibleChange(visible) {
+  if (visible && contractOptions.value.length === 0) { searchContracts("") }
+}
+
+/** 合同下拉展示：编号 + 名称（【编号】名称；缺失部分自动省略） */
+function fmtContractOption(c) {
+  const no = (c.contractNo || '').trim()
+  const name = (c.contractName || '').trim()
+  if (no && name) return '【' + no + '】' + name
+  return no || name || '-'
+}
+
+/** 办结日期变更（按项目办结时间 close_time 过滤，替代已废弃的交付时间） */
+function onCloseDateChange(val) {
   if (val && val.length === 2) {
-    queryParams.value.submitTimeBegin = val[0]
-    queryParams.value.submitTimeEnd = val[1] + ' 23:59:59'
+    queryParams.value.closeDateBegin = val[0]
+    queryParams.value.closeDateEnd = val[1]
   } else {
-    queryParams.value.submitTimeBegin = undefined
-    queryParams.value.submitTimeEnd = undefined
+    queryParams.value.closeDateBegin = undefined
+    queryParams.value.closeDateEnd = undefined
   }
   handleQuery()
 }
@@ -686,8 +727,8 @@ function setQuickDate(type) {
     case '30days': begin = fmt(new Date(now.getTime() - 29 * 86400000)); end = fmt(now); break
   }
   if (begin && end) {
-    submitTimeRange.value = [begin, end]
-    onSubmitTimeChange([begin, end])
+    closeDateRange.value = [begin, end]
+    onCloseDateChange([begin, end])
   }
 }
 

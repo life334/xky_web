@@ -61,8 +61,10 @@
                   <el-input v-model="queryParams.projectLocation" placeholder="工程地点" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">工程项目</div>
-                  <el-input v-model="queryParams.engineeringProject" placeholder="工程项目" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+                  <div class="filter-item-label">项目类别</div>
+                  <el-select v-model="queryParams.projectCategoryId" filterable clearable placeholder="全部类别" style="width:100%" @change="handleQuery">
+                     <el-option v-for="c in projectCategoryOptions" :key="c.id" :label="c.name" :value="c.id" />
+                  </el-select>
                </div>
                <div class="filter-item">
                   <div class="filter-item-label">负责人</div>
@@ -71,16 +73,20 @@
                   </el-select>
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">联系人</div>
-                  <el-input v-model="queryParams.contactName" placeholder="联系人" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+                  <div class="filter-item-label">合同</div>
+                  <el-select v-model="queryParams.contractId" filterable remote reserve-keyword clearable placeholder="输入合同编号/名称/委托单位搜索" no-data-text="无匹配合同（可按编号 / 名称 / 委托单位 / 联系人搜索）" :remote-method="searchContracts" :loading="contractLoading" style="width:100%" @visible-change="onContractVisibleChange">
+                     <el-option v-for="c in contractOptions" :key="c.id" :label="fmtContractOption(c)" :value="c.id" />
+                  </el-select>
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">联系电话</div>
-                  <el-input v-model="queryParams.contactPhone" placeholder="联系电话" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+                  <div class="filter-item-label">项目来源</div>
+                  <el-select v-model="queryParams.dataSource" clearable placeholder="全部来源" style="width:100%" @change="handleQuery">
+                     <el-option v-for="dict in sourceOptions" :key="dict.value" :label="dict.label" :value="dict.value" />
+                  </el-select>
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">安排日期</div>
-                  <el-date-picker v-model="assignDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onAssignDateChange" />
+                  <div class="filter-item-label">办结日期</div>
+                  <el-date-picker v-model="closeDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onCloseDateChange" />
                </div>
             </div>
             <!-- 快捷日期 -->
@@ -368,12 +374,20 @@
             <span v-for="q in OUTPUT_QUICKS" :key="q.value" class="status-capsule" :class="{ active: outputQuick === q.value }" @click="setOutputQuick(q.value)">{{ q.label }}</span>
          </div>
 
-         <!-- Row 2: 区间 / 分组 / 操作 -->
+         <!-- Row 2: 视图切换（项目 / 客户 / 负责人） -->
+         <div class="status-capsule-row">
+            <span class="capsule-group-label">视图</span>
+            <span v-for="v in OUTPUT_VIEWS" :key="v.value" class="status-capsule" :class="{ active: outputView === v.value }" @click="setOutputView(v.value)">{{ v.label }}</span>
+            <span class="capsule-sep" />
+            <span class="output-view-hint">{{ OUTPUT_VIEW_HINT[outputView] }}</span>
+         </div>
+
+         <!-- Row 3: 时间维度 / 区间 / 操作 -->
          <div class="search-bar-row">
-            <el-date-picker v-model="outputRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" class="sum-range-picker" @change="handleOutputQuery" />
-            <el-select v-model="outputGroupBy" style="width: 190px" @change="handleOutputQuery">
+            <el-select v-if="outputView === 'project'" v-model="outputGroupBy" style="width: 150px;flex:0 0 150px" @change="handleOutputQuery">
                <el-option v-for="g in OUTPUT_GROUPS" :key="g.value" :label="g.label" :value="g.value" />
             </el-select>
+            <el-date-picker v-model="outputRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" class="sum-range-picker" @change="handleOutputQuery" />
             <el-button type="primary" size="small" @click="handleOutputQuery">查询</el-button>
             <el-button size="small" @click="resetOutputQuery">重置</el-button>
             <el-button type="warning" plain icon="Download" size="small" style="margin-left: auto" @click="handleOutputExport" v-hasPermi="['project:settlement:export']">导出产值明细</el-button>
@@ -405,9 +419,9 @@
                      </el-select>
                   </div>
                   <div class="filter-item">
-                     <div class="filter-item-label">项目小类</div>
-                     <el-select v-model="outputQuery.projectCategoryId" filterable clearable placeholder="全部小类" style="width:100%" @change="handleOutputQuery">
-                        <el-option v-for="c in categoryOptions" :key="c.id" :label="c.name" :value="c.id" />
+                     <div class="filter-item-label">项目类别</div>
+                     <el-select v-model="outputQuery.projectCategoryId" filterable clearable placeholder="全部类别" style="width:100%" @change="handleOutputQuery">
+                        <el-option v-for="c in projectCategoryOptions" :key="c.id" :label="c.name" :value="c.id" />
                      </el-select>
                   </div>
                </div>
@@ -417,31 +431,57 @@
             </div>
          </el-collapse-transition>
 
-         <!-- Row 5: 合计指标（内外产值不相加：内部=成本 / 外部=结算基准） -->
-         <el-row v-loading="outputLoading" :gutter="16" class="sum-metric-row">
-            <el-col :span="8">
-               <div class="sum-metric">
-                  <div class="sum-metric-label">内部产值(元) · 按办结时间</div>
-                  <div class="sum-metric-value">{{ formatMoney(outputSummary.internalOutput) }}</div>
-               </div>
-            </el-col>
-            <el-col :span="8">
+         <!-- Row 5: 合计指标（内外产值不相加：内部=成本 / 外部=结算基准；指令性任务外部产值单独列示） -->
+         <el-row v-loading="outputLoading" :gutter="14" class="sum-metric-row">
+            <el-col :span="6">
                <div class="sum-metric">
                   <div class="sum-metric-label">外部产值(元) · 按办结时间</div>
                   <div class="sum-metric-value" style="color:#409eff">{{ formatMoney(outputSummary.externalOutput) }}</div>
+                  <div class="sum-metric-sub">已剔除指令性任务 <b class="text-mandate">{{ formatMoney(outputSummary.mandateExternalOutput) }}</b></div>
                </div>
             </el-col>
-            <el-col :span="8">
+            <el-col :span="6">
+               <div class="sum-metric">
+                  <div class="sum-metric-label">内部产值(元) · 按办结时间</div>
+                  <div class="sum-metric-value">{{ formatMoney(outputSummary.internalOutput) }}</div>
+                  <div class="sum-metric-sub">指令性任务同样计入</div>
+               </div>
+            </el-col>
+            <el-col :span="6">
+               <div class="sum-metric sum-metric-mandate">
+                  <div class="sum-metric-label">指令性任务 · 外部产值(元)</div>
+                  <div class="sum-metric-value text-mandate">{{ formatMoney(outputSummary.mandateExternalOutput) }}</div>
+                  <div class="sum-metric-sub">{{ outputSummary.mandateProjectCount || 0 }} 个项目 · 不计入应收</div>
+               </div>
+            </el-col>
+            <el-col :span="6">
                <div class="sum-metric">
                   <div class="sum-metric-label">办结项目数</div>
                   <div class="sum-metric-value">{{ outputSummary.projectCount || 0 }}</div>
+                  <div class="sum-metric-sub">含指令性任务 {{ outputSummary.mandateProjectCount || 0 }} 个</div>
                </div>
             </el-col>
          </el-row>
 
+         <!-- Row 5b: 全量外部产值构成条（用于对账：常规 + 指令性 = 全量） -->
+         <div v-loading="outputLoading" class="output-compose">
+            <div class="output-compose-head">
+               <span>全量外部产值构成</span>
+               <span class="output-compose-total">合计 ￥{{ formatMoney(outputCompose.total) }}</span>
+            </div>
+            <div class="output-compose-bar">
+               <div v-if="outputCompose.normalPct > 0" class="compose-seg compose-normal" :style="{ width: outputCompose.normalPct + '%' }">{{ outputCompose.normalPct }}%</div>
+               <div v-if="outputCompose.mandatePct > 0" class="compose-seg compose-mandate" :style="{ width: outputCompose.mandatePct + '%' }">{{ outputCompose.mandatePct }}%</div>
+            </div>
+            <div class="output-compose-legend">
+               <span><i class="dot dot-normal"></i>常规 ￥{{ formatMoney(outputSummary.externalOutput) }}</span>
+               <span><i class="dot dot-mandate"></i>指令性任务 ￥{{ formatMoney(outputSummary.mandateExternalOutput) }}</span>
+            </div>
+         </div>
+
          <!-- Row 6: 分组明细 -->
-         <el-table v-if="outputGroupBy !== 'none'" v-loading="outputLoading" :data="outputGroups" stripe border max-height="420" v-hover-h-scroll @row-click="handleOutputDrill">
-            <el-table-column label="分组维度" align="left" min-width="180">
+         <el-table v-if="outputGroupByValue !== 'none'" v-loading="outputLoading" :data="outputGroups" stripe border max-height="420" v-hover-h-scroll @row-click="handleOutputDrill">
+            <el-table-column :label="outputGroupLabelText" align="left" min-width="180">
                <template #default="scope">{{ scope.row.label || '—' }}</template>
             </el-table-column>
             <el-table-column label="办结项目数" align="center" prop="projectCount" width="110" />
@@ -450,6 +490,11 @@
             </el-table-column>
             <el-table-column label="外部产值(元)" align="right" width="160">
                <template #default="scope"><span style="font-weight:600">{{ formatMoney(scope.row.externalOutput) }}</span></template>
+            </el-table-column>
+            <el-table-column v-if="outputView !== 'project'" label="指令性外部产值(元)" align="right" width="150">
+               <template #default="scope">
+                  <span class="text-mandate" style="font-weight:600">{{ formatMoney(scope.row.mandateExternalOutput) }}</span>
+               </template>
             </el-table-column>
             <el-table-column label="外部产值占比" align="left" min-width="200">
                <template #default="scope">
@@ -462,10 +507,8 @@
                </template>
             </el-table-column>
          </el-table>
-         <el-empty v-else description="选择分组维度后可按维度查看产值分布，点行可下钻明细" :image-size="70" />
+         <el-empty v-else description="选择时间维度（按月/季/年）可查看产值分布；或切换到客户视图 / 负责人视图按维度汇总。点行可下钻项目明细" :image-size="70" />
 
-         <div v-if="outputGroupBy === 'leader'" class="sum-tip">⚠️ 一个项目有多位负责人时，该项目产值会在每位负责人下各计一次（合计不受影响）。</div>
-         <div class="sum-tip">产值按<b>办结时间</b>归属，未办结项目不计入；内部产值含「管线新测 / 管线修测」保底 6000；<b>内外产值不相加</b>（内部=成本、外部=结算基准）。</div>
       </el-tab-pane>
       </el-tabs>
 
@@ -496,16 +539,26 @@
             <el-table-column label="工程编号" prop="projectCode" width="140" align="center" />
             <el-table-column label="项目名称" prop="projectName" min-width="200" align="left" show-overflow-tooltip />
             <el-table-column label="委托单位" prop="clientUnit" min-width="180" align="left" show-overflow-tooltip />
+            <el-table-column label="项目性质" width="110" align="center">
+               <template #default="scope">
+                  <el-tag :type="projectNatureTagType(scope.row.projectNature)" size="small" effect="plain">{{ projectNatureText(scope.row.projectNature) }}</el-tag>
+               </template>
+            </el-table-column>
             <el-table-column label="办结时间" width="115" align="center">
                <template #default="scope">{{ String(scope.row.closeTime || '').slice(0, 10) }}</template>
             </el-table-column>
-            <el-table-column label="内部产值(元)" width="145" align="right">
+            <el-table-column label="内部产值(元)" width="140" align="right">
                <template #default="scope">{{ formatMoney(scope.row.internalOutput) }}</template>
             </el-table-column>
             <el-table-column label="外部产值(元)" width="145" align="right">
-               <template #default="scope"><span style="font-weight:600">{{ formatMoney(scope.row.externalOutput) }}</span></template>
+               <template #default="scope">
+                  <span style="font-weight:600" :class="{ 'text-mandate': scope.row.projectNature === 'mandate' }">{{ formatMoney(scope.row.externalOutput) }}</span>
+               </template>
             </el-table-column>
          </el-table>
+         <div class="sum-tip" style="margin-top:8px">
+            明细按<b>项目实际值</b>显示；其中「指令性任务」项目的外部产值<b>不计入</b>上方合计（已改道到「指令性任务」指标），仅用于查看项目真实金额。
+         </div>
          <pagination v-show="outputDrill.total > 0" :total="outputDrill.total" v-model:page="outputDrill.pageNum" v-model:limit="outputDrill.pageSize" @pagination="loadOutputDetail" />
       </el-dialog>
 
@@ -740,12 +793,24 @@ import WorkloadDialog from "@/components/WorkloadDialog"
 import { categoryTreeselectFull, listBilling } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { getDistinctValues } from "@/api/project/project"
+import { listContract } from "@/api/project/contract"
 import { checkPermi } from "@/utils/permission"
-import { invoiceStatusText, invoiceStatusTagType, invoicePaymentText, invoicePaymentTagType, isVoidedInvoice } from "@/utils/projStatus"
+import { invoiceStatusText, invoiceStatusTagType, invoicePaymentText, invoicePaymentTagType, isVoidedInvoice, projectNatureText, projectNatureTagType } from "@/utils/projStatus"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
 import cache from '@/plugins/cache'
 
 const { proxy } = getCurrentInstance()
+
+// 字典：项目来源（manual=手动录入 / import=Excel 导入）；字典未部署时用内置项兜底，避免下拉为空
+const { proj_project_source } = useDict("proj_project_source")
+const sourceOptions = computed(() => {
+  const dict = proj_project_source.value || []
+  if (dict.length) return dict
+  return [
+    { value: 'manual', label: '手动录入' },
+    { value: 'import', label: 'Excel 导入' }
+  ]
+})
 const searchMemory = useSearchMemoryStore()
 
 const treeData = ref([])
@@ -771,7 +836,6 @@ const FALLBACK_COLUMNS = [
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
   { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
-  { key: 'engineeringProject', label: '工程项目', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: false },
   { key: 'leaderNames', label: '负责人', type: 'text', group: 'business', prop: 'leaderNames', defaultVisible: false },
   { key: 'userName', label: '人员', type: 'text', group: 'business', prop: 'userName', defaultVisible: false },
   { key: 'categoryName', label: '项目类别', type: 'text', group: 'business', prop: 'categoryName', defaultVisible: false },
@@ -907,6 +971,12 @@ const paymentRef = ref(null)
 const userOptions = ref([])
 const leaderOptions = ref([])   // 当前项目负责人（编辑弹窗里用）
 const categoryOptions = ref([])
+/**
+ * 项目类别选项（产值统计高级筛选用）：与首页同源（/project/category/treeselectFull），
+ * 把树递归打平后只保留「有父节点」的节点 ⇒ 只出小类，不含「管线 / 工程」两个大类。
+ * ⚠️ 与上面的 categoryOptions 分开：那个存的是未打平的原树（结算录入按 id 检索用），不能动。
+ */
+const projectCategoryOptions = ref([])
 const contractPriceMap = ref({})
 const clientUnitOptions = ref([])
 /** 全量计费方式：categoryId -> [{billingType, billingCategory, unitPrice, priceUnit, minQuantity}] */
@@ -923,7 +993,9 @@ const baseDataLoading = ref(false)
 const distinctLoading = ref(false)
 
 // 新增：智能查询面板
-const assignDateRange = ref([])
+const closeDateRange = ref([])
+const contractOptions = ref([])
+const contractLoading = ref(false)
 const advancedVisible = ref(false)
 
 const data = reactive({
@@ -932,12 +1004,12 @@ const data = reactive({
     projectCode: undefined,
     clientUnit: undefined,
     projectLocation: undefined,
-    engineeringProject: undefined,
+    projectCategoryId: undefined,
     leaderId: undefined,
-    contactName: undefined,
-    contactPhone: undefined,
-    assignDateBegin: undefined,
-    assignDateEnd: undefined
+    contractId: undefined,
+    dataSource: undefined,
+    closeDateBegin: undefined,
+    closeDateEnd: undefined
   },
   editForm: {
     prepayAmount: null,
@@ -1448,28 +1520,52 @@ function handleQuery() {
 }
 
 function resetQuery() {
-  assignDateRange.value = []
+  closeDateRange.value = []
   queryParams.value.keyword = undefined
   queryParams.value.projectCode = undefined
   queryParams.value.clientUnit = undefined
   queryParams.value.projectLocation = undefined
-  queryParams.value.engineeringProject = undefined
+  queryParams.value.projectCategoryId = undefined
   queryParams.value.leaderId = undefined
-  queryParams.value.contactName = undefined
-  queryParams.value.contactPhone = undefined
-  queryParams.value.assignDateBegin = undefined
-  queryParams.value.assignDateEnd = undefined
+  queryParams.value.contractId = undefined
+  queryParams.value.dataSource = undefined
+  queryParams.value.closeDateBegin = undefined
+  queryParams.value.closeDateEnd = undefined
   handleQuery()
 }
 
-/** 安排日期变更 */
-function onAssignDateChange(val) {
+/** 合同下拉：远程搜索（按编号 / 名称 / 委托单位 / 联系人） */
+function searchContracts(query) {
+  contractLoading.value = true
+  const params = { pageNum: 1, pageSize: 50 }
+  const kw = (query || '').trim()
+  if (kw) { params.keyword = kw }
+  listContract(params).then(response => {
+    contractOptions.value = response.rows || []
+  }).finally(() => { contractLoading.value = false })
+}
+
+/** 合同下拉：展开时若无数据则预加载 */
+function onContractVisibleChange(visible) {
+  if (visible && contractOptions.value.length === 0) { searchContracts("") }
+}
+
+/** 合同下拉展示：编号 + 名称（【编号】名称；缺失部分自动省略） */
+function fmtContractOption(c) {
+  const no = (c.contractNo || '').trim()
+  const name = (c.contractName || '').trim()
+  if (no && name) return '【' + no + '】' + name
+  return no || name || '-'
+}
+
+/** 办结日期变更 */
+function onCloseDateChange(val) {
   if (val && val.length === 2) {
-    queryParams.value.assignDateBegin = val[0]
-    queryParams.value.assignDateEnd = val[1]
+    queryParams.value.closeDateBegin = val[0]
+    queryParams.value.closeDateEnd = val[1]
   } else {
-    queryParams.value.assignDateBegin = undefined
-    queryParams.value.assignDateEnd = undefined
+    queryParams.value.closeDateBegin = undefined
+    queryParams.value.closeDateEnd = undefined
   }
   handleQuery()
 }
@@ -1501,8 +1597,8 @@ function setQuickDate(type) {
     case '30days': begin = fmt(new Date(now.getTime() - 29 * 86400000)); end = fmt(now); break
   }
   if (begin && end) {
-    assignDateRange.value = [begin, end]
-    onAssignDateChange([begin, end])
+    closeDateRange.value = [begin, end]
+    onCloseDateChange([begin, end])
   }
 }
 
@@ -1518,6 +1614,17 @@ function buildBillingMap(list) {
 }
 
 // ---- 基础数据缓存：类别树 / 用户列表 / 计费档位 页面运行期基本不变，首次成功后复用 ----
+/** 把 /project/category/treeselectFull 的树递归打平；onlyLeaf=true 时只保留「有父节点」的小类 */
+function flattenCategoryTree(nodes, onlyLeaf) {
+  const out = []
+  const walk = list => (list || []).forEach(n => {
+    if (!onlyLeaf || n.parentId != null) out.push({ id: n.id, name: n.name })
+    walk(n.children)
+  })
+  walk(nodes)
+  return out
+}
+
 let baseDataCache = null   // 已 resolve 的 Promise（命中即同步返回）
 let baseDataPending = null // 进行中的 Promise（防止并发重复请求）
 function ensureBaseData() {
@@ -1532,7 +1639,8 @@ function ensureBaseData() {
       const base = {
         categoryOptions: catRes.data || [],
         userOptions: userRes.rows || [],
-        billingMap: buildBillingMap(billingRes.data || [])
+        billingMap: buildBillingMap(billingRes.data || []),
+        projectCategoryOptions: flattenCategoryTree(catRes.data || [], true)
       }
       baseDataCache = Promise.resolve(base)
       return base
@@ -1542,6 +1650,14 @@ function ensureBaseData() {
     }).finally(() => { baseDataLoading.value = false })
   }
   return baseDataPending
+}
+
+/** 把 ensureBaseData 的结果写入各下拉的 ref（缓存命中时同步返回，重复调用不产生额外请求） */
+function applyBaseData(base) {
+  categoryOptions.value = base.categoryOptions
+  userOptions.value = base.userOptions
+  projectCategoryOptions.value = base.projectCategoryOptions
+  billingMap.value = base.billingMap
 }
 
 /** 编辑结算 */
@@ -1555,9 +1671,7 @@ function handleEdit(row) {
   loading.value = true
   Promise.all([ensureBaseData(), getSettlementDetail(row.projectId)])
     .then(([base, detailRes]) => {
-      categoryOptions.value = base.categoryOptions
-      userOptions.value = base.userOptions
-      billingMap.value = base.billingMap
+      applyBaseData(base)
 
       const detail = detailRes.data
       currentProjectCategoryId.value = detail.project ? detail.project.projectCategoryId : null
@@ -1799,14 +1913,14 @@ function addExternalRecord() {
   })
 }
 
-/** 当前项目小类下计费类别所属的 categoryId 列表（未绑定小类时回退全部类别，保持旧行为） */
+/** 当前项目类别下计费类别所属的 categoryId 列表（未绑定类别时回退全部类别，保持旧行为） */
 function scopedCategoryIds() {
   const cid = currentProjectCategoryId.value
   if (cid != null && billingMap.value[cid]) return [cid]
   return Object.keys(billingMap.value)
 }
 
-/** 内部计费方式下拉选项（仅当前项目小类下的内部计费方式，已过滤当前负责人当前记录已添加过的类别） */
+/** 内部计费方式下拉选项（仅当前项目类别下的内部计费方式，已过滤当前负责人当前记录已添加过的类别） */
 function internalBillingOptions(userId, subItemNo) {
   const opts = []
   const seen = new Set()
@@ -2216,13 +2330,22 @@ const OUTPUT_QUICKS = [
 ]
 const OUTPUT_GROUPS = [
    { label: '不分组（仅合计）', value: 'none' },
-   { label: '按委托单位', value: 'clientUnit' },
-   { label: '按负责人', value: 'leader' },
-   { label: '按项目小类', value: 'category' },
    { label: '按月', value: 'month' },
    { label: '按季', value: 'quarter' },
    { label: '按年', value: 'year' }
 ]
+// 三视图切换：项目视图（时间维度）/ 客户视图（按委托单位）/ 负责人视图（按负责人）
+const OUTPUT_VIEWS = [
+   { label: '项目视图', value: 'project' },
+   { label: '客户视图', value: 'client' },
+   { label: '负责人视图', value: 'leader' }
+]
+const OUTPUT_VIEW_HINT = {
+   project: '按时间维度汇总（可下钻到项目）',
+   client: '按委托单位汇总外部 / 内部产值',
+   leader: '按负责人汇总外部 / 内部产值'
+}
+const outputView = ref('project')
 const viewTab = ref('list')
 const outputQuick = ref('all')
 const outputRange = ref([])
@@ -2232,6 +2355,26 @@ const outputLoading = ref(false)
 const outputSummary = ref({})
 const outputGroups = ref([])
 const outputQuery = ref({ keyword: undefined, clientUnit: undefined, leaderId: undefined, projectCategoryId: undefined })
+/** 三视图 → 实际分组维度（项目视图用时间维度，客户/负责人视图固定维度） */
+const outputGroupByValue = computed(() => {
+   if (outputView.value === 'client') return 'clientUnit'
+   if (outputView.value === 'leader') return 'leader'
+   return outputGroupBy.value
+})
+/** 分组表第一列表头（随视图变化） */
+const outputGroupLabelText = computed(() => {
+   if (outputView.value === 'client') return '委托单位'
+   if (outputView.value === 'leader') return '负责人'
+   return '分组维度'
+})
+/** 全量外部产值构成（常规 + 指令性 = 全量，用于对账） */
+const outputCompose = computed(() => {
+   const normal = Number(outputSummary.value.externalOutput || 0)
+   const mandate = Number(outputSummary.value.mandateExternalOutput || 0)
+   const total = normal + mandate
+   const normalPct = total ? Math.round(normal * 100 / total) : 0
+   return { total, normalPct, mandatePct: total ? 100 - normalPct : 0 }
+})
 const outputDrill = reactive({ open: false, title: '', loading: false, rows: [], total: 0, pageNum: 1, pageSize: 10, drillParams: {} })
 
 function pad2(n) { return String(n).padStart(2, '0') }
@@ -2258,7 +2401,7 @@ function outputQuickRange(quick) {
 function buildOutputParams(extra) {
    const r = outputRange.value && outputRange.value.length === 2 ? outputRange.value : []
    return {
-      groupBy: outputGroupBy.value,
+      groupBy: outputGroupByValue.value,
       begin: r[0],
       end: r[1],
       ...outputQuery.value,
@@ -2279,6 +2422,13 @@ function getOutputSummary() {
    }).finally(() => { outputLoading.value = false })
 }
 
+/** 视图切换（项目 / 客户 / 负责人） */
+function setOutputView(v) {
+   if (outputView.value === v) return
+   outputView.value = v
+   getOutputSummary()
+}
+
 /** 快捷区间胶囊 */
 function setOutputQuick(v) {
    outputQuick.value = v
@@ -2296,6 +2446,7 @@ function handleOutputQuery() {
 function resetOutputQuery() {
    outputQuick.value = 'all'
    outputRange.value = []
+   outputView.value = 'project'
    outputGroupBy.value = 'none'
    outputQuery.value = { keyword: undefined, clientUnit: undefined, leaderId: undefined, projectCategoryId: undefined }
    getOutputSummary()
@@ -2336,7 +2487,7 @@ function outputLabelRange(group, label) {
 
 /** 分组行下钻：时间维度按 label 推导区间，其他维度按 key 追加对应筛选 */
 function handleOutputDrill(row) {
-   const g = outputGroupBy.value
+   const g = outputGroupByValue.value
    if (g === 'none') return
    const extra = {}
    if (g === 'month' || g === 'quarter' || g === 'year') {
@@ -2380,7 +2531,13 @@ function handleOutputExport() {
 
 /** 页签切换：首次进入产值统计时查询 */
 function handleViewTabChange(name) {
-   if (name === 'output') getOutputSummary()
+   if (name !== 'output') return
+   getOutputSummary()
+   // 「负责人 / 项目类别」选项原本只在结算录入页签（handleEdit）里加载，切到产值统计页签会空列表。
+   // ensureBaseData 自带缓存 + 防并发，重复进入页签不会产生额外请求。
+   ensureBaseData().then(base => {
+      applyBaseData(base)
+   }).catch(() => {})
 }
 
 loadColumns()
@@ -2390,6 +2547,12 @@ if (searchMemory.projectCode && !queryParams.value.projectCode) {
   queryParams.value.projectCode = searchMemory.projectCode
 }
 loadDistinctValues()
+
+// 高级筛选「负责人 / 项目类别」下拉的数据源在此预热：ensureBaseData 自带缓存 + 防并发，
+// 切到产值统计页签时命中缓存、零额外请求。
+// 注意：此前 userOptions 只在「打开结算编辑弹窗」或「切产值统计页签」时才加载，
+// 导致默认的「结算录入」页签里「负责人」下拉首次进入为空。
+ensureBaseData().then(base => applyBaseData(base)).catch(() => {})
 
 // keep-alive 缓存下切回本页时刷新列表（否则在项目列表删除项目后，本页仍显示旧数据）
 onActivated(() => {
@@ -2799,14 +2962,24 @@ onActivated(() => {
   align-items: center;
   gap: 6px;
 }
+/* 展开热区：原生小三角只有 14px，稍偏就落在单元格 padding 上没反应
+   ⇒ 撑成 26×26 的可点方块并加 hover 反馈（负外边距抵消视觉位移，不影响行高） */
 .seq-expand-icon {
   cursor: pointer;
   color: #909399;
-  font-size: 14px;
-  transition: color .2s, transform .2s;
+  font-size: 16px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  margin: -5px 0 -5px -5px;
+  transition: color .2s, background-color .2s;
 }
 .seq-expand-icon:hover {
   color: #409eff;
+  background-color: rgba(64, 158, 255, .1);
 }
 .seq-expand-icon.expanded {
   color: #409eff;
@@ -2905,4 +3078,61 @@ onActivated(() => {
    width: 480px;
    min-width: 240px;
 }
+
+/* ===== 指令性任务 & 构成条 ===== */
+.text-mandate { color: #e6a23c; }
+.sum-metric-sub { font-size: 12px; color: #909399; margin-top: 4px; }
+.sum-metric-mandate { border-left: 3px solid #e6a23c; }
+.output-view-hint { font-size: 12px; color: #909399; }
+.output-compose {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  background: #fafafa;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+.output-compose-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #606266;
+  margin-bottom: 8px;
+}
+.output-compose-total { font-weight: 600; color: #303133; }
+.output-compose-bar {
+  display: flex;
+  height: 22px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #ebeef5;
+}
+.compose-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #fff;
+  transition: width 0.4s ease;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.compose-normal { background: #409eff; }
+.compose-mandate { background: #e6a23c; }
+.output-compose-legend {
+  display: flex;
+  gap: 20px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #606266;
+}
+.output-compose-legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.dot-normal { background: #409eff; }
+.dot-mandate { background: #e6a23c; }
 </style>

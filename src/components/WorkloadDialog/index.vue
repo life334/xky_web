@@ -12,7 +12,7 @@
       :title="projectCode"
    >
       <el-form v-loading="workloadLoading" element-loading-text="数据加载中..." element-loading-background="rgba(255, 255, 255, 0.7)" :model="workloadForm" label-width="90px">
-         <!-- 外部工作量区（不按人录入，直接按项目类别录入） -->
+         <!-- 外部工作量区（不按人录入，直接按计费类别录入） -->
          <el-divider content-position="left">
             <span class="section-title-external">外部工作量</span>
             <span class="section-output-mini">产值合计：{{ formatMoney(externalOutputTotal) }}</span>
@@ -31,8 +31,8 @@
 
                <!-- 外部快速录入栏（归属该记录） -->
                <div class="quick-add-bar">
-                  <span class="qa-label">项目类别</span>
-                  <el-select v-model="rec.quickExternalCat" placeholder="选择项目类别" style="width: 220px" @change="(val) => onQuickCatChange(val, rec, 'external')">
+                  <span class="qa-label">计费类别</span>
+                  <el-select v-model="rec.quickExternalCat" placeholder="选择计费类别" style="width: 220px" @change="(val) => onQuickCatChange(val, rec, 'external')">
                      <el-option v-for="o in externalBillingOptions(rec.subItemNo)" :key="o.value" :label="o.label" :value="o.value" />
                   </el-select>
                   <span class="qa-label">工作量</span>
@@ -45,7 +45,7 @@
 
                <!-- 该记录外部已录入行 -->
                <el-table :data="externalRowsBySub(rec.subItemNo)" border size="small" :row-class-name="() => 'wl-row-external'">
-                  <el-table-column label="项目类别" prop="billingCategory" align="center" min-width="120" />
+                  <el-table-column label="计费类别" prop="billingCategory" align="center" min-width="120" />
                   <el-table-column label="工作量" align="center" width="120">
                      <template #default="scope"><el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="calcRow(scope.row)" /></template>
                   </el-table-column>
@@ -88,8 +88,8 @@
 
                <!-- 内部快速录入栏（归属该记录） -->
                <div class="quick-add-bar">
-                  <span class="qa-label">项目类别</span>
-                  <el-select v-model="rec.quickInternalCat" placeholder="选择项目类别" style="width: 220px" @change="(val) => onQuickCatChange(val, rec, 'internal')">
+                  <span class="qa-label">计费类别</span>
+                  <el-select v-model="rec.quickInternalCat" placeholder="选择计费类别" style="width: 220px" @change="(val) => onQuickCatChange(val, rec, 'internal')">
                      <el-option v-for="o in internalBillingOptions(rec.userId, rec.subItemNo)" :key="o.value" :label="o.label" :value="o.value" />
                   </el-select>
                   <span class="qa-label">工作量</span>
@@ -102,7 +102,7 @@
 
                <!-- 该记录内部已录入行 -->
                <el-table :data="internalRowsByUserAndSub(rec.userId, rec.subItemNo)" border size="small" :row-class-name="() => 'wl-row-internal'">
-                  <el-table-column label="项目类别" prop="billingCategory" align="center" min-width="120" />
+                  <el-table-column label="计费类别" prop="billingCategory" align="center" min-width="120" />
                   <el-table-column label="工作量" align="center" width="120">
                      <template #default="scope"><el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="calcRow(scope.row)" /></template>
                   </el-table-column>
@@ -454,14 +454,14 @@ function onUnitPriceChange(row) {
    calcRow(row)
 }
 
-/** 当前项目小类下计费类别所属的 categoryId 列表（未绑定小类时回退全部类别，保持旧行为） */
+/** 当前项目类别下计费类别所属的 categoryId 列表（未绑定类别时回退全部类别，保持旧行为） */
 function scopedCategoryIds() {
    const cid = currentProjectCategoryId.value
    if (cid != null && billingMap.value[cid]) return [cid]
    return Object.keys(billingMap.value)
 }
 
-/** 内部计费方式下拉选项（仅当前项目小类下的内部计费方式，已过滤当前负责人当前记录已添加过的类别） */
+/** 内部计费方式下拉选项（仅当前项目类别下的内部计费方式，已过滤当前负责人当前记录已添加过的类别） */
 function internalBillingOptions(userId, subItemNo) {
    const opts = []
    const seen = new Set()
@@ -509,7 +509,7 @@ function externalBillingOptions(subItemNo) {
    return opts
 }
 
-/** 快速录入栏选择项目类别后带出单价（外部不依赖负责人） */
+/** 快速录入栏选择计费类别后带出单价（外部不依赖负责人） */
 function onQuickCatChange(val, rec, type) {
    if (type === 'external') {
       const options = externalBillingOptions(rec.subItemNo)

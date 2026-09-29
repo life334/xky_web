@@ -680,7 +680,7 @@
             <el-table-column label="委托单位" align="center" prop="client_unit" min-width="160" :show-overflow-tooltip="false" />
             <el-table-column label="联系人" align="center" prop="contact_name" min-width="100" :show-overflow-tooltip="false" />
             <el-table-column label="联系电话" align="center" prop="contact_phone" min-width="130" :show-overflow-tooltip="false" />
-            <el-table-column label="工程项目" align="center" prop="engineering_project" min-width="180" :show-overflow-tooltip="false" />
+            <el-table-column label="项目类别" align="center" prop="engineering_project" min-width="180" :show-overflow-tooltip="false" />
             <el-table-column label="工程地点" align="center" prop="project_location" min-width="160" :show-overflow-tooltip="false" />
             <el-table-column label="状态" align="center" prop="status" min-width="90">
                <template #default="scope">
@@ -777,7 +777,7 @@
                <el-table-column label="委托单位" prop="clientUnit" min-width="130" />
                <el-table-column label="联系人" prop="contactName" min-width="80" />
                <el-table-column label="联系电话" prop="contactPhone" min-width="120" />
-               <el-table-column label="工程项目" min-width="130">
+               <el-table-column label="项目类别" min-width="130">
                   <template #default="scope">
                      {{ scope.row.engineeringProject || scope.row.projectName || '-' }}
                   </template>

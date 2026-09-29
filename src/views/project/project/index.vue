@@ -4,7 +4,7 @@
       <div class="search-toolbar" v-show="showSearch">
          <el-input
             v-model="queryParams.keyword"
-            placeholder="全局搜索 — 工程编号 / 项目名称 / 委托单位 / 工程项目 / 联系人"
+            placeholder="全局搜索 — 工程编号 / 项目名称 / 委托单位 / 项目类别 / 联系人"
             clearable
             size="default"
             class="global-search"
@@ -36,14 +36,12 @@
       <div class="advanced-toggle" v-show="showSearch" @click="advancedVisible = !advancedVisible">
          <span class="toggle-arrow" :class="{ 'is-open': advancedVisible }">▼</span>
          <span class="toggle-label">高级筛选</span>
-         <span class="toggle-hint">（负责人、合同、时间范围等）</span>
       </div>
 
       <!-- 第四行：高级筛选面板 -->
       <el-collapse-transition>
          <div v-show="advancedVisible" class="advanced-filter-panel">
             <div class="filter-grid">
-               <!-- 项目类别已移除：类别属于工作量维度，不属于项目维度 -->
                <div class="filter-item">
                   <div class="filter-item-label">负责人</div>
                   <el-select v-model="queryParams.leaderId" filterable clearable placeholder="全部负责人" style="width: 100%">
@@ -77,12 +75,6 @@
                   <div class="filter-item-label">委托单位</div>
                   <el-select v-model="queryParams.clientUnit" filterable clearable placeholder="全部单位" style="width: 100%">
                      <el-option v-for="item in clientUnitOptions" :key="item" :label="item" :value="item" />
-                  </el-select>
-               </div>
-               <div class="filter-item">
-                  <div class="filter-item-label">工程项目</div>
-                  <el-select v-model="queryParams.engineeringProject" filterable clearable placeholder="全部项目" style="width: 100%">
-                     <el-option v-for="item in engineeringProjectOptions" :key="item" :label="item" :value="item" />
                   </el-select>
                </div>
                <div class="filter-item">
@@ -120,8 +112,8 @@
                   />
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">项目小类</div>
-                  <el-select v-model="queryParams.projectCategoryId" filterable clearable placeholder="全部小类" style="width: 100%" @change="handleQuery">
+                  <div class="filter-item-label">项目类别</div>
+                  <el-select v-model="queryParams.projectCategoryId" filterable clearable placeholder="全部类别" style="width: 100%" @change="handleQuery">
                      <el-option v-for="c in subCategoryOptions" :key="c.id" :label="c.label" :value="c.id" />
                   </el-select>
                </div>
@@ -136,6 +128,19 @@
                   <div class="filter-item-label">工期超期</div>
                   <el-select v-model="queryParams.overdue" clearable placeholder="全部" style="width: 100%" @change="handleQuery">
                      <el-option label="仅看在办超期（手动录入）" value="true" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">项目性质</div>
+                  <el-select v-model="queryParams.projectNature" clearable placeholder="全部" style="width: 100%" @change="handleQuery">
+                     <el-option label="常规" value="normal" />
+                     <el-option label="指令性任务" value="mandate" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">项目来源</div>
+                  <el-select v-model="queryParams.dataSource" clearable placeholder="全部来源" style="width: 100%" @change="handleQuery">
+                     <el-option v-for="dict in sourceOptions" :key="dict.value" :label="dict.label" :value="dict.value" />
                   </el-select>
                </div>
             </div>
@@ -167,10 +172,12 @@
       <el-row :gutter="6" class="mb8 compact-ops" justify="space-between">
          <div style="display:flex;gap:6px;flex-wrap:wrap">
             <el-button type="primary" plain icon="Plus" size="small" @click="handleAdd" v-hasPermi="['project:project:add']">新增</el-button>
-            <el-button type="info" plain icon="Upload" size="small" @click="handleImport" v-hasPermi="['project:project:import']">导入</el-button>
             <el-button type="info" plain icon="DocumentCopy" size="small" @click="handlePaste" v-hasPermi="['project:project:add']">粘贴</el-button>
             <el-button type="success" plain icon="Edit" size="small" :disabled="single || editDisabledByClosed" @click="handleUpdate" v-hasPermi="['project:project:edit']">修改</el-button>
             <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple || deleteDisabledByClosed" @click="handleDelete" v-hasPermi="['project:project:remove']">删除</el-button>
+            <el-button type="warning" plain icon="Star" size="small" :disabled="multiple" @click="handleSetNature('mandate')" v-hasPermi="['project:project:edit']">设为指令性任务</el-button>
+            <el-button plain icon="RefreshLeft" size="small" :disabled="multiple" @click="handleSetNature('normal')" v-hasPermi="['project:project:edit']">取消指令性任务</el-button>
+            <el-button type="info" plain icon="Setting" size="small" @click="openMandateRule" v-hasPermi="['project:project:edit']">指令性规则</el-button>
          </div>
          <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
             <el-button v-if="false" type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:project:export']">导出</el-button>
@@ -184,7 +191,7 @@
                <el-checkbox :model-value="isAllChecked" :indeterminate="isIndeterminate" @change="handleCheckAll" /> 序号
             </template>
             <template #default="scope">
-               <el-checkbox :model-value="checkedMap[scope.row.id]" style="margin-right:6px" @change="toggleRow(scope.row)" />
+               <el-checkbox :model-value="!!checkedMap[scope.row.id]" style="margin-right:6px" @change="toggleRow(scope.row)" />
                <span>{{ (queryParams.pageNum - 1) * queryParams.pageSize + scope.$index + 1 }}</span>
             </template>
          </el-table-column>
@@ -251,8 +258,8 @@
             </el-row>
             <el-row :gutter="20">
                <el-col :span="8">
-                  <el-form-item label="工程项目" prop="engineeringProject">
-                     <el-select v-model="form.engineeringProject" filterable clearable placeholder="请选择工程项目" style="width: 100%">
+                  <el-form-item label="项目类别" prop="engineeringProject">
+                     <el-select v-model="form.engineeringProject" filterable clearable placeholder="请选择项目类别" style="width: 100%">
                         <el-option v-for="item in subCategoryOptions" :key="item.id" :label="item.label" :value="item.label" />
                      </el-select>
                   </el-form-item>
@@ -272,7 +279,7 @@
             </el-row>
             <el-row :gutter="20" v-if="relatedFieldVisible">
                <el-col :span="8">
-                  <el-form-item label="关联定线编号" label-width="110px" prop="relatedProjectId" :rules="relatedFieldRequired ? [{ required: true, message: '该工程项目必须关联定线项目', trigger: 'change' }] : []">
+                  <el-form-item label="关联定线编号" label-width="110px" prop="relatedProjectId" :rules="relatedFieldRequired ? [{ required: true, message: '该项目类别必须关联定线项目', trigger: 'change' }] : []">
                      <el-select v-model="form.relatedProjectId" filterable clearable placeholder="请选择关联定线项目" style="width: 100%">
                         <el-option v-for="item in relatedCandidates" :key="item.id" :label="item.projectCode" :value="item.id">
                            <span>{{ item.projectCode }}</span>
@@ -430,7 +437,6 @@
             <el-descriptions-item label="工程编号" :span="1">{{ detail.projectCode }}</el-descriptions-item>
             <el-descriptions-item label="项目名称" :span="1">{{ detail.projectName }}</el-descriptions-item>
             <el-descriptions-item label="项目类别">{{ detail.categoryName || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="工程项目">{{ detail.engineeringProject || '-' }}</el-descriptions-item>
             <el-descriptions-item label="关联定线编号">{{ detail.relatedProjectCode || '-' }}</el-descriptions-item>
             <el-descriptions-item label="委托单位">{{ detail.clientUnit || '-' }}</el-descriptions-item>
             <el-descriptions-item label="工程地点">{{ detail.projectLocation || '-' }}</el-descriptions-item>
@@ -523,14 +529,14 @@
          <el-alert v-if="false" type="info" :closable="false" style="margin-bottom: 12px">
             <div>从 Excel 中选中一块区域（Ctrl+C），然后在此处粘贴（Ctrl+V），点击「解析数据」后可调整列映射。</div>
             <div>支持分隔符：Tab（Excel 直接复制）、连续空格、单个空格。</div>
-            <div>默认列顺序：① 工程编号 ② 委托单位 ③ 联系人 ④ 联系电话 ⑤ 工程项目 ⑥ 工程地点 ⑦ 作业部门（自动跳过）⑧ 下达日期。</div>
+            <div>默认列顺序：① 工程编号 ② 委托单位 ③ 联系人 ④ 联系电话 ⑤ 项目类别 ⑥ 工程地点 ⑦ 作业部门（自动跳过）⑧ 下达日期。</div>
             <div>列数不一致时按「尽量对齐」处理；工程编号为必填项，其余可留空。列映射可选择「不导入」来忽略某列。</div>
          </el-alert>
          <el-input
             v-model="pasteText"
             type="textarea"
             :rows="8"
-            placeholder="工程编号(Tab)委托单位(Tab)联系人(Tab)联系电话(Tab)工程项目(Tab)工程地点(Tab)作业部门(Tab)下达日期&#10;例：XK2026001	某某公司	张三	13800138000	某安置房工程	某镇某村	测绘部	2026-09-10&#10;从 Excel 复制后粘贴到此处；也可用空格分隔，多个连续空格会自动视为一个分隔符..."
+            placeholder="工程编号(Tab)委托单位(Tab)联系人(Tab)联系电话(Tab)项目类别(Tab)工程地点(Tab)作业部门(Tab)下达日期&#10;例：XK2026001	某某公司	张三	13800138000	某安置房工程	某镇某村	测绘部	2026-09-10&#10;从 Excel 复制后粘贴到此处；也可用空格分隔，多个连续空格会自动视为一个分隔符..."
          />
          <div style="margin-top: 10px; text-align: right;">
             <el-button type="primary" @click="parsePasteData">解析数据</el-button>
@@ -571,18 +577,77 @@
          </template>
       </el-dialog>
 
-      <!-- Excel导入对话框 -->
-      <excel-import-dialog ref="importRef" title="项目导入" action="/project/project/importData" template-action="/project/project/importTemplate" template-file-name="project_template" update-support-label="是否更新已存在的项目数据" @success="getList" />
+      <!-- 指令性任务规则弹窗（按委托单位关键词自动判定 + 一键回填存量） -->
+      <el-dialog
+         :model-value="mandateRuleOpen"
+         @update:model-value="mandateRuleOpen = $event"
+         title="指令性任务规则"
+         append-to-body
+         destroy-on-close
+         :close-on-click-modal="false"
+         class="scrollbar"
+         width="760px"
+         draggable
+      >
+         <div class="mandate-tip">
+            委托单位名称<b>包含</b>任一启用关键词的项目 → 判定为「指令性任务」：其外部产值<b>不计入</b>应收账款 / 全量外部产值，改道到「指令性任务」独立指标；<b>内部产值照常计算</b>。
+         </div>
+         <div class="mandate-switch-row">
+            <span class="mandate-switch-label">新建 / 导入项目时自动打标</span>
+            <el-switch v-model="mandateAutoMatch" :loading="mandateAutoLoading" @change="handleAutoMatchChange" />
+            <span class="mandate-switch-hint">{{ mandateAutoMatch ? '开启：命中关键词的项目将自动标记' : '关闭：仅手动标记生效（规则仍用于一键回填 / 预览）' }}</span>
+         </div>
+         <div class="mandate-add-row">
+            <el-input
+               v-model="mandateNewKeyword"
+               placeholder="委托单位关键词，例如：西安市勘察测绘院"
+               clearable
+               style="flex: 1"
+               @keyup.enter="handleAddRule"
+            />
+            <el-button type="primary" size="small" :loading="mandateSubmitLoading" :disabled="!mandateNewKeyword" @click="handleAddRule">添加关键词</el-button>
+         </div>
+         <el-table v-loading="mandateRuleLoading" :data="mandateRules" stripe border size="small" max-height="250">
+            <el-table-column label="关键词（包含匹配）" prop="keyword" min-width="200" show-overflow-tooltip />
+            <el-table-column label="启用" width="80" align="center">
+               <template #default="scope">
+                  <el-switch :model-value="scope.row.enabled === '0'" @change="val => handleToggleRule(scope.row, val)" />
+               </template>
+            </el-table-column>
+            <el-table-column label="备注" prop="remark" min-width="150" show-overflow-tooltip>
+               <template #default="scope">{{ scope.row.remark || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="80" align="center">
+               <template #default="scope">
+                  <el-button link type="danger" size="small" @click="handleDeleteRule(scope.row)">删除</el-button>
+               </template>
+            </el-table-column>
+         </el-table>
+         <div class="mandate-preview-row">
+            <span>当前启用关键词命中 <b class="mandate-num">{{ mandatePreviewData.matchedCount || 0 }}</b> 个项目，其中已标记为指令性任务 <b class="mandate-num">{{ mandatePreviewData.alreadyCount || 0 }}</b> 个</span>
+            <el-button
+               type="warning"
+               plain
+               size="small"
+               :loading="mandateApplyLoading"
+               :disabled="!mandatePreviewData.matchedCount"
+               @click="handleApplyRule"
+            >一键回填存量（设为指令性任务）</el-button>
+         </div>
+         <template #footer>
+            <el-button @click="mandateRuleOpen = false">关 闭</el-button>
+         </template>
+      </el-dialog>
    </div>
 </template>
 
 <script setup name="Project">
 import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues, getProjectColumns, getRelatedCandidates, getLeaderOptions, ensureLeader } from "@/api/project/project"
+import { mandateRuleList, mandatePreview, addMandateRule, updateMandateRule, delMandateRule, applyMandateRule, setProjectNature, setMandateAutoMatch } from "@/api/project/mandate"
 import cache from '@/plugins/cache'
 import { categoryTreeselectFull } from "@/api/project/category"
 import { listTask } from "@/api/project/task"
 import { listContract } from "@/api/project/contract"
-import ExcelImportDialog from "@/components/ExcelImportDialog"
 import { ArrowRight } from '@element-plus/icons-vue'
 import { checkRole } from "@/utils/permission"
 import { countWorkdays } from "@/utils/workday"
@@ -594,7 +659,16 @@ import useSearchMemoryStore from "@/store/modules/searchMemory"
 function fmt(d) { return d.toISOString().slice(0, 10) }
 
 const { proxy } = getCurrentInstance()
-const { proj_project_status, proj_task_status, proj_project_source } = useDict("proj_project_status", "proj_task_status", "proj_project_source")
+const { proj_project_status, proj_task_status, proj_project_source, proj_project_nature } = useDict("proj_project_status", "proj_task_status", "proj_project_source", "proj_project_nature")
+// 项目来源下拉项：字典优先，未部署时用内置项兜底
+const sourceOptions = computed(() => {
+  const dict = proj_project_source.value || []
+  if (dict.length) return dict
+  return [
+    { value: 'manual', label: '手动录入' },
+    { value: 'import', label: 'Excel 导入' }
+  ]
+})
 
 /** 渲染用任务状态字典：补充导入旧码 finished，避免 <dict-tag> 原样打印英文（详见 utils/projStatus.js） */
 const taskStatusTagOptions = computed(() => withTaskStatusAliases(proj_task_status.value))
@@ -616,15 +690,18 @@ const columns = ref({})
 /** 当前可见列（按接口返回顺序过滤） */
 const visibleColumns = computed(() => Object.values(columns.value).filter(c => c.visible))
 const COLUMNS_STORAGE_KEY = 'project-list-columns'
+/** 上次见到的列 key 集合：用于识别「新上线的列」，新列按后端默认显隐，不继承本地旧偏好 */
+const COLUMNS_KNOWN_KEY = 'project-list-columns-known'
 /** 兜底清单：后端接口不可用（如后端未重启）时使用，保证表格不退化 */
 const FALLBACK_COLUMNS = [
   { key: 'projectCode', label: '工程编号', type: 'text', group: 'business', prop: 'projectCode', defaultVisible: true },
   { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
-  { key: 'engineeringProject', label: '工程项目', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
+  { key: 'engineeringProject', label: '项目类别', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
   { key: 'relatedProjectCode', label: '关联工程编号', type: 'text', group: 'business', prop: 'relatedProjectCode', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
   { key: 'status', label: '状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
   { key: 'closeTime', label: '办结日期', type: 'date', group: 'business', prop: 'closeTime', defaultVisible: true },
+  { key: 'projectNature', label: '项目性质', type: 'dict', group: 'business', prop: 'projectNature', defaultVisible: true },
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
   { key: 'contractName', label: '合同', type: 'text', group: 'business', prop: 'contractName', defaultVisible: false },
   { key: 'leaderNames', label: '负责人', type: 'text', group: 'business', prop: 'leaderNames', defaultVisible: true },
@@ -638,24 +715,37 @@ const FALLBACK_COLUMNS = [
   { key: 'updateTime', label: '更新时间', type: 'date', group: 'system', prop: 'updateTime', defaultVisible: false }
 ]
 
-/** 把列元数据数组构建为 columns 对象（合并 localStorage 偏好） */
+/**
+ * 把列元数据数组构建为 columns 对象（合并 localStorage 偏好）。
+ * ⚠️ 新上线的列不继承本地旧偏好：否则历史上「自动发现」出来的同名隐藏列会把新列
+ *    永久压在隐藏态（表现为「后端加了列但界面看不到」）。存量列仍尊重用户本地显隐。
+ */
 function buildColumns(list) {
   let saved = {}
   try {
     saved = cache.local.getJSON(COLUMNS_STORAGE_KEY) || {}
   } catch (e) { /* 忽略本地存储异常 */ }
+  let known = []
+  try {
+    known = cache.local.getJSON(COLUMNS_KNOWN_KEY) || []
+  } catch (e) { /* 忽略本地存储异常 */ }
+  const knownSet = new Set(Array.isArray(known) ? known : [])
   const obj = {}
   list.forEach(col => {
+    const isNewColumn = !knownSet.has(col.key)
     obj[col.key] = {
       key: col.key,
       label: col.label,
       type: col.type,
       group: col.group,
       prop: col.prop,
-      visible: saved[col.key] !== undefined ? !!saved[col.key] : !!col.defaultVisible
+      visible: isNewColumn ? !!col.defaultVisible : (saved[col.key] !== undefined ? !!saved[col.key] : !!col.defaultVisible)
     }
   })
   columns.value = obj
+  try {
+    cache.local.setJSON(COLUMNS_KNOWN_KEY, list.map(c => c.key))
+  } catch (e) { /* 忽略本地存储异常 */ }
 }
 
 /** 从后端加载可显隐列元数据；接口不可用时降级到内置兜底清单 */
@@ -694,6 +784,14 @@ function dictOptionsFor(col) {
     return [
       { value: 'manual', label: '手动录入', elTagType: 'info' },
       { value: 'import', label: 'Excel 导入', elTagType: 'primary' }
+    ]
+  }
+  if (col.key === 'projectNature') {
+    const dict = proj_project_nature.value || []
+    if (dict.length) return dict
+    return [
+      { value: 'normal', label: '常规', elTagType: 'info' },
+      { value: 'mandate', label: '指令性任务', elTagType: 'warning' }
     ]
   }
   return proj_project_status.value
@@ -765,7 +863,6 @@ const saveSchemeVisible = ref(false)
 const schemeName = ref("")
 const currentSchemeName = ref("")
 const clientUnitOptions = ref([])
-const engineeringProjectOptions = ref([])
 const taskListOpen = ref(false)
 const taskLoading = ref(false)
 const taskListData = ref([])
@@ -821,7 +918,7 @@ const pasteHeaders = ref([])
 const fieldOptions = [
    { label: "工程编号", value: "projectCode" },
    { label: "项目名称", value: "projectName" },
-   { label: "工程项目", value: "engineeringProject" },
+   { label: "项目类别", value: "engineeringProject" },
    { label: "委托单位", value: "clientUnit" },
    { label: "联系人", value: "contactName" },
    { label: "联系电话", value: "contactPhone" },
@@ -834,7 +931,7 @@ const fieldOptions = [
 /**
  * 粘贴时的「固定顺序」默认列映射（方案A）。
  * 用户从 Excel 复制的字段顺序：
- *   1 工程编号  2 委托单位  3 联系人  4 联系电话  5 工程项目  6 工程地点  7 作业部门(跳过)  8 下达日期
+ *   1 工程编号  2 委托单位  3 联系人  4 联系电话  5 项目类别  6 工程地点  7 作业部门(跳过)  8 下达日期
  * 下标 6（作业部门）不在导入范围内，映射为空字符串表示「忽略该列」。
  */
 const PASTE_DEFAULT_MAP = [
@@ -842,13 +939,16 @@ const PASTE_DEFAULT_MAP = [
    "clientUnit",         // 2 委托单位
    "contactName",        // 3 联系人
    "contactPhone",       // 4 联系电话
-   "engineeringProject", // 5 工程项目
+   "engineeringProject", // 5 项目类别
    "projectLocation",    // 6 工程地点
    "",                   // 7 作业部门 —— 不导入，忽略
    "assignDate",         // 8 下达日期 → 安排日期
 ]
 
 // 基于 ids 计算当前页选中状态
+// ⚠️ el-checkbox 的取值是 props.modelValue ?? selfModel：若 modelValue 为 undefined，
+//    会回落到组件内部残留状态（用户上次点击时写下的 true）⇒ clearSelection() 后旧行仍显示勾选。
+//    因此模板里必须传恒布尔：:model-value="!!checkedMap[row.id]"，否则会出现「表头已清空、行还勾着」。
 const checkedMap = computed(() => {
   const map = {}
   ids.value.forEach(id => { map[id] = true })
@@ -875,12 +975,13 @@ const data = reactive({
     projectCode: undefined,
     contactName: undefined,
     projectLocation: undefined,
-    engineeringProject: undefined,
     clientUnit: undefined,
     assignDateBegin: undefined,
     assignDateEnd: undefined,
     contractStatus: undefined,
     overdue: undefined,
+    projectNature: undefined,
+    dataSource: undefined,
     closeDateBegin: undefined,
     closeDateEnd: undefined
   },
@@ -945,7 +1046,7 @@ function refreshFormDuration() {
 
 watch(() => form.value.assignDate, refreshFormDuration)
 
-/** 工程项目变化时加载关联定线候选项目 */
+/** 项目类别变化时加载关联定线候选项目 */
 watch(() => form.value.engineeringProject, (val) => {
   if (val && relatedFieldVisible.value) {
     relatedCandidates.value = []
@@ -1150,13 +1251,10 @@ function loadSavedSchemes() {
   } catch (e) { /* ignore */ }
 }
 
-/** 加载高级筛选下拉选项（委托单位、工程项目去重列表） */
+/** 加载高级筛选下拉选项（委托单位去重列表） */
 function loadDistinctValues() {
   getDistinctValues('client_unit').then(res => {
     clientUnitOptions.value = (res.data || []).filter(Boolean)
-  }).catch(() => {})
-  getDistinctValues('engineering_project').then(res => {
-    engineeringProjectOptions.value = (res.data || []).filter(Boolean)
   }).catch(() => {})
 }
 
@@ -1246,12 +1344,13 @@ function resetQuery() {
   queryParams.value.projectCode = undefined
   queryParams.value.contactName = undefined
   queryParams.value.projectLocation = undefined
-  queryParams.value.engineeringProject = undefined
   queryParams.value.clientUnit = undefined
   queryParams.value.assignDateBegin = undefined
   queryParams.value.assignDateEnd = undefined
   queryParams.value.contractStatus = undefined
   queryParams.value.overdue = undefined
+  queryParams.value.projectNature = undefined
+  queryParams.value.dataSource = undefined
   queryParams.value.closeDateBegin = undefined
   queryParams.value.closeDateEnd = undefined
   closeDateRange.value = []
@@ -1279,6 +1378,97 @@ function clearSelection() {
   currentSelection.value = []
   single.value = true
   multiple.value = false
+}
+
+// ==================== 指令性任务（项目性质 / 委托单位规则） ====================
+const mandateRuleOpen = ref(false)
+const mandateRuleLoading = ref(false)
+const mandateSubmitLoading = ref(false)
+const mandateApplyLoading = ref(false)
+const mandateAutoLoading = ref(false)
+const mandateRules = ref([])
+const mandateNewKeyword = ref('')
+const mandateAutoMatch = ref(true)
+const mandatePreviewData = ref({})
+
+/** 规则列表 + 预览统计（并行加载） */
+function loadMandateRules() {
+  mandateRuleLoading.value = true
+  Promise.all([mandateRuleList(), mandatePreview()]).then(([r1, r2]) => {
+    mandateRules.value = r1.data || []
+    mandatePreviewData.value = r2.data || {}
+    mandateAutoMatch.value = mandatePreviewData.value.autoMatch !== false
+  }).catch(() => { mandateRules.value = [] }).finally(() => { mandateRuleLoading.value = false })
+}
+
+/** 打开规则弹窗 */
+function openMandateRule() {
+  mandateRuleOpen.value = true
+  mandateNewKeyword.value = ''
+  loadMandateRules()
+}
+
+/** 新增关键词规则 */
+function handleAddRule() {
+  const kw = (mandateNewKeyword.value || '').trim()
+  if (!kw) return
+  mandateSubmitLoading.value = true
+  addMandateRule({ keyword: kw, enabled: '0' }).then(() => {
+    proxy.$modal.msgSuccess('已添加关键词「' + kw + '」')
+    mandateNewKeyword.value = ''
+    loadMandateRules()
+  }).finally(() => { mandateSubmitLoading.value = false })
+}
+
+/** 启用 / 停用某条规则（enabled='0' 为启用） */
+function handleToggleRule(row, val) {
+  updateMandateRule({ id: row.id, keyword: row.keyword, enabled: val ? '0' : '1' }).then(() => {
+    proxy.$modal.msgSuccess(val ? '已启用' : '已停用')
+    loadMandateRules()
+  }).catch(() => { loadMandateRules() })
+}
+
+/** 删除规则 */
+function handleDeleteRule(row) {
+  proxy.$modal.confirm('确认删除关键词「' + row.keyword + '」？').then(() => delMandateRule(row.id)).then(() => {
+    proxy.$modal.msgSuccess('已删除')
+    loadMandateRules()
+  }).catch(() => {})
+}
+
+/** 一键回填存量：命中规则的项目批量标记 */
+function handleApplyRule() {
+  proxy.$modal.confirm('将把命中关键词的项目批量标记为指令性任务，确认继续？').then(() => {
+    mandateApplyLoading.value = true
+    return applyMandateRule()
+  }).then(res => {
+    proxy.$modal.msgSuccess(res.msg || '已回填')
+    loadMandateRules()
+    getList()
+  }).catch(() => {}).finally(() => { mandateApplyLoading.value = false })
+}
+
+/** 自动打标开关 */
+function handleAutoMatchChange(val) {
+  mandateAutoLoading.value = true
+  setMandateAutoMatch(val).then(() => {
+    proxy.$modal.msgSuccess(val ? '已开启自动打标' : '已关闭自动打标')
+  }).catch(() => { mandateAutoMatch.value = !val }).finally(() => { mandateAutoLoading.value = false })
+}
+
+/** 批量设置项目性质（勾选行） */
+function handleSetNature(nature) {
+  if (!ids.value.length) return
+  const isMandate = nature === 'mandate'
+  const tip = isMandate
+    ? '确认将选中的 ' + ids.value.length + ' 个项目设为「指令性任务」？\n\n其外部产值将不再计入应收账款与全量外部产值，改道到「指令性任务」独立指标；内部产值照常计算。'
+    : '确认取消选中的 ' + ids.value.length + ' 个项目的「指令性任务」标记？\n\n取消后其外部产值将重新计入应收账款与全量外部产值。'
+  proxy.$modal.confirm(tip).then(() => {
+    return setProjectNature({ ids: ids.value, nature })
+  }).then(res => {
+    proxy.$modal.msgSuccess(res.msg || '操作成功')
+    getList()
+  }).catch(() => {})
 }
 
 /** 全选切换 */
@@ -1410,11 +1600,6 @@ function submitStatusChange() {
    })
 }
 
-/** 导入按钮 */
-function handleImport() {
-   proxy.$refs["importRef"].open()
-}
-
 /** 区域粘贴按钮 */
 function handlePaste() {
    pasteText.value = ""
@@ -1460,7 +1645,7 @@ function parsePasteData() {
       return
    }
    const rows = lines.map(line => splitPasteLine(line).map(cell => cell.trim()))
-   const headerKeywords = ["工程编号", "项目名称", "工程项目", "委托单位", "联系人", "联系电话", "工程地点", "负责人", "备注", "作业部门", "下达日期", "安排日期"]
+   const headerKeywords = ["工程编号", "项目名称", "项目类别", "工程项目", "委托单位", "联系人", "联系电话", "工程地点", "负责人", "备注", "作业部门", "下达日期", "安排日期"]
    const firstRowIsHeader = rows[0].some(cell => headerKeywords.some(kw => cell.includes(kw)))
    const dataRows = firstRowIsHeader ? rows.slice(1) : rows
    pasteRows.value = dataRows
@@ -1646,6 +1831,7 @@ if (drillQuery.categoryId) queryParams.value.projectCategoryId = Number(drillQue
 if (drillQuery.clientUnit) queryParams.value.clientUnit = drillQuery.clientUnit
 if (drillQuery.contractStatus) queryParams.value.contractStatus = String(drillQuery.contractStatus)
 if (drillQuery.overdue) queryParams.value.overdue = String(drillQuery.overdue)
+if (drillQuery.projectNature) queryParams.value.projectNature = String(drillQuery.projectNature)
 if (drillQuery.beginDate && drillQuery.endDate) {
   if (drillQuery.dateField === 'close') {
     queryParams.value.closeDateBegin = drillQuery.beginDate
@@ -1657,7 +1843,7 @@ if (drillQuery.beginDate && drillQuery.endDate) {
     assignDateRange.value = [drillQuery.beginDate, drillQuery.endDate]
   }
 }
-if (Object.keys(drillQuery).some(k => ['leaderId', 'categoryId', 'clientUnit', 'contractStatus', 'overdue', 'beginDate', 'endDate'].includes(k))) {
+if (Object.keys(drillQuery).some(k => ['leaderId', 'categoryId', 'clientUnit', 'contractStatus', 'overdue', 'beginDate', 'endDate', 'projectNature'].includes(k))) {
   advancedVisible.value = true
 }
 
@@ -1875,4 +2061,42 @@ if (drillQuery.id) {
   color: #a8abb2;
   font-size: 12px;
 }
+
+/* ===== 指令性任务规则弹窗 ===== */
+.mandate-tip {
+  background: #fdf6ec;
+  border: 1px solid #f5dab1;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #7a5a1e;
+  margin-bottom: 12px;
+}
+.mandate-tip b { color: #b8791a; }
+.mandate-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 12px;
+}
+.mandate-switch-label { font-size: 13px; font-weight: 600; color: #303133; }
+.mandate-switch-hint { font-size: 12px; color: #909399; }
+.mandate-add-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mandate-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #e4e7ed;
+  font-size: 13px;
+  color: #606266;
+}
+.mandate-num { color: #e6a23c; font-size: 15px; }
 </style>

@@ -100,7 +100,7 @@
               <el-table :data="preview.problemRows" border stripe size="small" max-height="40vh">
                 <el-table-column prop="excelRow" label="Excel行" width="75" align="center" />
                 <el-table-column prop="projectCode" label="工程编号" min-width="130" show-overflow-tooltip />
-                <el-table-column prop="engineeringProject" label="委托任务" min-width="150" show-overflow-tooltip />
+                <el-table-column prop="engineeringProject" label="项目类别" min-width="150" show-overflow-tooltip />
                 <el-table-column label="问题类型" width="100" align="center">
                   <template #default="{ row }">
                     <el-tag size="small" :type="problemTagType(row.problemType)">{{ row.problemType }}</el-tag>
@@ -128,7 +128,6 @@
               </el-table-column>
               <el-table-column prop="projectCode" label="工程编号" min-width="130" />
               <el-table-column prop="clientUnit" label="委托单位" min-width="150" show-overflow-tooltip />
-              <el-table-column prop="engineeringProject" label="委托任务" min-width="160" show-overflow-tooltip />
               <el-table-column prop="projectCategoryName" label="项目类别" min-width="130" show-overflow-tooltip />
               <el-table-column label="负责人" width="100">
                 <template #default="{ row }">{{ row.leaderName || '-' }}</template>

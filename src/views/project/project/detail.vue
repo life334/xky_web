@@ -22,7 +22,6 @@
                <el-descriptions-item label="工程编号">{{ projectInfo.projectCode || '-' }}</el-descriptions-item>
                <el-descriptions-item label="项目名称">{{ projectInfo.projectName || '-' }}</el-descriptions-item>
                <el-descriptions-item label="项目类别">{{ projectInfo.categoryName || '-' }}</el-descriptions-item>
-               <el-descriptions-item label="工程项目">{{ projectInfo.engineeringProject || '-' }}</el-descriptions-item>
                <el-descriptions-item label="委托单位">{{ projectInfo.clientUnit || '-' }}</el-descriptions-item>
                <el-descriptions-item label="工程地点">{{ projectInfo.projectLocation || '-' }}</el-descriptions-item>
                <el-descriptions-item label="联系人">{{ projectInfo.contactName || '-' }}</el-descriptions-item>

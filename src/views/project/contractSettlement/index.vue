@@ -271,7 +271,7 @@
         <!-- 明细表格 -->
         <el-table :data="receivedDetailData" border stripe size="small" style="margin-top: 16px" max-height="360">
           <el-table-column label="工程编号" prop="project_code" min-width="130" />
-          <el-table-column label="工程项目" prop="engineering_project" min-width="140"/>
+          <el-table-column label="项目类别" prop="engineering_project" min-width="140"/>
           <el-table-column label="委托单位" prop="client_unit" min-width="130" />
           <el-table-column label="预付款" prop="advance_amount" min-width="100" align="right">
             <template #default="scope">{{ fmtPay(scope.row.advance_amount) }}</template>
@@ -301,7 +301,7 @@
         <el-table-column label="委托单位" prop="clientUnit" min-width="160" show-overflow-tooltip="false" />
         <el-table-column label="联系人" prop="contactName" min-width="100" show-overflow-tooltip="false" />
         <el-table-column label="联系电话" prop="contactPhone" min-width="130" show-overflow-tooltip="false" />
-        <el-table-column label="工程项目" prop="engineeringProject" min-width="180" show-overflow-tooltip="false" />
+        <el-table-column label="项目类别" prop="engineeringProject" min-width="180" show-overflow-tooltip="false" />
         <el-table-column label="工程地点" prop="projectLocation" min-width="160" show-overflow-tooltip="false" />
         <el-table-column label="状态" prop="status" min-width="90" show-overflow-tooltip="false">
           <template #default="scope">

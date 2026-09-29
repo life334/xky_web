@@ -41,8 +41,8 @@
               </el-select>
             </div>
             <div class="filter-pop-item">
-              <div class="filter-pop-label">项目小类</div>
-              <el-select v-model="filters.categoryId" filterable clearable placeholder="全部小类" style="width: 100%" @change="onFilterChange">
+              <div class="filter-pop-label">项目类别</div>
+              <el-select v-model="filters.categoryId" filterable clearable placeholder="全部类别" style="width: 100%" @change="onFilterChange">
                 <el-option v-for="c in categoryOptions" :key="c.id" :label="c.name" :value="c.id" />
               </el-select>
             </div>
@@ -81,7 +81,7 @@
     <div v-if="filterCount" class="filter-tags">
       <el-tag v-if="filters.clientUnit" closable size="small" @close="removeFilterTag('clientUnit')">单位：{{ filters.clientUnit }}</el-tag>
       <el-tag v-if="filters.leaderId" closable size="small" @close="removeFilterTag('leaderId')">负责人：{{ leaderNameOf(filters.leaderId) }}</el-tag>
-      <el-tag v-if="filters.categoryId" closable size="small" @close="removeFilterTag('categoryId')">小类：{{ categoryNameOf(filters.categoryId) }}</el-tag>
+      <el-tag v-if="filters.categoryId" closable size="small" @close="removeFilterTag('categoryId')">类别：{{ categoryNameOf(filters.categoryId) }}</el-tag>
     </div>
 
     <!-- ===== 段1 经营快照：六磁贴 ===== -->
@@ -112,16 +112,16 @@
       </div>
     </div>
 
-    <!-- ===== 段2 业务结构：类型构成 + 类型画像 / 本期办结占比 ===== -->
+    <!-- ===== 段2 业务结构：类别构成 + 类别画像 / 本期办结占比 ===== -->
     <div class="seg-head">
       <span class="seg-title">业务结构</span>
-      <span class="seg-pill">数量/合同额按安排日期 · 产值按办结日期 · 类型口径：定线/验线/管线图/实测/其它</span>
+      <span class="seg-pill">数量/合同额按安排日期 · 产值按办结日期 · 类别口径：定线/验线/管线图/实测/其它</span>
     </div>
     <div class="chart-row">
       <div class="chart-card chart-wide" v-loading="structureLoading">
         <div class="chart-header">
-          <span class="chart-title">项目类型构成与产值画像</span>
-          <span class="chart-subtitle">按类型占比 · 点击饼图或表格行可下钻</span>
+          <span class="chart-title">项目类别构成与产值画像</span>
+          <span class="chart-subtitle">按类别占比 · 点击饼图或表格行可下钻</span>
         </div>
         <div class="pie-quad">
           <div class="pie-cell">
@@ -150,7 +150,7 @@
             <table class="profile-table">
               <thead>
                 <tr>
-                  <th class="pt-name">类型</th>
+                  <th class="pt-name">类别</th>
                   <th class="pt-num">数量</th>
                   <th class="pt-num">占比</th>
                   <th class="pt-num">合同额</th>
@@ -201,14 +201,14 @@
       </div>
     </div>
 
-    <!-- ===== 段3 人员效能：项目经理 × 类型矩阵 ===== -->
+    <!-- ===== 段3 人员效能：项目经理 × 类别矩阵 ===== -->
     <div class="seg-head">
       <span class="seg-title">人员效能</span>
-      <span class="seg-pill">多负责人项目按人重复计数 · 颜色仅标识类型，大小看数字与条长</span>
+      <span class="seg-pill">多负责人项目按人重复计数 · 颜色仅标识类别，大小看数字与条长</span>
     </div>
     <div class="chart-card matrix-card" v-loading="structureLoading">
       <div class="chart-header">
-        <span class="chart-title">项目经理 × 类型</span>
+        <span class="chart-title">项目经理 × 类别</span>
         <span class="chart-subtitle">点列头排序 · 点格子下钻</span>
         <el-radio-group v-model="matrixMetric" size="small">
           <el-radio-button value="count">项目数</el-radio-button>
@@ -381,7 +381,7 @@ import { categoryTreeselectFull } from "@/api/project/category"
 
 const router = useRouter()
 
-// ===== 类型 5 桶（口径与后端契约一致：定线/验线/管线图/实测/其它） =====
+// ===== 类别 5 桶（口径与后端契约一致：定线/验线/管线图/实测/其它） =====
 const DEFAULT_BUCKETS = ["dingxian", "yinxian", "guanxiantu", "shice", "qita"]
 const BUCKET_NAMES = { dingxian: "定线", yinxian: "验线", guanxiantu: "管线图", shice: "实测", qita: "其它" }
 const BUCKET_COLORS = {
@@ -771,7 +771,7 @@ function pieCapTotal(metric) {
   return metric === "count" ? total + " 个" : "¥" + formatMoney(total)
 }
 
-/** 单个「按类型占比」饼图：颜色标识类型，合计显示在标题右侧，点击切片下钻 */
+/** 单个「按类别占比」饼图：颜色标识类别，合计显示在标题右侧，点击切片下钻 */
 function renderBucketPie(el, chartKey, metric) {
   if (!el) return
   if (!charts[chartKey]) charts[chartKey] = echarts.init(el)
@@ -1062,10 +1062,14 @@ function loadFilterOptions() {
     leaderOptions.value = res.data || []
   }).catch(() => { /* 下拉加载失败不影响主流程 */ })
   categoryTreeselectFull().then(res => {
+    // 只取叶子节点（小类）：项目只能挂小类，列出大类会选不到任何数据
     const flat = []
     const walk = nodes => (nodes || []).forEach(n => {
-      flat.push({ id: n.id, name: n.name || n.label })
-      if (n.children && n.children.length) walk(n.children)
+      if (n.children && n.children.length) {
+        walk(n.children)
+      } else {
+        flat.push({ id: n.id, name: n.name || n.label })
+      }
     })
     walk(res.data)
     categoryOptions.value = flat
@@ -1403,7 +1407,7 @@ $accent-red: #ff4d4f;
 .pie-canvas { height: 160px; }
 .debt-canvas { height: 210px; }
 
-/* ===== 段2：类型构成 + 画像 ===== */
+/* ===== 段2：类别构成 + 画像 ===== */
 .pie-quad {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

@@ -753,7 +753,7 @@ const uncheckedCodes = ref(new Set()) // 用户主动去勾选的工程编号
 const exporting = ref(false)
 const submitting = ref(false)
 const categoryOptions = ref([])
-/* 工程项目下拉选项（类别树小类名称，与项目编辑页数据源一致） */
+/* 项目类别下拉选项（类别树小类名称，与项目编辑页数据源一致） */
 const engineeringOptions = ref([])
 /* 下拉选项类加载（字段池/模板/筛选方案/类别）统一遮罩，绑定模板两个 el-select */
 const optionsLoading = ref(false)
@@ -1035,7 +1035,7 @@ async function loadCategories() {
     }
     walk(tree, 0)
     categoryOptions.value = flat
-    /* 小类名称 = 工程项目下拉选项（与项目编辑页 subCategoryOptions 同源同口径） */
+    /* 小类名称 = 项目类别下拉选项（与项目编辑页 subCategoryOptions 同源同口径） */
     engineeringOptions.value = Array.from(subNames)
   } catch (e) {
     categoryOptions.value = []
@@ -1158,7 +1158,7 @@ function buildBackendFilter(withName = false) {
 function selectOptions(fk) {
   const meta = FILTER_MAP[fk]
   if (meta.source === 'category') return Object.fromEntries(categoryOptions.value.map(o => [o.value, o.label]))
-  /* 工程项目：选项为类别树小类名称（值 = 名称本身，与项目编辑页一致） */
+  /* 项目类别：选项为类别树小类名称（值 = 名称本身，与项目编辑页一致） */
   if (meta.source === 'engineering') return Object.fromEntries(engineeringOptions.value.map(s => [s, s]))
   const pool = fieldPoolMeta(fk)
   return pool?.options || {}
