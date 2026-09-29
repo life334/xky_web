@@ -133,8 +133,7 @@
                <div class="filter-item">
                   <div class="filter-item-label">项目性质</div>
                   <el-select v-model="queryParams.projectNature" clearable placeholder="全部" style="width: 100%" @change="handleQuery">
-                     <el-option label="常规" value="normal" />
-                     <el-option label="指令性任务" value="mandate" />
+                     <el-option v-for="d in natureOptions" :key="d.value" :label="d.label" :value="d.value" />
                   </el-select>
                </div>
                <div class="filter-item">
@@ -250,13 +249,11 @@
                      <el-input v-model="form.projectCode" placeholder="请输入工程编号" maxlength="50" />
                   </el-form-item>
                </el-col>
-               <el-col :span="16">
+               <el-col :span="8">
                   <el-form-item label="项目名称" prop="projectName">
                      <el-input v-model="form.projectName" placeholder="请输入项目名称" maxlength="200" />
                   </el-form-item>
                </el-col>
-            </el-row>
-            <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="项目类别" prop="engineeringProject">
                      <el-select v-model="form.engineeringProject" filterable clearable placeholder="请选择项目类别" style="width: 100%">
@@ -264,6 +261,8 @@
                      </el-select>
                   </el-form-item>
                </el-col>
+            </el-row>
+            <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="委托单位" prop="clientUnit">
                      <el-select v-model="form.clientUnit" filterable clearable allow-create placeholder="请选择或输入委托单位" style="width: 100%">
@@ -276,25 +275,13 @@
                      <el-input v-model="form.projectLocation" placeholder="请输入工程地点" maxlength="300" />
                   </el-form-item>
                </el-col>
-            </el-row>
-            <el-row :gutter="20" v-if="relatedFieldVisible">
-               <el-col :span="8">
-                  <el-form-item label="关联定线编号" label-width="110px" prop="relatedProjectId" :rules="relatedFieldRequired ? [{ required: true, message: '该项目类别必须关联定线项目', trigger: 'change' }] : []">
-                     <el-select v-model="form.relatedProjectId" filterable clearable placeholder="请选择关联定线项目" style="width: 100%">
-                        <el-option v-for="item in relatedCandidates" :key="item.id" :label="item.projectCode" :value="item.id">
-                           <span>{{ item.projectCode }}</span>
-                           <span style="color: #909399; margin-left: 8px; font-size: 12px">{{ item.projectName }}</span>
-                        </el-option>
-                     </el-select>
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="联系人" prop="contactName">
                      <el-input v-model="form.contactName" placeholder="请输入联系人" maxlength="50" />
                   </el-form-item>
                </el-col>
+            </el-row>
+            <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="联系电话" prop="contactPhone">
                      <el-input v-model="form.contactPhone" placeholder="请输入联系电话" maxlength="30" />
@@ -315,9 +302,28 @@
                      </el-select>
                   </el-form-item>
                </el-col>
+               <el-col :span="8" v-if="relatedFieldVisible">
+                  <el-form-item label="关联定线编号" label-width="110px" prop="relatedProjectId" :rules="relatedFieldRequired ? [{ validator: validateRelated, trigger: 'change' }] : []">
+                     <el-autocomplete
+                        v-model="relatedCodeInput"
+                        :fetch-suggestions="fetchRelatedSuggestions"
+                        clearable
+                        placeholder="选择或直接输入编号（支持系统中不存在的编号）"
+                        style="width: 100%"
+                        @select="onRelatedSelect"
+                        @blur="commitRelatedInput"
+                        @clear="commitRelatedInput"
+                     >
+                        <template #default="{ item }">
+                           <span>{{ item.value }}</span>
+                           <span style="color: #909399; margin-left: 8px; font-size: 12px">{{ item.projectName }}</span>
+                        </template>
+                     </el-autocomplete>
+                  </el-form-item>
+               </el-col>
             </el-row>
             <el-row :gutter="20">
-               <el-col :span="8">
+               <el-col :span="16">
                   <el-form-item label="合同" prop="contractId">
                      <el-select
                         v-model="form.contractId"
@@ -373,7 +379,7 @@
             <el-row :gutter="20">
                <el-col :span="24">
                   <el-form-item label="备注" prop="remark">
-                     <el-input v-model="form.remark" type="textarea" placeholder="请输入备注" maxlength="500" :rows="3" />
+                     <el-input v-model="form.remark" type="textarea" placeholder="请输入备注" maxlength="500" :rows="2" />
                   </el-form-item>
                </el-col>
             </el-row>
@@ -421,7 +427,6 @@
                   </el-row>
                </div>
             </el-collapse-transition>
-            <el-divider />
          </el-form>
          <template #footer>
             <div class="dialog-footer">
@@ -697,7 +702,7 @@ const FALLBACK_COLUMNS = [
   { key: 'projectCode', label: '工程编号', type: 'text', group: 'business', prop: 'projectCode', defaultVisible: true },
   { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
   { key: 'engineeringProject', label: '项目类别', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
-  { key: 'relatedProjectCode', label: '关联工程编号', type: 'text', group: 'business', prop: 'relatedProjectCode', defaultVisible: true },
+  { key: 'relatedProjectCode', label: '关联定线编号', type: 'text', group: 'business', prop: 'relatedProjectCode', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
   { key: 'status', label: '状态', type: 'dict', group: 'business', prop: 'status', defaultVisible: true },
   { key: 'closeTime', label: '办结日期', type: 'date', group: 'business', prop: 'closeTime', defaultVisible: true },
@@ -777,6 +782,16 @@ function colWidth(col) {
  * 项目来源字典（sql/14_add_project_source_dict.sql）未部署时用内置项兜底，
  * 避免退化成空白。
  */
+/** 项目性质下拉选项：字典 proj_project_nature 优先，未部署时内置兜底（口径统一为「市场性任务」） */
+const natureOptions = computed(() => {
+  const dict = proj_project_nature.value || []
+  if (dict.length) return dict
+  return [
+    { value: 'normal', label: '市场性任务' },
+    { value: 'mandate', label: '指令性任务' }
+  ]
+})
+
 function dictOptionsFor(col) {
   if (col.key === 'dataSource') {
     const dict = proj_project_source.value || []
@@ -790,7 +805,7 @@ function dictOptionsFor(col) {
     const dict = proj_project_nature.value || []
     if (dict.length) return dict
     return [
-      { value: 'normal', label: '常规', elTagType: 'info' },
+      { value: 'normal', label: '市场性任务', elTagType: 'info' },
       { value: 'mandate', label: '指令性任务', elTagType: 'warning' }
     ]
   }
@@ -827,6 +842,78 @@ const subCategoryOptions = computed(() => {
   return list
 })
 const relatedCandidates = ref([])
+/** 关联定线编号输入框文本（自由输入：命中候选存 id，否则原文即所输） */
+const relatedCodeInput = ref('')
+
+/** 依据 form.relatedProjectId / relatedProjectCodeText 反向同步输入框文本（编辑回显） */
+function syncRelatedCodeInput() {
+  if (form.value.relatedProjectId != null && form.value.relatedProjectId !== '') {
+    const hit = relatedCandidates.value.find(c => c.id === form.value.relatedProjectId)
+    relatedCodeInput.value = hit
+      ? hit.projectCode
+      : (form.value.relatedProjectCode || form.value.relatedProjectCodeText || String(form.value.relatedProjectId))
+  } else {
+    relatedCodeInput.value = form.value.relatedProjectCodeText || ''
+  }
+}
+
+/** 重新触发关联定线编号校验（必填时即时反馈） */
+function revalidateRelated() {
+  if (!relatedFieldVisible.value) return
+  const f = proxy.$refs['projectRef']
+  if (f) f.validateField('relatedProjectId', () => {})
+}
+
+/** 提交输入框文本：命中候选 -> 存 id；否则 -> 存手工文本（手输即所输，无需点下拉） */
+function commitRelatedInput() {
+  const v = String(relatedCodeInput.value == null ? '' : relatedCodeInput.value).trim()
+  if (!v) {
+    form.value.relatedProjectId = undefined
+    form.value.relatedProjectCodeText = undefined
+    relatedCodeInput.value = ''
+    revalidateRelated()
+    return
+  }
+  const hit = relatedCandidates.value.find(c => String(c.projectCode) === v)
+  if (hit) {
+    form.value.relatedProjectId = hit.id
+    form.value.relatedProjectCodeText = undefined
+  } else {
+    form.value.relatedProjectId = undefined
+    form.value.relatedProjectCodeText = v
+  }
+  revalidateRelated()
+}
+
+/** 选中下拉里的候选项目 */
+function onRelatedSelect(item) {
+  if (item && item.id != null) {
+    form.value.relatedProjectId = item.id
+    form.value.relatedProjectCodeText = undefined
+    relatedCodeInput.value = item.value
+    revalidateRelated()
+  } else {
+    commitRelatedInput()
+  }
+}
+
+/** 关联定线编号自动补全建议（按编号/名称过滤） */
+function fetchRelatedSuggestions(query, cb) {
+  const q = String(query || '').trim().toLowerCase()
+  const list = (relatedCandidates.value || []).filter(c => {
+    if (!q) return true
+    return String(c.projectCode || '').toLowerCase().includes(q) ||
+      String(c.projectName || '').toLowerCase().includes(q)
+  })
+  cb(list.map(c => ({ value: c.projectCode, id: c.id, projectName: c.projectName })))
+}
+/** 关联定线编号校验（必填时）：已选系统项目 或 手工输入编号，二者有其一即通过 */
+function validateRelated(rule, value, callback) {
+  const hasId = form.value.relatedProjectId != null && form.value.relatedProjectId !== ''
+  const hasText = !!(form.value.relatedProjectCodeText && String(form.value.relatedProjectCodeText).trim())
+  if (hasId || hasText) callback()
+  else callback(new Error('请选择或输入关联定线编号'))
+}
 const currentSubCategory = computed(() => {
   return subCategoryOptions.value.find(item => item.label === form.value.engineeringProject)
 })
@@ -1057,7 +1144,9 @@ watch(() => form.value.engineeringProject, (val) => {
     })
   } else {
     form.value.relatedProjectId = undefined
+    form.value.relatedProjectCodeText = undefined
     relatedCandidates.value = []
+    relatedCodeInput.value = ''
   }
 })
 
@@ -1302,6 +1391,7 @@ function reset() {
     projectName: undefined,
     engineeringProject: undefined,
     relatedProjectId: undefined,
+    relatedProjectCodeText: undefined,
     clientUnit: undefined,
     contactName: undefined,
     contactPhone: undefined,
@@ -1320,6 +1410,7 @@ function reset() {
     firstPaymentMethod: undefined
   }
   proxy.resetForm("projectRef")
+  relatedCodeInput.value = ''
   firstPaymentExpanded.value = true
   selectedContractClientUnit.value = ""
 }
@@ -1527,13 +1618,20 @@ function handleUpdate(row) {
     }
     // 打开弹窗即按"安排日期→今天"实时计算总时长（不依赖用户重新选择日期）
     refreshFormDuration()
+    // 先回显关联定线编号（候选未就绪时回退后端 coalesce 显示值）
+    syncRelatedCodeInput()
     // 显式加载关联定线候选项目（watch 可能因时序未触发）
     if (form.value.engineeringProject && relatedFieldVisible.value) {
       relatedCandidates.value = []
       getRelatedCandidates(form.value.engineeringProject).then(res => {
         if (seq !== formSeq) return
         relatedCandidates.value = res.data || []
+        syncRelatedCodeInput()
+      }).catch(() => {
+        if (seq === formSeq) relatedCandidates.value = []
       })
+    } else {
+      relatedCandidates.value = []
     }
   }).catch(() => {
     if (seq !== formSeq) return
@@ -1966,7 +2064,7 @@ if (drillQuery.id) {
 }
 .filter-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px 24px;
 }
 .filter-item-label {

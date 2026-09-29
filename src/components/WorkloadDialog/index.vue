@@ -12,6 +12,15 @@
       :title="projectCode"
    >
       <el-form v-loading="workloadLoading" element-loading-text="数据加载中..." element-loading-background="rgba(255, 255, 255, 0.7)" :model="workloadForm" label-width="90px">
+         <!-- 空态提示：项目类别未配置/已停用计费方式（严格作用域，不回退全部类别） -->
+         <el-alert
+            v-if="!workloadLoading && billingScopeEmpty"
+            type="warning"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 12px"
+            :title="billingScopeHint"
+         />
          <!-- 外部工作量区（不按人录入，直接按计费类别录入） -->
          <el-divider content-position="left">
             <span class="section-title-external">外部工作量</span>
@@ -170,6 +179,8 @@ const leaderOptions = ref([])
 const billingMap = ref({})
 /** 当前编辑项目对应的小类 id（用于下拉只显示该小类下的计费类别） */
 const currentProjectCategoryId = ref(null)
+/** 项目类别 id -> 名称（用于 project_category_id 失效/重建时按名称兜底匹配计费类别） */
+const categoryNameMap = ref({})
 /** 合同单价映射：categoryId#billingId -> {price} */
 const contractPriceMap = ref({})
 /** 弹窗内容加载中（先开弹窗再异步填充，消除点击后的空白等待） */
@@ -193,7 +204,8 @@ function ensureBaseData() {
          const base = {
             categoryOptions: catRes.data || [],
             userOptions: userRes.rows || [],
-            billingMap: buildBillingMap(billingRes.data || [])
+            billingMap: buildBillingMap(billingRes.data || []),
+            categoryNameMap: buildCategoryNameMap(catRes.data || [])
          }
          baseDataCache = Promise.resolve(base)
          return base
@@ -214,6 +226,17 @@ function buildBillingMap(list) {
       bMap[b.categoryId].push(b)
    })
    return bMap
+}
+
+/** 类别树 -> { id: name } 映射（递归打平，供按项目类别名称兜底匹配） */
+function buildCategoryNameMap(tree) {
+   const map = {}
+   const walk = list => (list || []).forEach(n => {
+      map[n.id] = n.name
+      walk(n.children)
+   })
+   walk(tree)
+   return map
 }
 
 const onVisibleChange = (val) => { emit('update:modelValue', val) }
@@ -239,6 +262,7 @@ function loadWorkloadDetail() {
       .then(([base, detailRes]) => {
          userOptions.value = base.userOptions
          billingMap.value = base.billingMap
+         categoryNameMap.value = base.categoryNameMap
 
          const detail = detailRes.data
          currentProjectCategoryId.value = detail.project ? detail.project.projectCategoryId : null
@@ -454,12 +478,35 @@ function onUnitPriceChange(row) {
    calcRow(row)
 }
 
-/** 当前项目类别下计费类别所属的 categoryId 列表（未绑定类别时回退全部类别，保持旧行为） */
+/**
+ * 当前项目类别下计费类别所属的 categoryId 列表（严格作用域，绝不回退到全部类别）
+ * 1) 优先按项目类别 id 命中；
+ * 2) 未命中则按项目类别名称（engineeringProject）再匹配一次，应对类别 id 失效/被重建、项目挂在父级类别等情况；
+ * 3) 仍无命中返回空数组 —— 不再回退「全部类别」，避免下拉里冒出其它类别的计费类别。
+ */
 function scopedCategoryIds() {
    const cid = currentProjectCategoryId.value
    if (cid != null && billingMap.value[cid]) return [cid]
-   return Object.keys(billingMap.value)
+   const name = (props.engineeringProject || '').trim()
+   if (name) {
+      const matched = Object.keys(categoryNameMap.value)
+         .filter(k => categoryNameMap.value[k] === name && billingMap.value[k])
+      if (matched.length) return matched
+   }
+   return []
 }
+
+/** 计费类别作用域是否为空（空态提示：该项目类别未配置/已停用计费方式） */
+const billingScopeEmpty = computed(() => scopedCategoryIds().length === 0)
+
+/** 空态提示文案 */
+const billingScopeHint = computed(() => {
+   const name = (props.engineeringProject || '').trim()
+   if (name) {
+      return '该项目类别「' + name + '」尚未配置（或已停用）计费方式，请先到「项目类别」中配置后再录入工作量。'
+   }
+   return '当前项目未关联有效的「项目类别」，无法确定可用的计费类别，请先设置项目类别或到「项目类别」中配置计费方式。'
+})
 
 /** 内部计费方式下拉选项（仅当前项目类别下的内部计费方式，已过滤当前负责人当前记录已添加过的类别） */
 function internalBillingOptions(userId, subItemNo) {

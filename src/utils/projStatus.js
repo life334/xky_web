@@ -313,12 +313,12 @@ export function settledFlagText(value) {
 
 
 /**
- * 项目性质：normal 常规 / mandate 指令性任务（proj_project.project_nature）。
+ * 项目性质：normal 市场性任务 / mandate 指令性任务（proj_project.project_nature）。
  * 指令性任务 = 委托单位命中规则关键词的项目：其外部产值不计入应收 / 全量外部产值，
  * 改道到独立指标；内部产值照常计算。库中存英文码值，中文只在此显示层映射。
  */
 const PROJECT_NATURE_MAP = {
-  normal: '常规',
+  normal: '市场性任务',
   mandate: '指令性任务'
 }
 

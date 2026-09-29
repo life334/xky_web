@@ -463,7 +463,7 @@
             </el-col>
          </el-row>
 
-         <!-- Row 5b: 全量外部产值构成条（用于对账：常规 + 指令性 = 全量） -->
+         <!-- Row 5b: 全量外部产值构成条（用于对账：市场性任务 + 指令性 = 全量） -->
          <div v-loading="outputLoading" class="output-compose">
             <div class="output-compose-head">
                <span>全量外部产值构成</span>
@@ -474,7 +474,7 @@
                <div v-if="outputCompose.mandatePct > 0" class="compose-seg compose-mandate" :style="{ width: outputCompose.mandatePct + '%' }">{{ outputCompose.mandatePct }}%</div>
             </div>
             <div class="output-compose-legend">
-               <span><i class="dot dot-normal"></i>常规 ￥{{ formatMoney(outputSummary.externalOutput) }}</span>
+               <span><i class="dot dot-normal"></i>市场性任务 ￥{{ formatMoney(outputSummary.externalOutput) }}</span>
                <span><i class="dot dot-mandate"></i>指令性任务 ￥{{ formatMoney(outputSummary.mandateExternalOutput) }}</span>
             </div>
          </div>
@@ -786,11 +786,10 @@
 </template>
 
 <script setup name="Settlement">
-import { ElMessageBox } from 'element-plus'
-import { treeListSettlement, getSettlementDetail, saveSettlement, saveWorkload, savePayment, getSettlementColumns, getSettlementEntryStatusCounts } from "@/api/project/settlement"
+import { treeListSettlement, getSettlementDetail, savePayment, getSettlementColumns, getSettlementEntryStatusCounts } from "@/api/project/settlement"
 import { workloadOutputSummary, workloadOutputDetail } from "@/api/project/workload"
 import WorkloadDialog from "@/components/WorkloadDialog"
-import { categoryTreeselectFull, listBilling } from "@/api/project/category"
+import { categoryTreeselectFull } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { getDistinctValues } from "@/api/project/project"
 import { listContract } from "@/api/project/contract"
@@ -929,23 +928,14 @@ const total = ref(0)
 const pagedTreeData = computed(() => treeData.value)
 
 const selectedStatuses = ref(['closed', 'archived'])
-const editOpen = ref(false)
-const saveLoading = ref(false)
 const editProjectCode = ref("")
 const editClientUnit = ref("")
 const editProjectLocation = ref("")
 const editProjectId = ref(null)
 const workloadOpen = ref(false)
 const paymentOpen = ref(false)
-const workloadSaving = ref(false)
 const paymentSaving = ref(false)
 const editEngineeringProject = ref('')
-const leaderList = ref([])
-// 外部工作量记录列表（外部不挂负责人，按记录号分栏；每项含快速录入栏状态）
-const externalRecords = ref([])
-
-/** 工作量表单：仅含 workloads（工作量弹窗使用） */
-const workloadForm = ref({ workloads: [] })
 /** 到账信息表单：付款 + 开票字段（到账信息弹窗使用） */
 const paymentForm = ref({
    prepayAmount: null,
@@ -969,20 +959,13 @@ const paymentForm = ref({
 })
 const paymentRef = ref(null)
 const userOptions = ref([])
-const leaderOptions = ref([])   // 当前项目负责人（编辑弹窗里用）
-const categoryOptions = ref([])
 /**
  * 项目类别选项（产值统计高级筛选用）：与首页同源（/project/category/treeselectFull），
  * 把树递归打平后只保留「有父节点」的节点 ⇒ 只出小类，不含「管线 / 工程」两个大类。
- * ⚠️ 与上面的 categoryOptions 分开：那个存的是未打平的原树（结算录入按 id 检索用），不能动。
+ * 把树递归打平后只保留「有父节点」的小类（不含「管线 / 工程」两个大类）。
  */
 const projectCategoryOptions = ref([])
-const contractPriceMap = ref({})
 const clientUnitOptions = ref([])
-/** 全量计费方式：categoryId -> [{billingType, billingCategory, unitPrice, priceUnit, minQuantity}] */
-const billingMap = ref({})
-/** 当前编辑项目对应的小类 id（用于下拉只显示该小类下的计费类别） */
-const currentProjectCategoryId = ref(null)
 /** 工作量弹窗内容加载中（先开弹窗再异步填充，消除点击后的空白等待） */
 const workloadLoading = ref(false)
 /** 到账信息弹窗内容加载中 */
@@ -1011,102 +994,14 @@ const data = reactive({
     closeDateBegin: undefined,
     closeDateEnd: undefined
   },
-  editForm: {
-    prepayAmount: null,
-    prepayDate: null,
-    payUnit: null,
-    prepayMethod: null,
-    tailMethod: null,
-    tailAmount: null,
-    tailDate: null,
-    refunds: [],
-    remark: null,
-    invoiceMode: 'unified',
-    invoiceStatus: null,
-    invoiceNo: null,
-    invoiceDate: null,
-    invoiceAmount: null,
-    tailInvoiceStatus: null,
-    tailInvoiceNo: null,
-    tailInvoiceDate: null,
-    tailInvoiceAmount: null,
-    workloads: []
-  }
 })
 
-const { queryParams, editForm } = toRefs(data)
-
-// 内部产值合计（含「管线新测 + 管线修测」保底 6000：差额只进合计，不改变各行产值）
-const internalOutputTotal = computed(() => {
-  let sum = 0
-  let reviseSum = 0
-  let hasRevise = false
-  workloadForm.value.workloads.forEach(row => {
-    if (row.billingType !== 'internal' || row.output == null) return
-    const v = Number(row.output)
-    sum += v
-    if (row.billingCategory === '管线新测' || row.billingCategory === '管线修测') {
-      reviseSum += v
-      hasRevise = true
-    }
-  })
-  if (hasRevise && reviseSum < 6000) {
-    sum = sum - reviseSum + 6000
-  }
-  return sum
-})
-
-// 外部产值合计（= 结算总额）
-const externalOutputTotal = computed(() => {
-  let sum = 0
-  workloadForm.value.workloads.forEach(row => {
-    if (row.billingType === 'external' && row.output) sum += Number(row.output)
-  })
-  return sum
-})
-
-// 内部计费行数
-const internalRowCount = computed(() => workloadForm.value.workloads.filter(r => r.billingType === 'internal').length)
-// 外部计费行数
-const externalRowCount = computed(() => workloadForm.value.workloads.filter(r => r.billingType === 'external').length)
-/** 某记录的外部行（按记录 subItemNo 归属） */
-function externalRowsBySub(subItemNo) {
-  return workloadForm.value.workloads.filter(r => r.billingType === 'external' && Number(r.subItemNo) === Number(subItemNo))
-}
-// 是否存在多条记录（subItemNo 去重 > 1），用于决定是否显示「第N条」记录头
-const hasMultipleSubItems = computed(() => {
-  const set = new Set()
-  workloadForm.value.workloads.forEach(r => {
-    if (r.subItemNo != null && Number(r.subItemNo) > 0) set.add(Number(r.subItemNo))
-  })
-  return set.size > 1
-})
+const { queryParams } = toRefs(data)
 
 // 退款合计（多笔求和）
 const refundTotal = computed(() => {
   return paymentForm.value.refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0)
 })
-
-// 已收 = 预付款 + 尾款 - 退款合计（实时联动）
-const receivedAmount = computed(() => {
-  const a = Number(paymentForm.value.prepayAmount) || 0
-  const b = Number(paymentForm.value.tailAmount) || 0
-  return a + b - refundTotal.value
-})
-
-// 待收差额 = 结算总额 - 已收
-const balanceAmount = computed(() => externalOutputTotal.value - receivedAmount.value)
-
-// 结算状态：settled 已结清 / unsettled 未结清 / overpaid 超额
-const settleStatus = computed(() => {
-  const b = balanceAmount.value
-  if (Math.abs(b) < 0.01) return 'settled'
-  return b > 0 ? 'unsettled' : 'overpaid'
-})
-
-const settleTagText = computed(() => settleStatus.value === 'settled' ? '已结清' : (settleStatus.value === 'unsettled' ? '未结清' : '超额'))
-const settleTagType = computed(() => settleStatus.value === 'settled' ? 'success' : (settleStatus.value === 'unsettled' ? 'warning' : 'danger'))
-const balanceTextClass = computed(() => settleStatus.value === 'settled' ? 'text-success' : (settleStatus.value === 'unsettled' ? 'text-warning' : 'text-danger'))
 
 // 付款方式选项（开票状态不提供手选项：由发票信息/作废标记自动推断，码值 pending/invoiced/voided）
 const payMethodOptions = ['转账', '现金', '支票', '其他']
@@ -1130,28 +1025,6 @@ function isWlEmpty(val) {
   return val == null || Number(val) === 0
 }
 
-/** 计算单行产值（起步量兜底）并同步内部/外部产值字段（供后端汇总口径） */
-function calcRow(row) {
-  const w = Number(row.workload) || 0
-  const p = Number(row.unitPrice) || 0
-  const min = Number(row.minQuantity) || 0
-  // 起步量向上取整：工作量按起步量的整数倍计费
-  const effQty = (min > 0 && w > 0) ? Math.ceil(w / min) * min : w
-  row.output = (w > 0 && p > 0) ? (effQty * p).toFixed(2) : null
-  // 同步旧字段：内部行写 internal_*，外部行写 external_*（列表页/总览汇总依赖）
-  if (row.billingType === 'internal') {
-    row.internalPrice = row.unitPrice
-    row.internalOutput = row.output
-    row.externalPrice = null
-    row.externalOutput = null
-  } else if (row.billingType === 'external') {
-    row.externalPrice = row.unitPrice
-    row.externalOutput = row.output
-    row.internalPrice = null
-    row.internalOutput = null
-  }
-}
-
 /** 是否命中起步量取整（实际工作量非起步量整数倍） */
 function minQtyHit(row) {
   const w = Number(row.workload) || 0
@@ -1164,102 +1037,6 @@ function ceilWorkload(row) {
   const w = Number(row.workload) || 0
   const min = Number(row.minQuantity) || 0
   return (min > 0 && w > 0) ? Math.ceil(w / min) * min : w
-}
-
-/** 产值计算式小字（如 2公里（实际1.5）× 2,000.00 = 4,000.00） */
-function calcExpr(row) {
-  const w = Number(row.workload) || 0
-  const p = Number(row.unitPrice) || 0
-  if (!(w > 0) || !(p > 0)) return ''
-  const effQty = ceilWorkload(row)
-  const unit = row.priceUnit || ''
-  const qtyStr = minQtyHit(row) ? `${effQty}${unit}（实际${w}）` : `${effQty}${unit}`
-  return `${qtyStr} × ${formatMoney(p)} = ${formatMoney(effQty * p)}`
-}
-
-/** 单价来源徽标 */
-function priceSourceMeta(source) {
-  if (source === 'contract') return { text: '合同价', type: 'success' }
-  if (source === 'manual') return { text: '手动', type: 'danger' }
-  if (source === 'imported') return { text: '导入价', type: 'warning' }
-  return { text: '类别价', type: 'info' }
-}
-
-/**
- * 解析合同单价：按 categoryId#billingId 精确匹配，未命中时回退 categoryId 维度（兼容旧数据）
- * @param {Number|String} categoryId 项目类别ID
- * @param {Number|String} billingId  计费方式ID（可空）
- */
-function resolveContractPrice(categoryId, billingId) {
-  if (categoryId == null) return null
-  if (billingId != null) {
-    const exact = contractPriceMap.value[categoryId + '#' + billingId]
-    if (exact) return exact
-  }
-  return contractPriceMap.value[categoryId] || null
-}
-
-/** 类别的计费方式下拉分组（内部/外部） */
-function billingGroups(categoryId) {
-  const list = (billingMap.value[categoryId] || [])
-  const build = type => ({
-    label: type === 'internal' ? '内部' : '外部',
-    options: list
-      .filter(b => b.billingType === type)
-      .map(b => ({
-        value: `${b.billingType}#${b.billingCategory}`,
-        label: `${b.billingCategory}（¥${formatMoney(b.unitPrice)}/${b.priceUnit || '项'}${Number(b.minQuantity) > 1 ? `，起步${b.minQuantity}` : ''}）`,
-        raw: b
-      }))
-  })
-  return [build('internal'), build('external')].filter(g => g.options.length)
-}
-
-/** 选择类别后重置计费方式（仅一个选项时自动选中） */
-function onCategoryChange(categoryId, row) {
-  row.billingKey = null
-  row.billingType = null
-  row.billingCategory = null
-  row.priceUnit = null
-  row.minQuantity = null
-  row.unitPrice = null
-  row.priceSource = null
-  calcRow(row)
-  const groups = billingGroups(categoryId)
-  if (groups.length === 1 && groups[0].options.length === 1) {
-    onBillingChange(groups[0].options[0].value, row)
-  }
-}
-
-/** 选择计费方式后带出 单价/单位/起步量（外部优先合同价） */
-function onBillingChange(billingKey, row) {
-  const groups = billingGroups(row.categoryId)
-  let opt = null
-  groups.forEach(g => g.options.forEach(o => { if (o.value === billingKey) opt = o }))
-  if (!opt || !opt.raw) return
-  const b = opt.raw
-  row.billingType = b.billingType
-  row.billingCategory = b.billingCategory
-  row.priceUnit = b.priceUnit
-  row.minQuantity = b.minQuantity
-  // 外部计费方式：有合同价优先合同价（按 categoryId#billingId 精确匹配，categoryId 兜底）
-  const cp = resolveContractPrice(row.categoryId, b.id)
-  if (b.billingType === 'external' && cp && cp.price != null) {
-    row.unitPrice = cp.price
-    row.priceSource = 'contract'
-  } else {
-    row.unitPrice = b.unitPrice
-    row.priceSource = 'dict'
-  }
-  calcRow(row)
-}
-
-/** 手动修改单价：标记来源为手动 */
-function onUnitPriceChange(row) {
-  if (row.unitPrice != null) {
-    row.priceSource = 'manual'
-  }
-  calcRow(row)
 }
 
 /** 查询列表（后端分页；`resetPage` 为 true 时回到第 1 页） */
@@ -1602,17 +1379,6 @@ function setQuickDate(type) {
   }
 }
 
-/** 计费方式映射：categoryId -> 启用中的计费方式列表（停用 status=1 过滤） */
-function buildBillingMap(list) {
-  const bMap = {}
-  ;(list || []).forEach(b => {
-    if (b.status === '1') return
-    if (!bMap[b.categoryId]) bMap[b.categoryId] = []
-    bMap[b.categoryId].push(b)
-  })
-  return bMap
-}
-
 // ---- 基础数据缓存：类别树 / 用户列表 / 计费档位 页面运行期基本不变，首次成功后复用 ----
 /** 把 /project/category/treeselectFull 的树递归打平；onlyLeaf=true 时只保留「有父节点」的小类 */
 function flattenCategoryTree(nodes, onlyLeaf) {
@@ -1633,13 +1399,10 @@ function ensureBaseData() {
     baseDataLoading.value = true
     baseDataPending = Promise.all([
       categoryTreeselectFull(),
-      listUserOptions({ pageNum: 1, pageSize: 1000 }),
-      listBilling()
-    ]).then(([catRes, userRes, billingRes]) => {
+      listUserOptions({ pageNum: 1, pageSize: 1000 })
+    ]).then(([catRes, userRes]) => {
       const base = {
-        categoryOptions: catRes.data || [],
         userOptions: userRes.rows || [],
-        billingMap: buildBillingMap(billingRes.data || []),
         projectCategoryOptions: flattenCategoryTree(catRes.data || [], true)
       }
       baseDataCache = Promise.resolve(base)
@@ -1654,112 +1417,8 @@ function ensureBaseData() {
 
 /** 把 ensureBaseData 的结果写入各下拉的 ref（缓存命中时同步返回，重复调用不产生额外请求） */
 function applyBaseData(base) {
-  categoryOptions.value = base.categoryOptions
   userOptions.value = base.userOptions
   projectCategoryOptions.value = base.projectCategoryOptions
-  billingMap.value = base.billingMap
-}
-
-/** 编辑结算 */
-function handleEdit(row) {
-  editProjectId.value = row.projectId
-  editProjectCode.value = row.projectCode
-  editClientUnit.value = row.clientUnit || ""
-  editProjectLocation.value = row.projectLocation || ""
-
-  // 加载数据：基础数据走缓存（二次点击秒回），仅项目明细每次请求
-  loading.value = true
-  Promise.all([ensureBaseData(), getSettlementDetail(row.projectId)])
-    .then(([base, detailRes]) => {
-      applyBaseData(base)
-
-      const detail = detailRes.data
-      currentProjectCategoryId.value = detail.project ? detail.project.projectCategoryId : null
-      const payments = detail.payments || []
-      const workloads = detail.workloads || []
-
-      // 解析合同单价映射（key = categoryId#billingId；同时保留 categoryId 兜底，兼容无 billingId 的旧数据）
-      const contractPrices = detail.contractPrices || []
-      const cpMap = {}
-      contractPrices.forEach(cp => {
-        if (cp.categoryId && cp.billingId != null) cpMap[cp.categoryId + '#' + cp.billingId] = cp
-        if (cp.categoryId && cpMap[cp.categoryId] === undefined) cpMap[cp.categoryId] = cp
-      })
-      contractPriceMap.value = cpMap
-
-      // 填充付款信息
-      const prepay = payments.find(p => p.paymentType === "advance")
-      const tail = payments.find(p => p.paymentType === "final")
-      editForm.value.prepayAmount = prepay ? prepay.amount : null
-      editForm.value.prepayDate = prepay ? prepay.payTime : null
-      editForm.value.payUnit = prepay ? prepay.payUnit : (tail ? tail.payUnit : null)
-      editForm.value.prepayMethod = prepay ? prepay.payMethod : null
-      editForm.value.tailMethod = tail ? tail.payMethod : null
-      editForm.value.tailAmount = tail ? tail.amount : null
-      editForm.value.tailDate = tail ? tail.payTime : null
-      editForm.value.remark = prepay ? prepay.remark : (tail ? tail.remark : null)
-
-      // 退款信息回填（多笔，按时间升序；兼容旧接口无 refunds 字段时从 payments 过滤）
-      const refunds = detail.refunds || payments.filter(p => p.paymentType === 'refund')
-      editForm.value.refunds = refunds.map(r => ({
-        amount: r.amount != null ? Number(r.amount) : null,
-        payTime: r.payTime || null,
-        payMethod: r.payMethod || null,
-        remark: r.remark || null
-      }))
-
-      // 开票信息：尾款存在发票数据 → 分笔开票；否则统一开票（发票挂预付款，无预付款取尾款）
-      // 分笔开票判定：仅「有发票实质数据」（发票号 / 开票日期 / 开票金额>0，或已开/已作废）才算分笔；
-      // 「未开 / pending」只是状态占位，不算——否则导入数据的编辑弹窗会默认切到分笔模式
-      const tailInvText = invoiceStatusText(tail && tail.invoiceStatus)
-      const tailHasInvoice = !!tail && (
-        !!tail.invoiceNo || !!tail.invoiceDate || (tail.invoiceAmount != null && tail.invoiceAmount > 0)
-        || tailInvText === '已开' || tailInvText === '已作废'
-      )
-      editForm.value.invoiceMode = tailHasInvoice ? 'split' : 'unified'
-      const invSrc = prepay || tail
-      editForm.value.invoiceStatus = invSrc ? invSrc.invoiceStatus : null
-      editForm.value.invoiceNo = invSrc ? invSrc.invoiceNo : null
-      editForm.value.invoiceDate = invSrc ? invSrc.invoiceDate : null
-      editForm.value.invoiceAmount = invSrc ? invSrc.invoiceAmount : null
-      // 尾款发票（仅分笔开票时使用）
-      editForm.value.tailInvoiceStatus = tail ? tail.invoiceStatus : null
-      editForm.value.tailInvoiceNo = tail ? tail.invoiceNo : null
-      editForm.value.tailInvoiceDate = tail ? tail.invoiceDate : null
-      editForm.value.tailInvoiceAmount = tail ? tail.invoiceAmount : null
-
-      // 填充工作量（新计费模型：一行一种计费方式）
-      editForm.value.workloads = workloads.map(w => {
-        const output = w.internalOutput != null ? w.internalOutput : w.externalOutput
-        return {
-          workloadId: w.id,
-          userId: w.userId,
-          categoryId: w.categoryId,
-          billingKey: w.billingType ? `${w.billingType}#${w.billingCategory}` : null,
-          billingType: w.billingType || null,
-          billingCategory: w.billingCategory || null,
-          priceUnit: w.priceUnit || null,
-          minQuantity: w.minQuantity != null ? Number(w.minQuantity) : null,
-          unitPrice: w.unitPrice != null ? w.unitPrice : (w.internalPrice != null ? w.internalPrice : w.externalPrice),
-          priceSource: w.priceSource || 'dict',
-          workload: w.workload,
-          internalPrice: w.internalPrice,
-          externalPrice: w.externalPrice,
-          internalOutput: w.internalOutput,
-          externalOutput: w.externalOutput,
-          output: output != null ? Number(output) : null
-        }
-      })
-
-      // 负责人下拉：项目负责人 + 已有工作量行的负责人（Number 归一化，防 Long/字符串 类型失配）
-      const leaderIdSet = new Set((detailRes.data.leaderIds || []).map(id => Number(id)))
-      editForm.value.workloads.forEach(w => { if (w.userId != null) leaderIdSet.add(Number(w.userId)) })
-      let filtered = userOptions.value.filter(u => leaderIdSet.has(Number(u.userId)))
-      // 兜底：项目未关联负责人时回退显示全部用户，保证下拉可用
-      leaderOptions.value = filtered.length > 0 ? filtered : userOptions.value
-
-      editOpen.value = true
-    }).finally(() => { loading.value = false })
 }
 
 /** 打开工作量弹窗（明细由公共组件自行加载；本页只负责传参 + 打开） */
@@ -1788,16 +1447,6 @@ function handleEditPayment(row) {
     .then(detailRes => {
       const detail = detailRes.data
       const payments = detail.payments || []
-      const workloads = detail.workloads || []
-
-      // 用 workloadForm 同步外部产值，使 externalOutputTotal 正确计算
-      workloadForm.value.workloads = workloads.map(w => ({
-        workloadId: w.id,
-        billingType: w.billingType || null,
-        externalOutput: w.externalOutput != null ? Number(w.externalOutput) : null,
-        output: w.externalOutput != null ? Number(w.externalOutput) : (w.internalOutput != null ? Number(w.internalOutput) : null)
-      }))
-
       // 填充付款信息
       const prepay = payments.find(p => p.paymentType === "advance")
       const tail = payments.find(p => p.paymentType === "final")
@@ -1843,270 +1492,6 @@ function handleEditPayment(row) {
       paymentOpen.value = false
     })
     .finally(() => { paymentLoading.value = false })
-}
-
-/** 某负责人内部产值 */
-function leaderInternalOutput(userId) {
-  let sum = 0
-  workloadForm.value.workloads.forEach(row => {
-    if (Number(row.userId) === Number(userId) && row.billingType === 'internal' && row.output) {
-      sum += Number(row.output)
-    }
-  })
-  return sum
-}
-
-/** 某负责人外部产值 */
-function leaderExternalOutput(userId) {
-  let sum = 0
-  workloadForm.value.workloads.forEach(row => {
-    if (Number(row.userId) === Number(userId) && row.billingType === 'external' && row.output) {
-      sum += Number(row.output)
-    }
-  })
-  return sum
-}
-
-/** 某负责人某记录的内部行（按记录 subItemNo 归属） */
-function internalRowsByUserAndSub(userId, subItemNo) {
-  return workloadForm.value.workloads.filter(r => Number(r.userId) === Number(userId) && r.billingType === 'internal' && Number(r.subItemNo) === Number(subItemNo))
-}
-
-/** 计算下一条新记录的记录号（内外部共用一个记录号空间，取全局最大 + 1） */
-function nextSubItemNo() {
-  let max = 0
-  workloadForm.value.workloads.forEach(r => {
-    const n = Number(r.subItemNo)
-    if (n > max) max = n
-  })
-  leaderList.value.forEach(l => l.records.forEach(rc => {
-    const n = Number(rc.subItemNo)
-    if (n > max) max = n
-  }))
-  externalRecords.value.forEach(rc => {
-    const n = Number(rc.subItemNo)
-    if (n > max) max = n
-  })
-  return max + 1
-}
-
-/** 内部区：为指定负责人新增一条空白记录 */
-function addInternalRecord(leader) {
-  leader.records.push({
-    userId: leader.userId,
-    subItemNo: nextSubItemNo(),
-    quickInternalCat: null,
-    quickInternalWorkload: null,
-    quickInternalPrice: null,
-    quickInternalUnit: ''
-  })
-}
-
-/** 外部区：新增一条空白记录 */
-function addExternalRecord() {
-  externalRecords.value.push({
-    subItemNo: nextSubItemNo(),
-    quickExternalCat: null,
-    quickExternalWorkload: null,
-    quickExternalPrice: null,
-    quickExternalUnit: ''
-  })
-}
-
-/** 当前项目类别下计费类别所属的 categoryId 列表（未绑定类别时回退全部类别，保持旧行为） */
-function scopedCategoryIds() {
-  const cid = currentProjectCategoryId.value
-  if (cid != null && billingMap.value[cid]) return [cid]
-  return Object.keys(billingMap.value)
-}
-
-/** 内部计费方式下拉选项（仅当前项目类别下的内部计费方式，已过滤当前负责人当前记录已添加过的类别） */
-function internalBillingOptions(userId, subItemNo) {
-  const opts = []
-  const seen = new Set()
-  const usedKeys = new Set(
-    workloadForm.value.workloads
-      .filter(r => Number(r.userId) === Number(userId) && r.billingType === 'internal' && Number(r.subItemNo) === Number(subItemNo))
-      .map(r => r.billingKey)
-  )
-  scopedCategoryIds().forEach(catId => {
-    const list = billingMap.value[catId] || []
-    list.filter(b => b.billingType === 'internal').forEach(b => {
-      const val = b.billingType + '#' + b.billingCategory
-      if (!seen.has(val)) {
-        seen.add(val)
-        if (usedKeys.has(val)) return
-        const label = b.billingCategory + '（¥' + formatMoney(b.unitPrice) + '/' + (b.priceUnit || '项') + (Number(b.minQuantity) > 1 ? ('，起步' + b.minQuantity) : '') + '）'
-        opts.push({ value: val, label: label, raw: b, categoryId: catId })
-      }
-    })
-  })
-  return opts
-}
-
-/** 外部计费方式下拉选项（聚合所有类别下的外部计费方式，已过滤当前记录已添加过的类别） */
-function externalBillingOptions(subItemNo) {
-  const opts = []
-  const seen = new Set()
-  const usedKeys = new Set(
-    workloadForm.value.workloads
-      .filter(r => r.billingType === 'external' && Number(r.subItemNo) === Number(subItemNo))
-      .map(r => r.billingKey)
-  )
-  scopedCategoryIds().forEach(catId => {
-    const list = billingMap.value[catId] || []
-    list.filter(b => b.billingType === 'external').forEach(b => {
-      const val = b.billingType + '#' + b.billingCategory
-      if (!seen.has(val)) {
-        seen.add(val)
-        if (usedKeys.has(val)) return
-        const label = b.billingCategory + '（¥' + formatMoney(b.unitPrice) + '/' + (b.priceUnit || '项') + (Number(b.minQuantity) > 1 ? ('，起步' + b.minQuantity) : '') + '）'
-        opts.push({ value: val, label: label, raw: b, categoryId: catId })
-      }
-    })
-  })
-  return opts
-}
-
-/** 快速录入栏选择项目类别后带出单价（外部不依赖负责人） */
-function onQuickCatChange(val, rec, type) {
-  if (type === 'external') {
-    const options = externalBillingOptions(rec.subItemNo)
-    const opt = options.find(o => o.value === val)
-    if (!opt || !opt.raw) {
-      rec.quickExternalPrice = null
-      rec.quickExternalUnit = ''
-      return
-    }
-    const b = opt.raw
-    const cp = resolveContractPrice(opt.categoryId, b.id)
-    if (cp && cp.price != null) {
-      rec.quickExternalPrice = cp.price
-    } else {
-      rec.quickExternalPrice = b.unitPrice
-    }
-    rec.quickExternalUnit = b.priceUnit || ''
-    return
-  }
-  // 内部：按负责人 + 记录
-  const options = internalBillingOptions(rec.userId, rec.subItemNo)
-  const opt = options.find(o => o.value === val)
-  if (!opt || !opt.raw) {
-    rec.quickInternalPrice = null
-    rec.quickInternalUnit = ''
-    return
-  }
-  const b = opt.raw
-  rec.quickInternalPrice = b.unitPrice
-  rec.quickInternalUnit = b.priceUnit || ''
-}
-
-/** 快速添加工作量行（外部不依赖负责人；内部按记录 rec 归属 subItemNo）；兜底：若同类别已存在则累加工作量 */
-function quickAddWorkload(rec, type) {
-  const isExternal = type === 'external'
-  const cat = isExternal ? rec.quickExternalCat : rec.quickInternalCat
-  const workload = isExternal ? rec.quickExternalWorkload : rec.quickInternalWorkload
-  const price = isExternal ? rec.quickExternalPrice : rec.quickInternalPrice
-  if (!cat || workload == null) return
-
-  const subItemNo = rec.subItemNo
-  const options = isExternal ? externalBillingOptions(rec.subItemNo) : internalBillingOptions(rec.userId, rec.subItemNo)
-  const opt = options.find(o => o.value === cat)
-  if (!opt || !opt.raw) return
-
-  const existRow = workloadForm.value.workloads.find(r => {
-    if (r.billingType !== (isExternal ? 'external' : 'internal') || r.billingKey !== cat) return false
-    if (Number(r.subItemNo) !== Number(subItemNo)) return false
-    return isExternal ? true : Number(r.userId) === Number(rec.userId)
-  })
-  if (existRow) {
-    existRow.workload = (Number(existRow.workload) || 0) + (Number(workload) || 0)
-    calcRow(existRow)
-    if (isExternal) {
-      rec.quickExternalCat = null
-      rec.quickExternalWorkload = null
-      rec.quickExternalPrice = null
-      rec.quickExternalUnit = ''
-    } else {
-      rec.quickInternalCat = null
-      rec.quickInternalWorkload = null
-      rec.quickInternalPrice = null
-      rec.quickInternalUnit = ''
-    }
-    return
-  }
-
-  const b = opt.raw
-  const cp = resolveContractPrice(opt.categoryId, b.id)
-  let finalPrice = price
-  let priceSource = 'manual'
-  if (isExternal && cp && cp.price != null) {
-    finalPrice = cp.price
-    priceSource = 'contract'
-  } else if (finalPrice === b.unitPrice) {
-    priceSource = 'dict'
-  }
-
-  const subName = workloadForm.value.workloads.find(r => Number(r.subItemNo) === Number(subItemNo) && r.subItemName)?.subItemName || ''
-
-  const newRow = {
-    workloadId: null,
-    userId: isExternal ? 0 : rec.userId,
-    categoryId: opt.categoryId,
-    billingKey: cat,
-    billingType: b.billingType,
-    billingCategory: b.billingCategory,
-    priceUnit: b.priceUnit,
-    minQuantity: b.minQuantity != null ? Number(b.minQuantity) : null,
-    unitPrice: finalPrice,
-    priceSource: priceSource,
-    workload: workload,
-    internalPrice: isExternal ? null : finalPrice,
-    externalPrice: isExternal ? finalPrice : null,
-    internalOutput: null,
-    externalOutput: null,
-    output: null,
-    subItemNo: subItemNo,
-    subItemName: subName
-  }
-  calcRow(newRow)
-  workloadForm.value.workloads.push(newRow)
-
-  // 清空快速录入栏
-  if (isExternal) {
-    rec.quickExternalCat = null
-    rec.quickExternalWorkload = null
-    rec.quickExternalPrice = null
-    rec.quickExternalUnit = ''
-  } else {
-    rec.quickInternalCat = null
-    rec.quickInternalWorkload = null
-    rec.quickInternalPrice = null
-    rec.quickInternalUnit = ''
-  }
-}
-
-/** 删除工作量行（按行对象引用） */
-function removeWorkloadRowByIdx(row, userId, type) {
-  const idx = workloadForm.value.workloads.indexOf(row)
-  if (idx >= 0) workloadForm.value.workloads.splice(idx, 1)
-}
-
-/** 保存工作量 */
-function saveWorkloadData() {
-  workloadSaving.value = true
-  const payload = {
-    projectId: editProjectId.value,
-    workloads: workloadForm.value.workloads
-  }
-  saveWorkload(payload).then(() => {
-    proxy.$modal.msgSuccess("保存成功")
-    workloadOpen.value = false
-    workloadSaving.value = false
-    refreshAll(false)
-  }).catch(() => {
-    workloadSaving.value = false
-  })
 }
 
 /** 保存到账信息 */
@@ -2172,40 +1557,6 @@ function savePaymentData() {
   })
 }
 
-/** 行样式：内部行淡蓝底，外部行淡橙底 */
-function workloadRowClass({ row }) {
-  if (row.billingType === 'internal') return 'wl-row-internal'
-  if (row.billingType === 'external') return 'wl-row-external'
-  return ''
-}
-
-/** 添加工作量行 */
-function addWorkloadRow() {
-  editForm.value.workloads.push({
-    workloadId: null,
-    userId: null,
-    categoryId: null,
-    billingKey: null,
-    billingType: null,
-    billingCategory: null,
-    priceUnit: null,
-    minQuantity: null,
-    unitPrice: null,
-    priceSource: null,
-    workload: null,
-    internalPrice: null,
-    externalPrice: null,
-    internalOutput: null,
-    externalOutput: null,
-    output: null
-  })
-}
-
-/** 删除工作量行 */
-function removeWorkloadRow(index) {
-  editForm.value.workloads.splice(index, 1)
-}
-
 /** 添加退款行 */
 function addRefundRow() {
   paymentForm.value.refunds.push({ amount: null, payTime: null, payMethod: null, remark: null })
@@ -2214,95 +1565,6 @@ function addRefundRow() {
 /** 删除退款行 */
 function removeRefundRow(index) {
   paymentForm.value.refunds.splice(index, 1)
-}
-
-/** 提交结算：已收 ≠ 结算总额时先弹确认 */
-function submitSettlement() {
-  const received = receivedAmount.value
-  const total = externalOutputTotal.value
-  if (Math.abs(received - total) > 0.01) {
-    const balance = total - received
-    const over = balance < 0
-    const diff = Math.abs(balance)
-    const title = over ? "超额收款提示" : "未结清提示"
-    // 三要素齐全：应收金额 / 已收金额 / 差额（未收 or 超出），差额红色强调
-    const msg =
-      `应收金额：<b>${formatMoney(total)}</b><br/>` +
-      `已收金额：<b>${formatMoney(received)}</b><br/>` +
-      `${over ? "超出金额" : "未收金额"}：<b style="color:#f56c6c">${formatMoney(diff)}</b>`
-    ElMessageBox.confirm(msg, title, {
-      confirmButtonText: "仍要保存",
-      cancelButtonText: "返回修改",
-      type: "warning",
-      dangerouslyUseHTMLString: true
-    }).then(() => {
-      doSaveSettlement()
-    }).catch(() => {})
-  } else {
-    doSaveSettlement()
-  }
-}
-
-/** 实际保存 */
-function doSaveSettlement() {
-  saveLoading.value = true
-  const payload = {
-    projectId: editProjectId.value,
-    remark: editForm.value.remark,
-    workloads: editForm.value.workloads
-  }
-  const invoiceMode = editForm.value.invoiceMode
-
-  // 只有金额或日期有值时才提交预付款
-  if (editForm.value.prepayAmount != null || editForm.value.prepayDate) {
-    payload.prepay = {
-      amount: editForm.value.prepayAmount,
-      payTime: editForm.value.prepayDate,
-      payUnit: editForm.value.payUnit,
-      payMethod: editForm.value.prepayMethod,
-      invoiceStatus: editForm.value.invoiceStatus,
-      invoiceNo: editForm.value.invoiceNo,
-      invoiceDate: editForm.value.invoiceDate,
-      invoiceAmount: editForm.value.invoiceAmount
-    }
-  }
-
-  // 只有金额或日期有值时才提交尾款
-  if (editForm.value.tailAmount != null || editForm.value.tailDate) {
-    const tail = {
-      amount: editForm.value.tailAmount,
-      payTime: editForm.value.tailDate,
-      payUnit: editForm.value.payUnit,
-      payMethod: editForm.value.tailMethod
-    }
-    // 分笔开票：尾款独立发票
-    if (invoiceMode === 'split') {
-      tail.invoiceStatus = editForm.value.tailInvoiceStatus
-      tail.invoiceNo = editForm.value.tailInvoiceNo
-      tail.invoiceDate = editForm.value.tailInvoiceDate
-      tail.invoiceAmount = editForm.value.tailInvoiceAmount
-    }
-    payload.tail = tail
-  }
-
-  // 退款（多笔，整组替换；金额和时间都为空的行不提交）
-  payload.refunds = editForm.value.refunds
-    .filter(rf => rf && (rf.amount != null || rf.payTime))
-    .map(rf => ({
-      amount: rf.amount != null ? Number(rf.amount) : null,
-      payTime: rf.payTime || null,
-      payMethod: rf.payMethod || null,
-      remark: rf.remark || ''
-    }))
-
-  saveSettlement(payload).then(() => {
-    proxy.$modal.msgSuccess("保存成功")
-    editOpen.value = false
-    saveLoading.value = false
-    refreshAll(false)
-  }).catch(() => {
-    saveLoading.value = false
-  })
 }
 
 /** 导出 */
@@ -2367,7 +1629,7 @@ const outputGroupLabelText = computed(() => {
    if (outputView.value === 'leader') return '负责人'
    return '分组维度'
 })
-/** 全量外部产值构成（常规 + 指令性 = 全量，用于对账） */
+/** 全量外部产值构成（市场性任务 + 指令性 = 全量，用于对账） */
 const outputCompose = computed(() => {
    const normal = Number(outputSummary.value.externalOutput || 0)
    const mandate = Number(outputSummary.value.mandateExternalOutput || 0)
@@ -2533,7 +1795,7 @@ function handleOutputExport() {
 function handleViewTabChange(name) {
    if (name !== 'output') return
    getOutputSummary()
-   // 「负责人 / 项目类别」选项原本只在结算录入页签（handleEdit）里加载，切到产值统计页签会空列表。
+   // 「负责人 / 项目类别」下拉的数据源需要预热，否则切到产值统计页签时为空列表。
    // ensureBaseData 自带缓存 + 防并发，重复进入页签不会产生额外请求。
    ensureBaseData().then(base => {
       applyBaseData(base)
