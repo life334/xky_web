@@ -549,6 +549,7 @@ function colWidth(col) {
   if (col.type === 'dict') return 100
   if (col.type === 'dynamic') return 140
   if (col.type === 'user') return 110
+  if (col.key === 'status') return 140
   return 140
 }
 

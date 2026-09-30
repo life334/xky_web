@@ -87,7 +87,7 @@
     <!-- ===== 段1 经营快照：六磁贴 ===== -->
     <div class="seg-head">
       <span class="seg-title">经营快照</span>
-      <span class="seg-pill">新增按安排日期 · 办结/产值按办结日期 · 到账按到账日期</span>
+      <span class="seg-pill">新增按创建日期 · 办结/产值按办结日期 · 到账按到账日期</span>
       <span class="kpi-strip">
         进行中 <b>{{ kpi.activeProjects ?? 0 }}</b> · 在册 <b>{{ kpi.allProjects ?? 0 }}</b> · 本期办结率 <b>{{ kpi.completedRate ?? 0 }}%</b>
       </span>
@@ -115,13 +115,13 @@
     <!-- ===== 段2 业务结构：类别构成 + 类别画像 / 本期办结占比 ===== -->
     <div class="seg-head">
       <span class="seg-title">业务结构</span>
-      <span class="seg-pill">数量/合同额按安排日期 · 产值按办结日期 · 类别口径：定线/验线/管线图/实测/其它</span>
+      <span class="seg-pill">数量/合同额按创建日期 · 产值按办结日期 · 类别口径：定线/验线/管线图/实测/其它</span>
     </div>
-    <div class="chart-row">
+    <div class="chart-row structure-row">
       <div class="chart-card chart-wide" v-loading="structureLoading">
         <div class="chart-header">
           <span class="chart-title">项目类别构成与产值画像</span>
-          <span class="chart-subtitle">按类别占比 · 点击饼图或表格行可下钻</span>
+          <span class="chart-subtitle">按类别占比 · 点击饼图或表格行查看明细</span>
         </div>
         <div class="pie-quad">
           <div class="pie-cell">
@@ -177,20 +177,26 @@
       <div class="chart-card chart-narrow" v-loading="structureLoading">
         <div class="chart-header">
           <span class="chart-title">本期办结占比</span>
-          <span class="chart-subtitle">共 {{ closedTotal }} 个</span>
+          <span class="chart-subtitle">共 {{ closedTotal }} 个 · 点击查看明细</span>
         </div>
         <template v-if="closedSegments.length">
           <div class="stacked-bar">
             <div
               v-for="seg in closedSegments"
               :key="seg.bucket"
-              class="stacked-seg"
+              class="stacked-seg stacked-clickable"
               :style="{ width: seg.width + '%', background: BUCKET_COLORS[seg.bucket] }"
               :title="seg.bucketName + ' ' + seg.count + ' 个（' + seg.ratio + '%）'"
+              @click="closedDrill(seg)"
             ></div>
           </div>
           <div class="stacked-legend">
-            <div v-for="seg in closedSegments" :key="seg.bucket" class="stacked-legend-item">
+            <div
+              v-for="seg in closedSegments"
+              :key="seg.bucket"
+              class="stacked-legend-item stacked-clickable"
+              @click="closedDrill(seg)"
+            >
               <span class="bucket-dot" :style="{ background: BUCKET_COLORS[seg.bucket] }"></span>
               <span class="stacked-legend-name">{{ seg.bucketName }}</span>
               <span class="stacked-legend-num">{{ seg.count }} 个 · {{ seg.ratio }}%</span>
@@ -209,7 +215,7 @@
     <div class="chart-card matrix-card" v-loading="structureLoading">
       <div class="chart-header">
         <span class="chart-title">项目经理 × 类别</span>
-        <span class="chart-subtitle">点列头排序 · 点格子下钻</span>
+        <span class="chart-subtitle">点列头排序 · 点格子查看明细</span>
         <el-radio-group v-model="matrixMetric" size="small">
           <el-radio-button value="count">项目数</el-radio-button>
           <el-radio-button value="internalOutput">内产值</el-radio-button>
@@ -279,14 +285,14 @@
       <div class="chart-card chart-wide" v-loading="trendLoading">
         <div class="chart-header">
           <span class="chart-title">外部产值累计趋势</span>
-          <span class="chart-subtitle">柱=当月增量 · 线=年内累计</span>
+          <span class="chart-subtitle">柱=当月增量 · 线=年内累计 · 点击查看明细</span>
         </div>
         <div ref="cumulativeRef" class="chart-canvas"></div>
       </div>
       <div class="chart-card chart-narrow" v-loading="trendLoading">
         <div class="chart-header">
           <span class="chart-title">项目动态</span>
-          <span class="chart-subtitle">新增按安排日期 · 到账为金额线</span>
+          <span class="chart-subtitle">新增按创建日期 · 点击查看明细</span>
         </div>
         <div ref="dynamicRef" class="chart-canvas"></div>
       </div>
@@ -296,9 +302,9 @@
     <div class="seg-head">
       <span class="seg-title">风险与执行</span>
       <span class="risk-badges">
-        <span class="risk-badge">欠款 {{ riskCounts.debtCount ?? 0 }}</span>
-        <span class="risk-badge">工期超期 {{ riskCounts.overdueCount ?? 0 }}</span>
-        <span class="risk-badge">未关联合同 {{ riskCounts.contractMissingCount ?? 0 }}</span>
+        <span class="risk-badge clickable" @click="openRiskGroup('debt')">欠款 {{ riskCounts.debtCount ?? 0 }}</span>
+        <span class="risk-badge clickable" @click="openRiskGroup('overdue')">工期超期 {{ riskCounts.overdueCount ?? 0 }}</span>
+        <span class="risk-badge clickable" @click="openRiskGroup('contractMissing')">未关联合同 {{ riskCounts.contractMissingCount ?? 0 }}</span>
         <span class="risk-badge">待办 {{ riskCounts.alertCount ?? 0 }}</span>
       </span>
     </div>
@@ -306,12 +312,12 @@
       <div class="chart-card chart-wide">
         <div class="chart-header">
           <span class="chart-title">应收欠款（按办结年份）</span>
-          <span class="chart-subtitle">欠款 = 外产值 − 已到账 · 线为回款率</span>
+          <span class="chart-subtitle">欠款 = 外产值 − 已到账 · 线为回款率 · 点击年份查看明细</span>
         </div>
         <div ref="debtRef" class="debt-canvas" v-loading="riskLoading"></div>
         <div class="chart-header risk-list-header">
           <span class="chart-title">风险行动清单</span>
-          <span class="chart-subtitle">按严重度排序 · 点击跳转处理</span>
+          <span class="chart-subtitle">按严重度排序 · 点击查看项目详情</span>
         </div>
         <div class="risk-list" v-loading="riskLoading">
           <div
@@ -340,14 +346,14 @@
       <div class="chart-card chart-narrow">
         <div class="chart-header">
           <span class="chart-title">项目产值排行</span>
-          <span class="chart-subtitle">TOP10 · 累计外部产值</span>
+          <span class="chart-subtitle">TOP10 · 累计外部产值 · 点击查看详情</span>
         </div>
         <div class="rank-list">
           <div
             v-for="(item, idx) in outputTop"
             :key="item.projectId ?? idx"
             class="rank-item"
-            @click="goProjectDetail(item.projectId)"
+            @click="openProjectDetail(item.projectId)"
           >
             <span class="rank-badge" :class="'rank-top-' + (idx + 1)">{{ idx + 1 }}</span>
             <div class="rank-name">
@@ -363,6 +369,18 @@
         </div>
       </div>
     </div>
+
+    <!-- ===== 明细弹窗（磁贴 / 饼图 / 效能矩阵 / 类别画像 / 走势 / 风险区 统一点击后弹窗显示明细） ===== -->
+    <ProjectDrillDialog
+      v-model:visible="drillVisible"
+      :title="drillTitle"
+      :type="drillType"
+      :query="drillQuery"
+      :data-rows="drillDataRows"
+    />
+
+    <!-- 项目详情抽屉（风险清单项 / 产值排行行 / 明细弹窗行 点击打开） -->
+    <ProjectDetailDrawer v-model:visible="detailVisible" :project-id="detailId" />
   </div>
 </template>
 
@@ -378,6 +396,8 @@ import {
 } from "@/api/project/dashboard"
 import { getLeaderOptions, getDistinctValues } from "@/api/project/project"
 import { categoryTreeselectFull } from "@/api/project/category"
+import ProjectDrillDialog from "@/components/ProjectDrillDialog/index.vue"
+import ProjectDetailDrawer from "@/components/ProjectDetailDrawer/index.vue"
 
 const router = useRouter()
 
@@ -571,37 +591,37 @@ const tiles = computed(() => {
       key: "annualContract", label: "本年合同额", pill: "按签署日期", money: true,
       value: ac.value ?? 0, prev: ac.prev ?? 0, delta: ac.deltaPct ?? null, deltaLabel: ac.deltaLabel || "同比",
       prevText: `上年 ¥${formatMoney(ac.prev ?? 0)}`,
-      drill: () => goPage("/contract/list")
+      drill: () => openContractDrill("本年合同额 · 明细", "year")
     },
     {
       key: "monthContract", label: "本月合同额", pill: "按签署日期", money: true,
       value: mc.value ?? 0, prev: mc.prev ?? 0, delta: mc.deltaPct ?? null, deltaLabel: mc.deltaLabel || "环比",
       prevText: `上月 ¥${formatMoney(mc.prev ?? 0)}`,
-      drill: () => goPage("/contract/list")
+      drill: () => openContractDrill("本月合同额 · 明细", "month")
     },
     {
-      key: "periodNew", label: "本期新增", pill: "按安排日期", money: false,
+      key: "periodNew", label: "本期新增", pill: "按创建日期", money: false,
       value: pn.value ?? 0, prev: pn.prev ?? 0,
       prevText: `上期 ${pn.prev ?? 0} 个`,
-      drill: () => drillProjects({ dateField: "assign" })
+      drill: () => openDrill("本期新增 · 明细", "new")
     },
     {
       key: "periodCompleted", label: "本期办结", pill: "按办结日期", money: false,
       value: pc.value ?? 0, prev: pc.prev ?? 0,
       prevText: `上期 ${pc.prev ?? 0} 个`,
-      drill: () => drillProjects({ dateField: "close" })
+      drill: () => openDrill("本期办结 · 明细", "close")
     },
     {
       key: "periodPayment", label: "本期到账", pill: "按到账日期", money: true,
       value: pp.value ?? 0, prev: pp.prev ?? 0,
       prevText: `上期 ¥${formatMoney(pp.prev ?? 0)}`,
-      drill: () => goCollection()
+      drill: () => openPaymentRange("本期到账 · 明细")
     },
     {
       key: "periodOverdue", label: "本期超期", pill: "手动录入项目", money: false,
       value: po.value ?? 0, prev: po.prev ?? 0,
       prevText: `上期 ${po.prev ?? 0} 个`,
-      drill: () => drillProjects({ overdue: "true" })
+      drill: () => openDrill("本期超期 · 明细", "none", { overdue: "true" })
     }
   ]
 })
@@ -671,10 +691,14 @@ function sortMatrix(b) {
 function matrixCellClick(row, b) {
   const v = mxVal(row, b)
   if (v <= 0) return
-  const extra = { leaderId: row.leaderId }
-  const cid = bucketCategoryId.value[b]
-  if (cid) extra.categoryId = cid
-  drillProjects(extra)
+  const metric = matrixMetric.value
+  const dateField = metric === "count" ? "new" : "close"
+  const outputOrder = metric === "count" ? null : `${metric}_desc`
+  openDrill(
+    `${row.leaderName} · ${bucketName(b)} · ${METRIC_LABEL[metric] || metric}`,
+    dateField,
+    { leaderId: row.leaderId, categoryIds: bucketIdsOf(b), outputOrder }
+  )
 }
 
 // ===== 格式化 =====
@@ -781,7 +805,7 @@ function renderBucketPie(el, chartKey, metric) {
   const data = rows.map(c => ({
     name: c.bucketName,
     value: Number(c[metric]) || 0,
-    categoryId: c.categoryId,
+    bucket: c.bucket,
     itemStyle: { color: BUCKET_COLORS[c.bucket] || "#c0c4cc" }
   }))
   chart.setOption({
@@ -805,7 +829,15 @@ function renderBucketPie(el, chartKey, metric) {
   }, true)
   chart.off("click").on("click", params => {
     const d = params.data || {}
-    if (d.categoryId) drillProjects({ categoryId: d.categoryId })
+    if (!d.bucket) return
+    // 日期口径跟指标走：数量/合同额按新增日期，内/外产值按办结日期，并按该指标排序
+    const dateField = (metric === "count" || metric === "contractAmount") ? "new" : "close"
+    const outputOrder = metric === "count" ? null : `${metric}_desc`
+    openDrill(
+      `${d.name} · 本期${METRIC_LABEL[metric] || metric}`,
+      dateField,
+      { categoryIds: bucketIdsOf(d.bucket), outputOrder }
+    )
   })
 }
 
@@ -877,6 +909,13 @@ function renderCumulativeChart() {
       }
     ]
   }, true)
+  chart.off("click").on("click", params => {
+    if (params.seriesName !== "当月产值") return
+    const r = monthRange(params.name)
+    openDrill(`${params.name} · 产值明细`, "none", {
+      closeDateBegin: r.begin, closeDateEnd: r.end, outputOrder: "externalOutput_desc"
+    })
+  })
 }
 
 // 段4 右：项目动态（新增/办结柱 + 到账金额线，双 Y 轴）
@@ -939,6 +978,17 @@ function renderDynamicChart() {
       }
     ]
   }, true)
+  chart.off("click").on("click", params => {
+    const label = params.name
+    const r = monthRange(label)
+    if (params.seriesName === "新增") {
+      openDrill(`${label} · 新增项目`, "none", { newDateBegin: r.begin, newDateEnd: r.end })
+    } else if (params.seriesName === "办结") {
+      openDrill(`${label} · 办结项目`, "none", { closeDateBegin: r.begin, closeDateEnd: r.end })
+    } else if (params.seriesName === "到账金额") {
+      openPaymentRange(`${label} · 到账明细`, r.begin, r.end)
+    }
+  })
 }
 
 // 段5 左上：欠款按年（柱）+ 回款率（线），双 Y 轴
@@ -1003,24 +1053,50 @@ function renderDebtChart() {
       }
     ]
   }, true)
+  chart.off("click").on("click", params => {
+    const y = String(params.name).replace("年", "")
+    const rows = debtProjects.value.filter(r => String(r.closeTime || "").slice(0, 4) === y)
+    openDataDrill(`${y}年 · 欠款项目明细`, "debt", rows)
+  })
 }
 
 // ===== 下钻导航 =====
 function goPage(path) { router.push(path) }
 function goProjectDetail(id) { router.push({ path: "/project/list", query: { id } }) }
 
-/** 下钻项目列表（携带当前周期 + 轻筛选） */
+/** 当前周期闭区间 { beginDate, endDate }（YYYY-MM-DD） */
+function periodWindow() {
+  if (!dateRange.value || dateRange.value.length !== 2) return {}
+  return { beginDate: dateRange.value[0], endDate: dateRange.value[1] }
+}
+
+/** 叠加全局轻筛选（委托单位/负责人/类别）→ 项目列表查询参数 */
+function withGlobalFilters(q) {
+  const out = { ...(q || {}) }
+  if (filters.clientUnit) out.clientUnit = filters.clientUnit
+  if (filters.leaderId) out.leaderId = filters.leaderId
+  if (filters.categoryId) out.projectCategoryId = filters.categoryId
+  return out
+}
+
+/**
+ * 日期口径 → 项目列表查询参数。
+ * dateField：'new' 新增口径（默认，后端按来源分流）/ 'close' 办结口径 / 'assign' 安排日期 / 'none' 不带日期窗
+ */
+function dateWindowParams(dateField) {
+  const w = periodWindow()
+  if (!w.beginDate || dateField === "none") return {}
+  if (dateField === "close") return { closeDateBegin: w.beginDate, closeDateEnd: w.endDate }
+  if (dateField === "assign") return { assignDateBegin: w.beginDate, assignDateEnd: w.endDate }
+  return { newDateBegin: w.beginDate, newDateEnd: w.endDate }
+}
+
+/** 下钻项目列表页（携带当前周期 + 轻筛选）；extra.dateField 指定日期口径 */
 function drillProjects(extra) {
-  const q = {}
-  if (dateRange.value && dateRange.value.length === 2) {
-    q.beginDate = dateRange.value[0]
-    q.endDate = dateRange.value[1]
-  }
-  if (filters.clientUnit) q.clientUnit = filters.clientUnit
-  if (filters.leaderId) q.leaderId = filters.leaderId
-  if (filters.categoryId) q.categoryId = filters.categoryId
-  Object.assign(q, extra || {})
-  router.push({ path: "/project/list", query: q })
+  const e = extra || {}
+  const q = dateWindowParams(e.dateField)
+  Object.keys(e).forEach(k => { if (k !== "dateField") q[k] = e[k] })
+  router.push({ path: "/project/list", query: withGlobalFilters(q) })
 }
 
 /** 下钻回款管理页「到账统计」tab */
@@ -1036,17 +1112,128 @@ function goCollection() {
   router.push({ path: "/project/collection", query: q })
 }
 
+// ===== 明细弹窗（磁贴 / 饼图 / 效能矩阵 / 类别画像 / 走势 / 风险区 统一改为弹窗显示明细） =====
+const drillVisible = ref(false)
+const drillTitle = ref("明细")
+const drillType = ref("project")
+const drillQuery = ref({})
+const drillDataRows = ref([])
+
+const METRIC_LABEL = { count: "项目数", contractAmount: "合同额", internalOutput: "内产值", externalOutput: "外产值" }
+
+/** 桶 → 小类 id 数组（后端 categoryIds；缺省回退到单一 categoryId） */
+function bucketIdsOf(bucket) {
+  const hit = categoryStats.value.find(c => c.bucket === bucket)
+  if (hit && Array.isArray(hit.categoryIds) && hit.categoryIds.length) return hit.categoryIds
+  const single = bucketCategoryId.value[bucket]
+  return single ? [single] : []
+}
+
+/**
+ * 打开明细弹窗。query 直接透传给 /project/project/list。
+ * @param {string} title 标题
+ * @param {string} dateField 日期口径（'new'|'close'|'none'）
+ * @param {object} extra 额外筛选（categoryIds 数组 / leaderId / outputOrder）
+ */
+function openDrill(title, dateField, extra) {
+  const e = extra || {}
+  const q = dateWindowParams(dateField)
+  if (e.categoryIds && e.categoryIds.length) q.projectCategoryIds = e.categoryIds.join(",")
+  if (e.leaderId != null) q.leaderId = e.leaderId
+  if (e.outputOrder) q.outputOrder = e.outputOrder
+  if (e.contractStatus) q.contractStatus = e.contractStatus
+  if (e.overdue) q.overdue = e.overdue
+  if (e.closeDateBegin && e.closeDateEnd) { q.closeDateBegin = e.closeDateBegin; q.closeDateEnd = e.closeDateEnd }
+  if (e.newDateBegin && e.newDateEnd) { q.newDateBegin = e.newDateBegin; q.newDateEnd = e.newDateEnd }
+  drillType.value = "project"
+  drillDataRows.value = []
+  drillTitle.value = title
+  drillQuery.value = withGlobalFilters(q)
+  drillVisible.value = true
+}
+
+/** 打开「数据直传」明细弹窗（风险清单全量等，不走接口） */
+function openDataDrill(title, type, rows) {
+  drillType.value = type
+  drillDataRows.value = rows || []
+  drillQuery.value = {}
+  drillTitle.value = title
+  drillVisible.value = true
+}
+
+/** 'YYYY-MM' → 该月起止（含末日） */
+function monthRange(label) {
+  const parts = String(label).split("-")
+  const y = Number(parts[0])
+  const m = Number(parts[1])
+  return { begin: `${label}-01`, end: fmtDate(new Date(y, m, 0)) }
+}
+
+/** 类别画像表格行 → 明细弹窗（数量口径：新增窗口） */
 function bucketDrill(c) {
-  if (c.categoryId) drillProjects({ categoryId: c.categoryId })
-  else drillProjects({})
+  openDrill(`${c.bucketName} · 本期明细`, "new", { categoryIds: bucketIdsOf(c.bucket) })
+}
+
+/** 本期办结占比（堆叠条 / 图例）→ 明细弹窗（办结窗口） */
+function closedDrill(seg) {
+  if (!seg || !Number(seg.count)) return
+  openDrill(`${seg.bucketName} · 本期办结明细`, "close", { categoryIds: bucketIdsOf(seg.bucket) })
+}
+
+/** 合同额磁贴 → 合同明细弹窗（签署日期窗口：本年 / 本月 至今天） */
+function openContractDrill(title, range) {
+  const now = new Date()
+  const begin = range === "year"
+    ? `${now.getFullYear()}-01-01`
+    : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
+  drillType.value = "contract"
+  drillDataRows.value = []
+  drillTitle.value = title
+  drillQuery.value = { signDateBegin: begin, signDateEnd: fmtDate(now) }
+  drillVisible.value = true
+}
+
+/** 到账明细弹窗（到账时间窗口；缺省=当前统计周期） */
+function openPaymentRange(title, begin, end) {
+  const w = periodWindow()
+  const q = { dimension: "payTime", begin: begin || w.beginDate, end: end || w.endDate }
+  if (filters.clientUnit) q.clientUnit = filters.clientUnit
+  if (filters.leaderId) q.leaderId = filters.leaderId
+  if (filters.categoryId) q.projectCategoryId = filters.categoryId
+  drillType.value = "payment"
+  drillDataRows.value = []
+  drillTitle.value = title || "到账明细"
+  drillQuery.value = q
+  drillVisible.value = true
+}
+
+/** 风险分类徽标 → 该类全部风险明细弹窗（数据直传） */
+const RISK_GROUP_TITLE = { debt: "欠款项目", overdue: "工期超期项目", contractMissing: "未关联合同项目" }
+function openRiskGroup(type) {
+  const rows = type === "debt" ? debtProjects.value
+    : type === "overdue" ? overdueProjects.value
+      : contractMissingProjects.value
+  openDataDrill(`${RISK_GROUP_TITLE[type] || "风险"} · 全部 ${rows.length} 个`, type, rows)
 }
 
 function riskTypeText(t) { return RISK_TYPE_TEXT[t] || t }
 function riskItemClick(it) {
-  if (it.type === "contractMissing") drillProjects({ contractStatus: "unbound" })
-  else if (it.type === "overdue") drillProjects({ overdue: "true" })
-  else goProjectDetail(it.projectId)
+  if (it && it.projectId != null) openProjectDetail(it.projectId)
 }
+
+// ===== 项目详情抽屉（风险清单项 / 排行行 / 明细弹窗行 共用） =====
+const detailVisible = ref(false)
+const detailId = ref(null)
+function openProjectDetail(id) {
+  if (id == null) return
+  detailId.value = id
+  detailVisible.value = true
+}
+
+// ===== 风险区数据（数据直传弹窗用） =====
+const debtProjects = computed(() => risk.value.debtProjects || [])
+const overdueProjects = computed(() => risk.value.overdueProjects || [])
+const contractMissingProjects = computed(() => risk.value.contractMissingProjects || [])
 
 // ===== 窗口缩放 =====
 function handleResize() {
@@ -1287,6 +1474,13 @@ $accent-red: #ff4d4f;
       border-radius: 10px;
       padding: 2px 8px;
       white-space: nowrap;
+
+      &.clickable {
+        cursor: pointer;
+        transition: color 0.15s ease, background 0.15s ease;
+
+        &:hover { color: $accent-blue; background: rgba(24, 144, 255, 0.1); }
+      }
     }
   }
 }
@@ -1381,6 +1575,9 @@ $accent-red: #ff4d4f;
 
   &.last { margin-bottom: 0; }
 }
+
+/* 段2 右侧「本期办结占比」不再被左侧长卡拉高，消除下方空白 */
+.chart-row.structure-row { align-items: start; }
 
 @media (max-width: 1200px) { .chart-row { grid-template-columns: 1fr; } }
 
@@ -1527,6 +1724,10 @@ $accent-red: #ff4d4f;
   }
 }
 
+.stacked-clickable { cursor: pointer; }
+.stacked-bar .stacked-seg.stacked-clickable:hover { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.18); }
+.stacked-legend-item.stacked-clickable:hover { background: #f5f7fa; border-radius: 6px; }
+
 .stacked-legend {
   display: flex;
   flex-direction: column;
@@ -1550,7 +1751,25 @@ $accent-red: #ff4d4f;
 /* ===== 段3：效能矩阵 ===== */
 .matrix-card { margin-bottom: 16px; }
 
-.matrix-scroll { overflow-x: auto; }
+/* 限高滚动（约 10 行可见）：项目经理人多时不再撑高整页；表头吸顶、合计行吸底便于对照
+   高度 = 表头 33 + 合计行 33 + 10 行 × 50 ≈ 566px（真实行高实测值，勿凭感觉调） */
+.matrix-scroll {
+  overflow: auto;
+  max-height: 566px;
+
+  thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  tfoot td {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    box-shadow: 0 -1px 0 $border-card;
+  }
+}
 
 .mx-table {
   width: 100%;

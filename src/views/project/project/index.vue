@@ -112,8 +112,21 @@
                   />
                </div>
                <div class="filter-item">
+                  <div class="filter-item-label">录入日期</div>
+                  <el-date-picker
+                     v-model="newDateRange"
+                     value-format="YYYY-MM-DD"
+                     type="daterange"
+                     range-separator="-"
+                     start-placeholder="开始"
+                     end-placeholder="结束"
+                     style="width: 100%"
+                     @change="onNewDateChange"
+                  />
+               </div>
+               <div class="filter-item">
                   <div class="filter-item-label">项目类别</div>
-                  <el-select v-model="queryParams.projectCategoryId" filterable clearable placeholder="全部类别" style="width: 100%" @change="handleQuery">
+                  <el-select v-model="queryParams.projectCategoryId" filterable clearable placeholder="全部类别" style="width: 100%" @change="onCategoryFilterChange">
                      <el-option v-for="c in subCategoryOptions" :key="c.id" :label="c.label" :value="c.id" />
                   </el-select>
                </div>
@@ -1070,7 +1083,10 @@ const data = reactive({
     projectNature: undefined,
     dataSource: undefined,
     closeDateBegin: undefined,
-    closeDateEnd: undefined
+    closeDateEnd: undefined,
+    newDateBegin: undefined,
+    newDateEnd: undefined,
+    projectCategoryIds: undefined
   },
   rules: {
     projectCode: [{ required: true, message: "工程编号不能为空", trigger: "blur" }]
@@ -1257,6 +1273,24 @@ function onCloseDateChange(val) {
   }
 }
 
+/** 项目类别单选变化：清掉下钻带入的多选类别（projectCategoryIds），避免隐式叠加 */
+function onCategoryFilterChange() {
+  queryParams.value.projectCategoryIds = undefined
+  handleQuery()
+}
+
+/** 录入日期（新增口）变化：后端按来源分流（手动取录入日/导入取安排日） */
+const newDateRange = ref([])
+function onNewDateChange(val) {
+  if (val && val.length === 2) {
+    queryParams.value.newDateBegin = val[0]
+    queryParams.value.newDateEnd = val[1]
+  } else {
+    queryParams.value.newDateBegin = undefined
+    queryParams.value.newDateEnd = undefined
+  }
+}
+
 /** 快捷时间按钮 */
 function setQuickDate(rangeFn) {
   const range = rangeFn()
@@ -1283,6 +1317,12 @@ function saveScheme() {
   }
   if (assignDateRange.value && assignDateRange.value.length === 2) {
     scheme._assignDateRange = [...assignDateRange.value]
+  }
+  if (closeDateRange.value && closeDateRange.value.length === 2) {
+    scheme._closeDateRange = [...closeDateRange.value]
+  }
+  if (newDateRange.value && newDateRange.value.length === 2) {
+    scheme._newDateRange = [...newDateRange.value]
   }
   const schemes = [...savedSchemes.value]
   const idx = schemes.findIndex(s => s.name === name)
@@ -1318,6 +1358,22 @@ function loadSavedScheme(name) {
     assignDateRange.value = []
     queryParams.value.assignDateBegin = undefined
     queryParams.value.assignDateEnd = undefined
+  }
+  if (p._closeDateRange) {
+    closeDateRange.value = [...p._closeDateRange]
+    onCloseDateChange(closeDateRange.value)
+  } else {
+    closeDateRange.value = []
+    queryParams.value.closeDateBegin = undefined
+    queryParams.value.closeDateEnd = undefined
+  }
+  if (p._newDateRange) {
+    newDateRange.value = [...p._newDateRange]
+    onNewDateChange(newDateRange.value)
+  } else {
+    newDateRange.value = []
+    queryParams.value.newDateBegin = undefined
+    queryParams.value.newDateEnd = undefined
   }
   handleQuery()
   currentSchemeName.value = name
@@ -1445,6 +1501,10 @@ function resetQuery() {
   queryParams.value.closeDateBegin = undefined
   queryParams.value.closeDateEnd = undefined
   closeDateRange.value = []
+  queryParams.value.newDateBegin = undefined
+  queryParams.value.newDateEnd = undefined
+  newDateRange.value = []
+  queryParams.value.projectCategoryIds = undefined
   currentSchemeName.value = ''
   handleQuery()
 }
@@ -1921,27 +1981,60 @@ function handleExport() {
   }, `project_${new Date().getTime()}.xlsx`)
 }
 
-// ===== 首页驾驶舱下钻预置（契约 §7.3：query 携带 leaderId/categoryId/clientUnit/contractStatus/overdue/beginDate/endDate/dateField/id）=====
+// ===== 首页驾驶舱 / 下钻弹窗 预置筛选 =====
+// 支持两类传参：
+//   1) 直接键：newDateBegin/newDateEnd（新增口径）、closeDateBegin/closeDateEnd（办结口径）、
+//      assignDateBegin/assignDateEnd（安排日期）、projectCategoryId、categoryIds（多选逗号串）、
+//      leaderId、clientUnit、contractStatus、overdue、projectNature、dataSource、status
+//   2) 旧版：beginDate/endDate + dateField（assign|close|new）
 const route = useRoute()
 const drillQuery = route.query || {}
 if (drillQuery.leaderId) queryParams.value.leaderId = Number(drillQuery.leaderId)
-if (drillQuery.categoryId) queryParams.value.projectCategoryId = Number(drillQuery.categoryId)
+// 下钻类别：单一小类回填单选控件（界面可见）；多小类（如「其它」桶）走隐藏多选 IN
+if (drillQuery.categoryIds) {
+  const ids = String(drillQuery.categoryIds).split(',').map(s => s.trim()).filter(Boolean)
+  if (ids.length === 1) queryParams.value.projectCategoryId = Number(ids[0])
+  else if (ids.length > 1) queryParams.value.projectCategoryIds = ids.join(',')
+}
+if (drillQuery.projectCategoryId) queryParams.value.projectCategoryId = Number(drillQuery.projectCategoryId)
+else if (drillQuery.categoryId) queryParams.value.projectCategoryId = Number(drillQuery.categoryId)
 if (drillQuery.clientUnit) queryParams.value.clientUnit = drillQuery.clientUnit
 if (drillQuery.contractStatus) queryParams.value.contractStatus = String(drillQuery.contractStatus)
 if (drillQuery.overdue) queryParams.value.overdue = String(drillQuery.overdue)
 if (drillQuery.projectNature) queryParams.value.projectNature = String(drillQuery.projectNature)
-if (drillQuery.beginDate && drillQuery.endDate) {
+if (drillQuery.dataSource) queryParams.value.dataSource = String(drillQuery.dataSource)
+if (drillQuery.status) queryParams.value.status = String(drillQuery.status)
+
+// 新增口径（来源分流）
+if (drillQuery.newDateBegin && drillQuery.newDateEnd) {
+  newDateRange.value = [drillQuery.newDateBegin, drillQuery.newDateEnd]
+  onNewDateChange(newDateRange.value)
+}
+// 办结口径（直接键）
+if (drillQuery.closeDateBegin && drillQuery.closeDateEnd) {
+  closeDateRange.value = [drillQuery.closeDateBegin, drillQuery.closeDateEnd]
+  onCloseDateChange(closeDateRange.value)
+}
+// 安排日期（直接键）
+if (drillQuery.assignDateBegin && drillQuery.assignDateEnd) {
+  assignDateRange.value = [drillQuery.assignDateBegin, drillQuery.assignDateEnd]
+  onAssignDateChange(assignDateRange.value)
+}
+// 旧版：beginDate/endDate + dateField（无直接键时才生效）
+const hasDirectDate = drillQuery.newDateBegin || drillQuery.closeDateBegin || drillQuery.assignDateBegin
+if (drillQuery.beginDate && drillQuery.endDate && !hasDirectDate) {
   if (drillQuery.dateField === 'close') {
-    queryParams.value.closeDateBegin = drillQuery.beginDate
-    queryParams.value.closeDateEnd = drillQuery.endDate
     closeDateRange.value = [drillQuery.beginDate, drillQuery.endDate]
+    onCloseDateChange(closeDateRange.value)
+  } else if (drillQuery.dateField === 'new') {
+    newDateRange.value = [drillQuery.beginDate, drillQuery.endDate]
+    onNewDateChange(newDateRange.value)
   } else {
-    queryParams.value.assignDateBegin = drillQuery.beginDate
-    queryParams.value.assignDateEnd = drillQuery.endDate
     assignDateRange.value = [drillQuery.beginDate, drillQuery.endDate]
+    onAssignDateChange(assignDateRange.value)
   }
 }
-if (Object.keys(drillQuery).some(k => ['leaderId', 'categoryId', 'clientUnit', 'contractStatus', 'overdue', 'beginDate', 'endDate', 'projectNature'].includes(k))) {
+if (Object.keys(drillQuery).some(k => ['leaderId', 'categoryId', 'projectCategoryId', 'categoryIds', 'clientUnit', 'contractStatus', 'overdue', 'beginDate', 'endDate', 'projectNature', 'dataSource', 'newDateBegin', 'closeDateBegin', 'assignDateBegin'].includes(k))) {
   advancedVisible.value = true
 }
 
