@@ -1306,7 +1306,12 @@ function quickRange(quick) {
       return [fmtYMD(y, qs, 1), fmtYMD(y, qs + 2, lastDayOf(y, qs + 2))]
    }
    if (quick === 'year') return [fmtYMD(y, 1, 1), fmtYMD(y, 12, 31)]
-   if (quick === 'last12') return [fmtYMD(y, m - 10, 1), fmtYMD(y, m + 1, lastDayOf(y, m + 1))]
+   if (quick === 'last12') {
+      // 含当月共 12 个自然月：起始 = 当月前推 11 个月。
+      // m 是 0-based，直接用 m-11 交给 Date 归一化跨年，避免拼出负数月份（如 2026--2-01）
+      const start = new Date(y, m - 11, 1)
+      return [fmtYMD(start.getFullYear(), start.getMonth() + 1, 1), fmtYMD(y, m + 1, lastDayOf(y, m + 1))]
+   }
    return []
 }
 
