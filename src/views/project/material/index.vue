@@ -193,8 +193,8 @@
                               <span v-else class="cell-placeholder">-</span>
                            </template>
                         </el-table-column>
-                        <el-table-column label="发票号码" align="center" prop="invoiceNo" width="130">
-                           <template #default="s"><span v-if="!s.row.invoiceNo" class="cell-placeholder">-</span>{{ s.row.invoiceNo }}</template>
+                        <el-table-column label="开票单位" align="center" prop="invoiceUnit" width="200">
+                           <template #default="s"><span v-if="!s.row.invoiceUnit" class="cell-placeholder">-</span>{{ s.row.invoiceUnit }}</template>
                         </el-table-column>
                         <el-table-column label="备注" align="center" prop="remark" width="150">
                            <template #default="s"><span v-if="!s.row.remark" class="cell-placeholder">-</span>{{ s.row.remark }}</template>
@@ -1037,11 +1037,11 @@ function billWorkload(row) {
   return (min > 0 && w > 0 && w < min) ? min : w
 }
 
-/** 付款记录表合并：统一开票时合并开票金额/开票状态/发票号码三列 */
+/** 付款记录表合并：统一开票时合并开票金额/开票状态/开票单位三列 */
 function paymentSpanMethod({ rowIndex, columnIndex }, projectId) {
   const payments = expandDetails[projectId]?.payments || []
   if (payments.length <= 1) return
-  const hasSplit = payments.slice(1).some(p => p.invoiceNo || p.invoiceStatus || p.invoiceAmount != null)
+  const hasSplit = payments.slice(1).some(p => p.invoiceUnit || p.invoiceStatus || p.invoiceAmount != null)
   if (hasSplit) return
   if (columnIndex === 5 || columnIndex === 6 || columnIndex === 7) {
     if (rowIndex === 0) return { rowspan: payments.length, colspan: 1 }

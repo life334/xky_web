@@ -93,7 +93,7 @@
       </span>
     </div>
     <div class="tile-row" v-loading="loading">
-      <div v-for="t in tiles" :key="t.key" class="tile tile-click" @click="t.drill()">
+      <div v-for="t in tiles" :key="t.key" class="tile tile-click" :class="{ 'tile-warn': t.warn }" @click="t.drill()">
         <div class="tile-label">
           {{ t.label }}
           <span v-if="t.pill" class="tile-pill">{{ t.pill }}</span>
@@ -637,6 +637,14 @@ const tiles = computed(() => {
       value: po.value ?? 0, prev: po.prev ?? 0,
       prevText: `上期 ${po.prev ?? 0} 个`,
       drill: () => openDrill("本期超期 · 明细", "none", { overdue: "true" })
+    },
+    {
+      // 合同超期：录入满 3 个工作日仍未关联合同的在册项目（当前时点口径，非区间）
+      key: "contractMissing", label: "合同超期", pill: "实时", money: false,
+      value: riskCounts.value.contractMissingCount ?? 0,
+      warn: (riskCounts.value.contractMissingCount ?? 0) > 0,
+      prevText: "点击查看明细",
+      drill: () => openRiskGroup("contractMissing")
     }
   ]
 })
@@ -1500,17 +1508,14 @@ $accent-red: #ff4d4f;
   }
 }
 
-/* ===== 段1 六磁贴 ===== */
+/* ===== 段1 经营快照磁贴（7 个，按容器自适应列宽） ===== */
 .tile-row {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
   min-height: 108px;
 }
-
-@media (max-width: 1500px) { .tile-row { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 768px) { .tile-row { grid-template-columns: repeat(2, 1fr); } }
 
 .tile {
   background: $bg-card;
@@ -1524,6 +1529,8 @@ $accent-red: #ff4d4f;
 
   &.tile-click { cursor: pointer; }
   &.tile-click:hover { box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06); }
+  /* 合同超期（风险类）数值用警示色，与正向指标区分 */
+  &.tile-warn .tile-value { color: $accent-red; }
 
   .tile-label {
     display: flex;

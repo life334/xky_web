@@ -164,8 +164,8 @@
                </el-table-column>
                <el-table-column label="付款单位" align="center" prop="payUnit" min-width="150" :show-overflow-tooltip="false" />
                <el-table-column label="付款方式" align="center" prop="payMethod" min-width="100" />
-               <el-table-column label="发票号" align="center" prop="invoiceNo" min-width="140" :show-overflow-tooltip="false">
-                  <template #default="scope"><span v-if="scope.row.invoiceNo">{{ scope.row.invoiceNo }}</span></template>
+               <el-table-column label="开票单位" align="center" prop="invoiceUnit" min-width="180" :show-overflow-tooltip="false">
+                  <template #default="scope"><span v-if="scope.row.invoiceUnit">{{ scope.row.invoiceUnit }}</span></template>
                </el-table-column>
                <el-table-column label="开票日期" align="center" prop="invoiceDate" min-width="110">
                   <template #default="scope"><span v-if="scope.row.invoiceDate">{{ parseTime(scope.row.invoiceDate, '{y}-{m}-{d}') }}</span></template>
@@ -257,7 +257,7 @@
                         <el-tag v-if="invoiceStatusText(scope.row.invoiceStatus)" :type="invoiceStatusTagType(scope.row.invoiceStatus)">{{ invoiceStatusText(scope.row.invoiceStatus) }}</el-tag>
                      </template>
                   </el-table-column>
-                  <el-table-column label="发票号码" align="center" prop="invoiceNo" min-width="130" />
+                  <el-table-column label="开票单位" align="center" prop="invoiceUnit" min-width="180" />
                   <el-table-column label="开票金额" align="right" min-width="110">
                      <template #default="scope"><span>{{ formatMoney(scope.row.invoiceAmount) }}</span></template>
                   </el-table-column>

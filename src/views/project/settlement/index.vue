@@ -227,8 +227,8 @@
                               <el-tag v-if="invoiceStatusText(s.row.invoiceStatus)" :type="invoiceStatusTagType(s.row.invoiceStatus)" size="small">{{ invoiceStatusText(s.row.invoiceStatus) }}</el-tag>
                            </template>
                         </el-table-column>
-                        <el-table-column label="发票号码" align="center" prop="invoiceNo" width="130" >
-                           <template #default="s"><span v-if="!s.row.invoiceNo" class="cell-placeholder">-</span>{{ s.row.invoiceNo }}</template>
+                        <el-table-column label="开票单位" align="center" prop="invoiceUnit" width="200">
+                           <template #default="s"><span v-if="!s.row.invoiceUnit" class="cell-placeholder">-</span>{{ s.row.invoiceUnit }}</template>
                         </el-table-column>
                         <el-table-column label="备注" align="center" prop="remark" width="150">
                            <template #default="s"><span v-if="!s.row.remark" class="cell-placeholder">-</span>{{ s.row.remark }}</template>
@@ -699,8 +699,10 @@
                      </el-form-item>
                   </el-col>
                   <el-col :span="6">
-                     <el-form-item label="发票号码">
-                        <el-input v-model="paymentForm.invoiceNo" placeholder="发票号码" maxlength="100" />
+                     <el-form-item label="开票单位">
+                        <el-select v-model="paymentForm.invoiceUnit" filterable clearable placeholder="选择开票单位" style="width:100%">
+                           <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                        </el-select>
                      </el-form-item>
                   </el-col>
                   <el-col :span="6">
@@ -729,8 +731,10 @@
                            </el-form-item>
                         </el-col>
                         <el-col :span="6">
-                           <el-form-item label="发票号码">
-                              <el-input v-model="paymentForm.invoiceNo" placeholder="发票号码" maxlength="100" />
+                           <el-form-item label="开票单位">
+                              <el-select v-model="paymentForm.invoiceUnit" filterable clearable placeholder="选择开票单位" style="width:100%">
+                                 <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                              </el-select>
                            </el-form-item>
                         </el-col>
                         <el-col :span="6">
@@ -758,8 +762,10 @@
                            </el-form-item>
                         </el-col>
                         <el-col :span="6">
-                           <el-form-item label="发票号码">
-                              <el-input v-model="paymentForm.tailInvoiceNo" placeholder="发票号码" maxlength="100" />
+                           <el-form-item label="开票单位">
+                              <el-select v-model="paymentForm.tailInvoiceUnit" filterable clearable placeholder="选择开票单位" style="width:100%">
+                                 <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                              </el-select>
                            </el-form-item>
                         </el-col>
                         <el-col :span="6">
@@ -854,7 +860,7 @@ const FALLBACK_COLUMNS = [
   { key: 'refundAmount', label: '退款金额', type: 'money', group: 'business', prop: 'refundAmount', defaultVisible: true },
   { key: 'refundDate', label: '退款时间', type: 'date', group: 'business', prop: 'refundDate', defaultVisible: true },
   { key: 'invoiceStatus', label: '开票状态', type: 'text', group: 'business', prop: 'invoiceStatus', defaultVisible: true },
-  { key: 'invoiceNo', label: '发票号码', type: 'text', group: 'business', prop: 'invoiceNo', defaultVisible: true },
+  { key: 'invoiceUnit', label: '开票单位', type: 'text', group: 'business', prop: 'invoiceUnit', defaultVisible: true },
   { key: 'invoiceAmount', label: '开票金额', type: 'money', group: 'business', prop: 'invoiceAmount', defaultVisible: true },
   { key: 'payRemark', label: '备注', type: 'text', group: 'business', prop: 'payRemark', defaultVisible: true }
 ]
@@ -949,11 +955,11 @@ const paymentForm = ref({
    remark: null,
    invoiceMode: 'unified',
    invoiceStatus: null,
-   invoiceNo: null,
+   invoiceUnit: null,
    invoiceDate: null,
    invoiceAmount: null,
    tailInvoiceStatus: null,
-   tailInvoiceNo: null,
+   tailInvoiceUnit: null,
    tailInvoiceDate: null,
    tailInvoiceAmount: null
 })
@@ -1241,16 +1247,16 @@ function expandRowClass({ row }) {
   return ''
 }
 
-/** 付款记录表合并：统一开票时合并开票金额/开票状态/发票号码三列（退款行不参与合并） */
+/** 付款记录表合并：统一开票时合并开票金额/开票状态/开票单位三列（退款行不参与合并） */
 function paymentSpanMethod({ rowIndex, columnIndex }, projectId) {
   const payments = expandDetails[projectId]?.payments || []
   if (payments.length <= 1) return
   // 退款行不携带发票信息：存在退款行时跳过合并，避免退款行被并入发票区
   if (payments.some(p => p.paymentType === 'refund')) return
   // 检测是否分笔开票：尾款有独立发票信息 → split
-  const hasSplit = payments.slice(1).some(p => p.invoiceNo || p.invoiceStatus || p.invoiceAmount != null)
+  const hasSplit = payments.slice(1).some(p => p.invoiceUnit || p.invoiceStatus || p.invoiceAmount != null)
   if (hasSplit) return
-  // 统一开票：合并开票金额(5)、开票状态(6)、发票号码(7)
+  // 统一开票：合并开票金额(5)、开票状态(6)、开票单位(7)
   if (columnIndex === 5 || columnIndex === 6 || columnIndex === 7) {
     if (rowIndex === 0) {
       return { rowspan: payments.length, colspan: 1 }
@@ -1469,21 +1475,21 @@ function handleEditPayment(row) {
       }))
 
       // 开票信息：尾款存在发票数据 → 分笔开票；否则统一开票
-      // 分笔开票判定：仅「有发票实质数据」（发票号 / 开票日期 / 开票金额>0，或已开/已作废）才算分笔；
+      // 分笔开票判定：仅「有发票实质数据」（开票单位 / 开票日期 / 开票金额>0，或已开/已作废）才算分笔；
       // 「未开 / pending」只是状态占位，不算——否则导入数据的编辑弹窗会默认切到分笔模式
       const tailInvText = invoiceStatusText(tail && tail.invoiceStatus)
       const tailHasInvoice = !!tail && (
-        !!tail.invoiceNo || !!tail.invoiceDate || (tail.invoiceAmount != null && tail.invoiceAmount > 0)
+        !!tail.invoiceUnit || !!tail.invoiceDate || (tail.invoiceAmount != null && tail.invoiceAmount > 0)
         || tailInvText === '已开' || tailInvText === '已作废'
       )
       paymentForm.value.invoiceMode = tailHasInvoice ? 'split' : 'unified'
       const invSrc = prepay || tail
       paymentForm.value.invoiceStatus = invSrc ? invSrc.invoiceStatus : null
-      paymentForm.value.invoiceNo = invSrc ? invSrc.invoiceNo : null
+      paymentForm.value.invoiceUnit = (invSrc && invSrc.invoiceUnit) ? invSrc.invoiceUnit : null
       paymentForm.value.invoiceDate = invSrc ? invSrc.invoiceDate : null
       paymentForm.value.invoiceAmount = invSrc ? invSrc.invoiceAmount : null
       paymentForm.value.tailInvoiceStatus = tail ? tail.invoiceStatus : null
-      paymentForm.value.tailInvoiceNo = tail ? tail.invoiceNo : null
+      paymentForm.value.tailInvoiceUnit = (tail && tail.invoiceUnit) ? tail.invoiceUnit : null
       paymentForm.value.tailInvoiceDate = tail ? tail.invoiceDate : null
       paymentForm.value.tailInvoiceAmount = tail ? tail.invoiceAmount : null
     })
@@ -1503,7 +1509,7 @@ function savePaymentData() {
   }
   const invoiceMode = paymentForm.value.invoiceMode
 
-  const hasPrepayInvoice = paymentForm.value.invoiceNo || paymentForm.value.invoiceDate
+  const hasPrepayInvoice = paymentForm.value.invoiceUnit || paymentForm.value.invoiceDate
     || (paymentForm.value.invoiceAmount != null && paymentForm.value.invoiceAmount > 0)
     || isVoidedInvoice(paymentForm.value.invoiceStatus)
   if (paymentForm.value.prepayAmount != null || paymentForm.value.prepayDate || hasPrepayInvoice) {
@@ -1513,13 +1519,13 @@ function savePaymentData() {
       payUnit: paymentForm.value.payUnit,
       payMethod: paymentForm.value.prepayMethod,
       invoiceStatus: paymentForm.value.invoiceStatus,
-      invoiceNo: paymentForm.value.invoiceNo,
+      invoiceUnit: paymentForm.value.invoiceUnit,
       invoiceDate: paymentForm.value.invoiceDate,
       invoiceAmount: paymentForm.value.invoiceAmount
     }
   }
 
-  const hasTailInvoice = invoiceMode === 'split' && (paymentForm.value.tailInvoiceNo || paymentForm.value.tailInvoiceDate
+  const hasTailInvoice = invoiceMode === 'split' && (paymentForm.value.tailInvoiceUnit || paymentForm.value.tailInvoiceDate
     || (paymentForm.value.tailInvoiceAmount != null && paymentForm.value.tailInvoiceAmount > 0)
     || isVoidedInvoice(paymentForm.value.tailInvoiceStatus))
   if (paymentForm.value.tailAmount != null || paymentForm.value.tailDate || hasTailInvoice) {
@@ -1531,7 +1537,7 @@ function savePaymentData() {
     }
     if (invoiceMode === 'split') {
       tail.invoiceStatus = paymentForm.value.tailInvoiceStatus
-      tail.invoiceNo = paymentForm.value.tailInvoiceNo
+      tail.invoiceUnit = paymentForm.value.tailInvoiceUnit
       tail.invoiceDate = paymentForm.value.tailInvoiceDate
       tail.invoiceAmount = paymentForm.value.tailInvoiceAmount
     }
