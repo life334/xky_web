@@ -174,12 +174,17 @@
             <div v-if="externalMissing > 0" class="profile-missing">另有 {{ externalMissing }} 行工作量未填外部产值，未计入产值列</div>
           </div>
       </div>
-      <div class="chart-card chart-narrow" v-loading="structureLoading">
+      <div class="chart-card chart-narrow biz-close-card" v-loading="structureLoading">
         <div class="chart-header">
           <span class="chart-title">本期办结占比</span>
-          <span class="chart-subtitle">共 {{ closedTotal }} 个 · 点击查看明细</span>
+          <span class="chart-subtitle">点击条形或图例查看明细</span>
         </div>
         <template v-if="closedSegments.length">
+          <div class="biz-close-hero">
+            <span class="biz-close-num">{{ closedTotal }}</span>
+            <span class="biz-close-unit">个办结</span>
+            <span class="biz-close-sub">覆盖 {{ closedSegments.length }} 个类别</span>
+          </div>
           <div class="stacked-bar">
             <div
               v-for="seg in closedSegments"
@@ -195,15 +200,25 @@
               v-for="seg in closedSegments"
               :key="seg.bucket"
               class="stacked-legend-item stacked-clickable"
+              :title="seg.bucketName + ' ' + seg.count + ' 个（' + seg.ratio + '%）'"
               @click="closedDrill(seg)"
             >
-              <span class="bucket-dot" :style="{ background: BUCKET_COLORS[seg.bucket] }"></span>
-              <span class="stacked-legend-name">{{ seg.bucketName }}</span>
-              <span class="stacked-legend-num">{{ seg.count }} 个 · {{ seg.ratio }}%</span>
+              <div class="sl-top">
+                <span class="bucket-dot" :style="{ background: BUCKET_COLORS[seg.bucket] }"></span>
+                <span class="stacked-legend-name">{{ seg.bucketName }}</span>
+                <span class="stacked-legend-num">{{ seg.count }} 个 · {{ seg.ratio }}%</span>
+              </div>
+              <div class="sl-track">
+                <span class="sl-fill" :style="{ width: seg.ratio + '%', background: BUCKET_COLORS[seg.bucket] }"></span>
+              </div>
             </div>
           </div>
+          <div class="biz-close-foot">占比 = 该类别办结数 ÷ 本期办结总数（{{ closedTotal }} 个）</div>
         </template>
-        <el-empty v-else description="本期暂无办结项目" :image-size="60" />
+        <div v-else class="biz-close-empty">
+          <el-empty description="本期暂无办结项目" :image-size="70" />
+          <div class="biz-close-empty-sub">可切换到「本年」查看已办结项目的类别占比</div>
+        </div>
       </div>
     </div>
 
@@ -1576,8 +1591,8 @@ $accent-red: #ff4d4f;
   &.last { margin-bottom: 0; }
 }
 
-/* 段2 右侧「本期办结占比」不再被左侧长卡拉高，消除下方空白 */
-.chart-row.structure-row { align-items: start; }
+/* 段2：右卡与左卡等高，卡内内容纵向分布，消除卡外留白 */
+.chart-row.structure-row { align-items: stretch; }
 
 @media (max-width: 1200px) { .chart-row { grid-template-columns: 1fr; } }
 
@@ -1701,6 +1716,48 @@ $accent-red: #ff4d4f;
   color: $accent-orange;
 }
 
+/* 段2 右：办结占比卡（与左卡等高，内容纵向分布） */
+.biz-close-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.biz-close-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 8px;
+
+  .biz-close-num {
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+    color: $text-primary;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .biz-close-unit { font-size: 12px; color: $text-secondary; }
+  .biz-close-sub { margin-left: auto; font-size: 11px; color: $text-muted; }
+}
+
+.biz-close-foot {
+  margin-top: 8px;
+  font-size: 11px;
+  color: $text-muted;
+}
+
+.biz-close-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+
+  .biz-close-empty-sub { font-size: 11px; color: $text-muted; }
+}
+
 /* 段2 右：办结占比堆叠条 */
 .stacked-wrap {
   display: flex;
@@ -1712,8 +1769,8 @@ $accent-red: #ff4d4f;
 .stacked-bar {
   display: flex;
   width: 100%;
-  height: 18px;
-  border-radius: 9px;
+  height: 30px;
+  border-radius: 15px;
   overflow: hidden;
   background: #f0f2f5;
 
@@ -1726,17 +1783,26 @@ $accent-red: #ff4d4f;
 
 .stacked-clickable { cursor: pointer; }
 .stacked-bar .stacked-seg.stacked-clickable:hover { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.18); }
-.stacked-legend-item.stacked-clickable:hover { background: #f5f7fa; border-radius: 6px; }
+.stacked-legend-item.stacked-clickable:hover { border-color: #d9e2ef; background: #f2f6fc; }
 
 .stacked-legend {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  justify-content: space-between;
+  margin-top: 14px;
 
   .stacked-legend-item {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    gap: 7px;
     font-size: 12px;
+    padding: 8px 10px;
+    border: 1px solid #f0f2f5;
+    border-radius: 8px;
+    background: #fafbfc;
+
+    .sl-top { display: flex; align-items: center; }
 
     .stacked-legend-name {
       color: $text-primary;
@@ -1745,6 +1811,20 @@ $accent-red: #ff4d4f;
     }
 
     .stacked-legend-num { color: $text-secondary; margin-left: auto; }
+
+    .sl-track {
+      height: 6px;
+      border-radius: 3px;
+      background: #eef1f5;
+      overflow: hidden;
+    }
+
+    .sl-fill {
+      display: block;
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
   }
 }
 

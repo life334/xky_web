@@ -61,6 +61,9 @@
                   <el-table-column label="单价" align="center" width="120">
                      <template #default="scope"><el-input-number v-model="scope.row.unitPrice" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="onUnitPriceChange(scope.row)" /></template>
                   </el-table-column>
+                  <el-table-column label="起步量" align="center" width="120">
+                     <template #default="scope"><el-input-number v-model="scope.row.minQuantity" :min="0" :precision="4" controls-position="right" size="small" style="width: 100%" @change="onMinQuantityChange(scope.row)" /></template>
+                  </el-table-column>
                   <el-table-column label="单位" prop="priceUnit" align="center" width="70" />
                   <el-table-column label="产值" align="center" min-width="110">
                      <template #default="scope">
@@ -117,6 +120,9 @@
                   </el-table-column>
                   <el-table-column label="单价" align="center" width="120">
                      <template #default="scope"><el-input-number v-model="scope.row.unitPrice" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="onUnitPriceChange(scope.row)" /></template>
+                  </el-table-column>
+                  <el-table-column label="起步量" align="center" width="120">
+                     <template #default="scope"><el-input-number v-model="scope.row.minQuantity" :min="0" :precision="4" controls-position="right" size="small" style="width: 100%" @change="onMinQuantityChange(scope.row)" /></template>
                   </el-table-column>
                   <el-table-column label="单位" prop="priceUnit" align="center" width="70" />
                   <el-table-column label="产值" align="center" min-width="110">
@@ -289,6 +295,7 @@ function loadWorkloadDetail() {
                billingCategory: w.billingCategory || null,
                priceUnit: w.priceUnit || null,
                minQuantity: w.minQuantity != null ? Number(w.minQuantity) : null,
+               minQuantitySource: w.minQuantitySource || (w.minQuantity != null ? 'dict' : null),
                unitPrice: w.unitPrice != null ? w.unitPrice : (w.internalPrice != null ? w.internalPrice : w.externalPrice),
                priceSource: w.priceSource || 'dict',
                workload: w.workload,
@@ -416,8 +423,8 @@ function calcRow(row) {
    const w = Number(row.workload) || 0
    const p = Number(row.unitPrice) || 0
    const min = Number(row.minQuantity) || 0
-   // 起步量向上取整：工作量按起步量的整数倍计费
-   const effQty = (min > 0 && w > 0) ? Math.ceil(w / min) * min : w
+   // 起步量 = 最低计费数量：工作量低于起步量时按起步量计费，达到/超过则按实际计费
+   const effQty = (min > 0 && w > 0 && w < min) ? min : w
    row.output = (w > 0 && p > 0) ? (effQty * p).toFixed(2) : null
    // 同步旧字段：内部行写 internal_*，外部行写 external_*（列表页/总览汇总依赖）
    if (row.billingType === 'internal') {
@@ -433,28 +440,28 @@ function calcRow(row) {
    }
 }
 
-/** 是否命中起步量取整（实际工作量非起步量整数倍） */
+/** 是否命中起步量兜底（工作量低于起步量，按起步量计费） */
 function minQtyHit(row) {
    const w = Number(row.workload) || 0
    const min = Number(row.minQuantity) || 0
-   return min > 0 && w > 0 && Math.ceil(w / min) * min !== w
+   return min > 0 && w > 0 && w < min
 }
 
-/** 起步量取整后的计费数量 */
-function ceilWorkload(row) {
+/** 起步量兜底后的计费数量 = max(工作量, 起步量) */
+function billWorkload(row) {
    const w = Number(row.workload) || 0
    const min = Number(row.minQuantity) || 0
-   return (min > 0 && w > 0) ? Math.ceil(w / min) * min : w
+   return (min > 0 && w > 0 && w < min) ? min : w
 }
 
-/** 产值计算式小字（如 2公里（实际1.5）× 2,000.00 = 4,000.00） */
+/** 产值计算式小字（如 0.5公里（实际0.2，按起步量）× 4,000.00 = 2,000.00） */
 function calcExpr(row) {
    const w = Number(row.workload) || 0
    const p = Number(row.unitPrice) || 0
    if (!(w > 0) || !(p > 0)) return ''
-   const effQty = ceilWorkload(row)
+   const effQty = billWorkload(row)
    const unit = row.priceUnit || ''
-   const qtyStr = minQtyHit(row) ? `${effQty}${unit}（实际${w}）` : `${effQty}${unit}`
+   const qtyStr = minQtyHit(row) ? `${effQty}${unit}（实际${w}，按起步量）` : `${effQty}${unit}`
    return `${qtyStr} × ${formatMoney(p)} = ${formatMoney(effQty * p)}`
 }
 
@@ -470,11 +477,23 @@ function resolveContractPrice(categoryId, billingId) {
    return contractPriceMap.value[categoryId] || null
 }
 
+/** 解析合同起步量（与合同单价同一匹配维度）；未配置合同起步量返回 null（回退字典） */
+function resolveContractMin(categoryId, billingId) {
+   const cp = resolveContractPrice(categoryId, billingId)
+   return cp && cp.contractMinQuantity != null ? Number(cp.contractMinQuantity) : null
+}
+
 /** 手动修改单价：标记来源为手动 */
 function onUnitPriceChange(row) {
    if (row.unitPrice != null) {
       row.priceSource = 'manual'
    }
+   calcRow(row)
+}
+
+/** 手动修改起步量：标记来源为手动；清空则回退默认（合同 → 字典） */
+function onMinQuantityChange(row) {
+   row.minQuantitySource = row.minQuantity != null ? 'manual' : null
    calcRow(row)
 }
 
@@ -625,6 +644,15 @@ function quickAddWorkload(rec, type) {
       priceSource = 'dict'
    }
 
+   // 起步量：合同起步量优先 → 字典起步量（仅外部走合同，与单价同维度）
+   const contractMin = isExternal ? resolveContractMin(opt.categoryId, b.id) : null
+   let finalMin = b.minQuantity != null ? Number(b.minQuantity) : null
+   let minSource = finalMin != null ? 'dict' : null
+   if (contractMin != null) {
+      finalMin = contractMin
+      minSource = 'contract'
+   }
+
    const subName = workloadForm.value.workloads.find(r => Number(r.subItemNo) === Number(subItemNo) && r.subItemName)?.subItemName || ''
 
    const newRow = {
@@ -635,7 +663,8 @@ function quickAddWorkload(rec, type) {
       billingType: b.billingType,
       billingCategory: b.billingCategory,
       priceUnit: b.priceUnit,
-      minQuantity: b.minQuantity != null ? Number(b.minQuantity) : null,
+      minQuantity: finalMin,
+      minQuantitySource: minSource,
       unitPrice: finalPrice,
       priceSource: priceSource,
       workload: workload,

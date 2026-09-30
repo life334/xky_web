@@ -26,12 +26,12 @@
 
     <!-- 单价表格 -->
     <el-card v-if="queryForm.contractId">
-      <div slot="header">
+      <template #header>
         <span>合同单价配置</span>
         <span style="color: #909399; font-size: 13px; margin-left: 12px;">
-          仅展示外部计费方式，按计费类别填写合同单价
+          仅展示外部计费方式，按计费类别填写合同单价 / 合同起步量（留空则沿用字典值）
         </span>
-      </div>
+      </template>
 
       <el-table
         v-loading="loading"
@@ -44,39 +44,56 @@
         default-expand-all
       >
         <el-table-column prop="categoryName" label="项目类别 / 计费类别" min-width="220">
-          <template slot-scope="scope">
+          <template #default="scope">
             <span v-if="scope.row.categoryLevel === 1" style="font-weight: 600;">{{ scope.row.categoryName }}</span>
             <span v-else-if="scope.row.categoryLevel === 2" style="padding-left: 12px;">{{ scope.row.categoryName }}</span>
             <span v-else style="padding-left: 28px; color: #606266;">{{ scope.row.billingCategory }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="categoryLevel" label="层级" width="70" align="center">
-          <template slot-scope="scope">
+          <template #default="scope">
             <el-tag v-if="scope.row.categoryLevel === 1" type="" size="small" disable-transitions>大类</el-tag>
             <el-tag v-else-if="scope.row.categoryLevel === 2" type="info" size="small" disable-transitions>小类</el-tag>
             <el-tag v-else type="warning" size="small" disable-transitions>计费</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="dictUnitPrice" label="字典单价" width="120" align="right">
-          <template slot-scope="scope">
+          <template #default="scope">
             <span v-if="scope.row.billingId">{{ scope.row.dictUnitPrice }}</span>
             <span v-else style="color: #c0c4cc">—</span>
           </template>
         </el-table-column>
         <el-table-column prop="priceUnit" label="计价单位" width="120" align="center">
-          <template slot-scope="scope">
+          <template #default="scope">
             <span v-if="scope.row.billingId">{{ scope.row.priceUnit }}</span>
             <span v-else style="color: #c0c4cc">—</span>
           </template>
         </el-table-column>
-        <el-table-column prop="minQuantity" label="起步量" width="100" align="right">
-          <template slot-scope="scope">
+        <el-table-column prop="minQuantity" label="字典起步量" width="110" align="right">
+          <template #default="scope">
             <span v-if="scope.row.billingId">{{ scope.row.minQuantity }}</span>
             <span v-else style="color: #c0c4cc">—</span>
           </template>
         </el-table-column>
+        <el-table-column label="合同起步量" width="160" align="center">
+          <template #default="scope">
+            <template v-if="scope.row.billingId">
+              <el-input-number
+                v-model="scope.row.contractMinQuantity"
+                :min="0"
+                :precision="4"
+                :step="1"
+                size="small"
+                style="width: 130px"
+                placeholder="留空用字典"
+                controls-position="right"
+              />
+            </template>
+            <span v-else style="color: #c0c4cc">—</span>
+          </template>
+        </el-table-column>
         <el-table-column label="合同单价" width="180" align="center">
-          <template slot-scope="scope">
+          <template #default="scope">
             <template v-if="scope.row.billingId">
               <el-input-number
                 v-model="scope.row.price"
@@ -217,7 +234,8 @@ function handleSave() {
             contractId: queryForm.contractId,
             categoryId: child.categoryId,
             billingId: billing.billingId,
-            price: billing.price
+            price: billing.price,
+            contractMinQuantity: billing.contractMinQuantity
           })
         }
       })

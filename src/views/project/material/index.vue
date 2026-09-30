@@ -159,7 +159,7 @@
                            <template #default="s">
                               <span v-if="s.row.output != null && s.row.billingType" :class="['output-dot', s.row.billingType]"></span>
                               <span :class="{ 'summary-value': s.row._isSummary }">{{ s.row.output != null ? formatMoney(s.row.output) : '-' }}</span>
-                              <div v-if="!s.row._isSummary && minQtyHit(s.row)" class="cell-sub min-qty-hit">按起步量取整：{{ s.row.workload }} → {{ ceilWorkload(s.row) }}</div>
+                              <div v-if="!s.row._isSummary && minQtyHit(s.row)" class="cell-sub min-qty-hit">按起步量计费：{{ s.row.workload }} → {{ billWorkload(s.row) }}</div>
                            </template>
                         </el-table-column>
                      </el-table>
@@ -1023,18 +1023,18 @@ function expandRowClass({ row }) {
   return ''
 }
 
-/** 起步量取整检测 */
+/** 起步量兜底检测（工作量低于起步量） */
 function minQtyHit(row) {
   const w = Number(row.workload) || 0
   const min = Number(row.minQuantity) || 0
-  return min > 0 && w > 0 && Math.ceil(w / min) * min !== w
+  return min > 0 && w > 0 && w < min
 }
 
-/** 起步量取整后的计费数量 */
-function ceilWorkload(row) {
+/** 起步量兜底后的计费数量 = max(工作量, 起步量) */
+function billWorkload(row) {
   const w = Number(row.workload) || 0
   const min = Number(row.minQuantity) || 0
-  return (min > 0 && w > 0) ? Math.ceil(w / min) * min : w
+  return (min > 0 && w > 0 && w < min) ? min : w
 }
 
 /** 付款记录表合并：统一开票时合并开票金额/开票状态/发票号码三列 */

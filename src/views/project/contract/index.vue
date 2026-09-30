@@ -377,7 +377,7 @@
             <!-- 合同单价 Tab -->
             <el-tab-pane label="合同单价" name="price">
                <div style="margin-bottom: 8px; color: #909399; font-size: 13px;">
-                  仅展示外部计费方式，按计费类别填写合同单价，保存随合同一起提交
+                  仅展示外部计费方式，按计费类别填写合同单价 / 合同起步量（起步量留空则沿用字典起步量），保存随合同一起提交
                </div>
                <el-table
                   v-loading="priceLoading"
@@ -414,9 +414,25 @@
                         <span v-if="scope.row.billingId">{{ scope.row.priceUnit }}</span>
                      </template>
                   </el-table-column>
-                  <el-table-column prop="minQuantity" label="起步量" width="100" align="right">
+                  <el-table-column prop="minQuantity" label="字典起步量" width="110" align="right">
                      <template #default="scope">
                         <span v-if="scope.row.billingId">{{ scope.row.minQuantity }}</span>
+                     </template>
+                  </el-table-column>
+                  <el-table-column label="合同起步量" width="150" align="center">
+                     <template #default="scope">
+                        <template v-if="scope.row.billingId">
+                           <el-input-number
+                              v-model="scope.row.contractMinQuantity"
+                              :min="0"
+                              :precision="4"
+                              :step="1"
+                              size="small"
+                              style="width: 120px"
+                              placeholder="留空用字典"
+                              controls-position="right"
+                           />
+                        </template>
                      </template>
                   </el-table-column>
                   <el-table-column label="合同单价" width="180" align="center">
@@ -578,6 +594,18 @@
                         </template>
                      </el-table-column>
                      <el-table-column label="计价单位" align="center" prop="priceUnit" min-width="100" />
+                     <el-table-column label="字典起步量" align="right" prop="minQuantity" min-width="100">
+                        <template #default="scope">
+                           <span v-if="scope.row.minQuantity != null">{{ scope.row.minQuantity }}</span>
+                           <span v-else style="color:#c0c4cc">—</span>
+                        </template>
+                     </el-table-column>
+                     <el-table-column label="合同起步量" align="right" min-width="100">
+                        <template #default="scope">
+                           <span v-if="scope.row.contractMinQuantity != null">{{ scope.row.contractMinQuantity }}</span>
+                           <span v-else style="color:#c0c4cc">—</span>
+                        </template>
+                     </el-table-column>
                      <el-table-column label="合同单价" align="center" min-width="120">
                         <template #default="scope">
                            <span style="font-weight: 600; color: #409eff;">¥{{ Number(scope.row.price).toFixed(2) }}</span>
@@ -1290,7 +1318,7 @@ function buildPriceTree(list) {
   // 第一遍：收集类别节点（大类/小类）和计费方式明细行
   // 类别节点不携带计费方式字段（billingId/dictUnitPrice/priceUnit/minQuantity/billingCategory）
   // 这些字段只属于计费方式明细行（categoryLevel=3）
-  const billingFields = ['billingId', 'billingType', 'billingCategory', 'dictUnitPrice', 'priceUnit', 'minQuantity']
+  const billingFields = ['billingId', 'billingType', 'billingCategory', 'dictUnitPrice', 'priceUnit', 'minQuantity', 'contractMinQuantity']
   function stripBilling(obj) {
     const o = { ...obj }
     billingFields.forEach(f => { o[f] = null })
@@ -1352,7 +1380,8 @@ function collectPriceList(contractId) {
             contractId: contractId,
             categoryId: child.categoryId,
             billingId: billing.billingId,
-            price: billing.price
+            price: billing.price,
+            contractMinQuantity: billing.contractMinQuantity
           })
         }
       })
