@@ -55,14 +55,6 @@
                   <el-date-picker v-model="entrustDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onEntrustDateChange" />
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">审核日期</div>
-                  <el-date-picker v-model="auditDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onAuditDateChange" />
-               </div>
-               <div class="filter-item">
-                  <div class="filter-item-label">完成日期</div>
-                  <el-date-picker v-model="finishDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onFinishDateChange" />
-               </div>
-               <div class="filter-item">
                   <div class="filter-item-label">合同金额</div>
                   <div style="display:flex;gap:8px;align-items:center">
                      <el-input-number v-model="queryParams.contractAmountMin" :min="0" :precision="2" controls-position="right" placeholder="最低" style="flex:1" @change="handleQuery" />
@@ -220,13 +212,13 @@
                   </template>
                   <template v-else>
                      <dict-tag v-if="scope.row.status" :options="d('proj_contract_status')" :value="scope.row.status" />
-                     <span v-else style="color: #c0c4cc">草稿</span>
+                     <span v-else style="color: #c0c4cc">进行中</span>
                   </template>
                </template>
                <!-- 日期字段：创建/更新时间含时分秒 -->
                <span v-else-if="col.type === 'date' && scope.row[col.prop]">{{ col.key === 'createTime' || col.key === 'updateTime' ? parseTime(scope.row[col.prop]) : parseDate(scope.row[col.prop]) }}</span>
                <!-- 动态字段：从 extra_data JSONB 取值 -->
-               <span v-else-if="col.type === 'dynamic'"><span v-if="scope.row.extraData && scope.row.extraData[col.key] != null">{{ scope.row.extraData[col.key] }}</span></span>
+               <span v-else-if="col.type === 'dynamic'"><span v-if="scope.row.extraData && scope.row.extraData[col.key] != null">{{ dynamicCellText(col.key, scope.row.extraData[col.key]) }}</span></span>
                <!-- 是否结算：字符标志位 0/1，需转中文（否则列表显示 0 / 1） -->
                <span v-else-if="col.key === 'isSettled'">{{ settledFlagText(scope.row[col.prop]) }}</span>
                <!-- 其他：直接显示 -->
@@ -302,7 +294,20 @@
                   <el-row :gutter="20">
                      <el-col :span="8">
                         <el-form-item label="项目类型" prop="projectType">
-                           <el-input v-model="form.projectType" placeholder="请输入项目类型" maxlength="100" />
+                           <el-select
+                              v-model="form.projectType"
+                              multiple
+                              filterable
+                              clearable
+                              collapse-tags
+                              collapse-tags-tooltip
+                              :max-collapse-tags="2"
+                              :loading="categoryLoading"
+                              placeholder="请选择项目类型（可多选）"
+                              style="width: 100%"
+                           >
+                              <el-option v-for="name in projectTypeSelectOptions" :key="name" :label="name" :value="name" />
+                           </el-select>
                         </el-form-item>
                      </el-col>
                      <el-col :span="8">
@@ -332,23 +337,6 @@
                      <el-col :span="8">
                         <el-form-item label="登记时间" prop="entrustDate">
                            <el-date-picker v-model="form.entrustDate" type="date" placeholder="选择委托时间" value-format="YYYY-MM-DD" style="width: 100%" />
-                        </el-form-item>
-                     </el-col>
-                     <el-col :span="8">
-                        <el-form-item label="审核日期" prop="auditDate">
-                           <el-date-picker v-model="form.auditDate" type="date" placeholder="选择审核日期" value-format="YYYY-MM-DD" style="width: 100%" />
-                        </el-form-item>
-                     </el-col>
-                     <el-col :span="8">
-                        <el-form-item label="返回日期" prop="returnDate">
-                           <el-date-picker v-model="form.returnDate" type="date" placeholder="选择用户返回日期" value-format="YYYY-MM-DD" style="width: 100%" />
-                        </el-form-item>
-                     </el-col>
-                  </el-row>
-                  <el-row :gutter="20">
-                     <el-col :span="8">
-                        <el-form-item label="完成日期" prop="finishDate">
-                           <el-date-picker v-model="form.finishDate" type="date" placeholder="选择完成日期" value-format="YYYY-MM-DD" style="width: 100%" />
                         </el-form-item>
                      </el-col>
                      <el-col :span="8">
@@ -557,20 +545,17 @@
                   <el-descriptions-item label="合同类型"><dict-tag :options="proj_contract_type" :value="detail.contractType" /></el-descriptions-item>
                   <el-descriptions-item label="合同状态">
                      <dict-tag v-if="detail.status" :options="d('proj_contract_status')" :value="detail.status" />
-                     <span v-else>草稿</span>
+                     <span v-else>进行中</span>
                   </el-descriptions-item>
                   <el-descriptions-item label="合同金额">{{ detail.contractAmount != null ? formatAmount(detail.contractAmount, amountUnit) : '' }}</el-descriptions-item>
                   <el-descriptions-item label="委托单位">{{ detail.clientUnit }}</el-descriptions-item>
-                  <el-descriptions-item label="项目类型">{{ detail.extraData ? detail.extraData.projectType : '' }}</el-descriptions-item>
+                  <el-descriptions-item label="项目类型">{{ detail.extraData ? projectTypeText(detail.extraData.projectType) : '' }}</el-descriptions-item>
                   <el-descriptions-item label="测绘地址">{{ detail.extraData ? detail.extraData.surveyAddress : '' }}</el-descriptions-item>
                   <el-descriptions-item label="合同期限">{{ detail.contractPeriod }}</el-descriptions-item>
                   <el-descriptions-item label="联系人">{{ detail.contactName }}</el-descriptions-item>
                   <el-descriptions-item label="联系电话">{{ detail.contactPhone }}</el-descriptions-item>
                   <el-descriptions-item label="签署日期">{{ parseDate(detail.signDate) }}</el-descriptions-item>
                   <el-descriptions-item label="登记时间">{{ parseDate(detail.entrustDate) }}</el-descriptions-item>
-                  <el-descriptions-item label="审核日期">{{ parseDate(detail.auditDate) }}</el-descriptions-item>
-                  <el-descriptions-item label="返回日期">{{ parseDate(detail.returnDate) }}</el-descriptions-item>
-                  <el-descriptions-item label="完成日期">{{ parseDate(detail.finishDate) }}</el-descriptions-item>
                   <el-descriptions-item label="归档日期">{{ parseDate(detail.archiveDate) }}</el-descriptions-item>
                   <el-descriptions-item label="存储目录" :span="2">{{ detail.archivePath }}</el-descriptions-item>
                   <el-descriptions-item label="支付条件" :span="2">{{ detail.paymentTerms }}</el-descriptions-item>
@@ -812,6 +797,7 @@ import { listContract, getContract, addContract, updateContract, delContract, ch
 import { listContractPrice, saveContractPrice } from "@/api/project/contractPrice"
 import { getConfigKey } from "@/api/system/config"
 import { getDistinctValues } from "@/api/project/project"
+import { categoryTreeselectFull } from "@/api/project/category"
 import { listAttachments, uploadAttachment, deleteAttachment, getAttachmentHistory, restoreVersion } from "@/api/project/contractAttachment"
 import { UploadFilled, Folder, Document, Paperclip, Search, Loading } from '@element-plus/icons-vue'
 import request from '@/utils/request'
@@ -858,9 +844,6 @@ const FALLBACK_COLUMNS = [
   { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: false },
   { key: 'signDate', label: '签署日期', type: 'date', group: 'business', prop: 'signDate', defaultVisible: true },
   { key: 'entrustDate', label: '委托时间', type: 'date', group: 'business', prop: 'entrustDate', defaultVisible: false },
-  { key: 'auditDate', label: '审核日期', type: 'date', group: 'business', prop: 'auditDate', defaultVisible: false },
-  { key: 'returnDate', label: '返回日期', type: 'date', group: 'business', prop: 'returnDate', defaultVisible: false },
-  { key: 'finishDate', label: '完成日期', type: 'date', group: 'business', prop: 'finishDate', defaultVisible: false },
   { key: 'archiveDate', label: '归档日期', type: 'date', group: 'business', prop: 'archiveDate', defaultVisible: false },
   { key: 'archivePath', label: '归档路径', type: 'text', group: 'business', prop: 'archivePath', defaultVisible: false },
   { key: 'contractPeriod', label: '合同期限', type: 'text', group: 'business', prop: 'contractPeriod', defaultVisible: false },
@@ -899,8 +882,11 @@ function buildColumns(list) {
 /** 从后端加载可显隐列元数据；接口不可用时降级到内置兜底清单 */
 async function loadColumns() {
   try {
-    const list = await getContractColumns()
-    if (Array.isArray(list) && list.length > 0) {
+    const res = await getContractColumns()
+    // 请求拦截器返回的是响应体本身（{ code, msg, data }），列数组在 data 上；
+    // 兼容直接返回数组的实现。
+    const list = Array.isArray(res) ? res : (res && Array.isArray(res.data) ? res.data : [])
+    if (list.length > 0) {
       buildColumns(list)
     } else {
       buildColumns(FALLBACK_COLUMNS)
@@ -946,8 +932,6 @@ const paymentDialogTitle = computed(() => {
 // 新增：智能查询面板
 const signDateRange = ref([])
 const entrustDateRange = ref([])
-const auditDateRange = ref([])
-const finishDateRange = ref([])
 const statusCounts = ref({})
 const advancedVisible = ref(false)
 const savedSchemes = ref([])
@@ -995,12 +979,10 @@ const detailAttachmentList = ref([])    // 详情弹窗附件列表
 const sideHistoryMap = ref({})          // 侧滑面板历史版本
 const replaceTarget = ref(null)         // 替换版本时的目标附件
 
-/** 合同状态流转规则 */
+/** 合同状态流转规则（进行中 / 待返回 / 已完成 / 已取消；已完成、已取消为终态） */
 const STATUS_TRANSITIONS = {
-  "draft":     ["signed", "cancelled"],
-  "signed":    ["ongoing", "cancelled"],
-  "ongoing":   ["completed", "cancelled"],
-  "completed": ["archived", "cancelled"]
+  "ongoing":        ["pending_return", "completed", "cancelled"],
+  "pending_return": ["ongoing", "completed", "cancelled"]
 }
 
 const data = reactive({
@@ -1026,16 +1008,10 @@ const data = reactive({
     entrustDateBegin: undefined,
     entrustDateEnd: undefined,
     contractAmountMin: undefined,
-    contractAmountMax: undefined,
-    auditDateBegin: undefined,
-    auditDateEnd: undefined,
-    finishDateBegin: undefined,
-    finishDateEnd: undefined
+    contractAmountMax: undefined
   },
-  rules: {
-    contractNo: [{ required: true, message: "合同编号不能为空", trigger: "blur" }],
-    contractName: [{ required: true, message: "合同名称不能为空", trigger: "blur" }]
-  }
+  // 合同编号 / 合同名称均允许为空：编号须等合同签署完成后才能确定（后端唯一性校验对空编号放行）
+  rules: {}
 })
 
 const { queryParams, form, rules, statusForm } = toRefs(data)
@@ -1058,6 +1034,73 @@ function parseExtraData(v) {
   } catch (e) {
     return {}
   }
+}
+
+// ===== 项目类型（动态字段）多选：数据源与项目编辑弹窗「项目类别」同源 =====
+/** 项目类别树（大类 → 小类）；模块内只取一次，in-flight Promise 缓存防并发重复请求 */
+const categoryOptions = ref([])
+const categoryLoading = ref(false)
+/** 小类名称列表 —— 与「项目类别」下拉一致：只取有父节点的层，不含「管线 / 工程」两个大类 */
+const projectTypeOptions = computed(() => {
+  const list = []
+  for (const parent of categoryOptions.value) {
+    for (const child of (parent.children || [])) {
+      if (child && child.name) list.push(child.name)
+    }
+  }
+  return list
+})
+/** 下拉选项 = 小类 ∪ 当前已选值（历史值可能已不在类别树中，补入以便正常展示与取消勾选） */
+const projectTypeSelectOptions = computed(() => {
+  const list = projectTypeOptions.value.slice()
+  const seen = new Set(list)
+  const current = Array.isArray(form.value.projectType) ? form.value.projectType : []
+  current.forEach(v => {
+    if (v && !seen.has(v)) { seen.add(v); list.push(v) }
+  })
+  return list
+})
+let categoryTreePromise = null
+/** 加载类别树（首次请求，失败后允许重试；供项目类型下拉使用） */
+function ensureCategoryTree() {
+  if (categoryOptions.value.length) return Promise.resolve(categoryOptions.value)
+  if (categoryTreePromise) return categoryTreePromise
+  categoryLoading.value = true
+  categoryTreePromise = categoryTreeselectFull().then(res => {
+    categoryOptions.value = res.data || []
+    categoryLoading.value = false
+    return categoryOptions.value
+  }).catch(() => {
+    categoryLoading.value = false
+    categoryTreePromise = null
+    return []
+  })
+  return categoryTreePromise
+}
+
+/** 动态字段值 → 展示文本（多选字段存数组，用「、」连接） */
+function extraText(v) {
+  if (Array.isArray(v)) return v.filter(Boolean).join('、')
+  return v == null ? '' : v
+}
+
+/** 项目类型展示文本：数组或历史自由文本统一归一后用「、」连接 */
+function projectTypeText(v) {
+  return toProjectTypeArray(v).join('、')
+}
+
+/** 动态列单元格文本：项目类型为多值字段，统一走「、」连接 */
+function dynamicCellText(key, v) {
+  return key === 'projectType' ? projectTypeText(v) : extraText(v)
+}
+
+/** 历史值归一为数组：数组原样、字符串按逗号类分隔符切分、空 → [] */
+function toProjectTypeArray(v) {
+  if (Array.isArray(v)) return v.filter(Boolean)
+  if (typeof v === 'string' && v.trim()) {
+    return v.split(/[,，、;；]+/).map(s => s.trim()).filter(Boolean)
+  }
+  return []
 }
 
 function getList() {
@@ -1122,15 +1165,12 @@ function reset() {
     contractAmount: undefined,
     signDate: undefined,
     entrustDate: undefined,
-    auditDate: undefined,
-    returnDate: undefined,
-    finishDate: undefined,
     archiveDate: undefined,
     archivePath: undefined,
     contractPeriod: undefined,
     paymentTerms: undefined,
     status: undefined,
-    projectType: undefined,
+    projectType: [],
     surveyAddress: undefined,
     remark: undefined
   }
@@ -1147,8 +1187,6 @@ function handleQuery() {
 function resetQuery() {
   signDateRange.value = []
   entrustDateRange.value = []
-  auditDateRange.value = []
-  finishDateRange.value = []
   queryParams.value.keyword = undefined
   queryParams.value.contractNo = undefined
   queryParams.value.contractName = undefined
@@ -1162,10 +1200,6 @@ function resetQuery() {
   queryParams.value.entrustDateEnd = undefined
   queryParams.value.contractAmountMin = undefined
   queryParams.value.contractAmountMax = undefined
-  queryParams.value.auditDateBegin = undefined
-  queryParams.value.auditDateEnd = undefined
-  queryParams.value.finishDateBegin = undefined
-  queryParams.value.finishDateEnd = undefined
   currentSchemeName.value = ''
   handleQuery()
 }
@@ -1221,30 +1255,6 @@ function onEntrustDateChange(val) {
   } else {
     queryParams.value.entrustDateBegin = undefined
     queryParams.value.entrustDateEnd = undefined
-  }
-  handleQuery()
-}
-
-/** 审核日期变更 */
-function onAuditDateChange(val) {
-  if (val && val.length === 2) {
-    queryParams.value.auditDateBegin = val[0]
-    queryParams.value.auditDateEnd = val[1]
-  } else {
-    queryParams.value.auditDateBegin = undefined
-    queryParams.value.auditDateEnd = undefined
-  }
-  handleQuery()
-}
-
-/** 完成日期变更 */
-function onFinishDateChange(val) {
-  if (val && val.length === 2) {
-    queryParams.value.finishDateBegin = val[0]
-    queryParams.value.finishDateEnd = val[1]
-  } else {
-    queryParams.value.finishDateBegin = undefined
-    queryParams.value.finishDateEnd = undefined
   }
   handleQuery()
 }
@@ -1406,8 +1416,6 @@ function activateScheme(scheme) {
   const qp = queryParams.value
   signDateRange.value = []
   entrustDateRange.value = []
-  auditDateRange.value = []
-  finishDateRange.value = []
   Object.keys(qp).forEach(k => { if (k !== 'pageNum' && k !== 'pageSize') qp[k] = undefined })
   if (scheme.data) {
     Object.assign(qp, scheme.data)
@@ -1416,12 +1424,6 @@ function activateScheme(scheme) {
     }
     if (scheme.data.entrustDateBegin && scheme.data.entrustDateEnd) {
       entrustDateRange.value = [scheme.data.entrustDateBegin, scheme.data.entrustDateEnd]
-    }
-    if (scheme.data.auditDateBegin && scheme.data.auditDateEnd) {
-      auditDateRange.value = [scheme.data.auditDateBegin, scheme.data.auditDateEnd]
-    }
-    if (scheme.data.finishDateBegin && scheme.data.finishDateEnd) {
-      finishDateRange.value = [scheme.data.finishDateBegin, scheme.data.finishDateEnd]
     }
   }
   currentSchemeName.value = scheme.name
@@ -1436,7 +1438,6 @@ function saveScheme() {
   const qp = queryParams.value
   const keys = ['keyword','contractNo','contractName','clientUnit','contractType','contactName','status',
                 'signDateBegin','signDateEnd','entrustDateBegin','entrustDateEnd',
-                'auditDateBegin','auditDateEnd','finishDateBegin','finishDateEnd',
                 'contractAmountMin','contractAmountMax']
   keys.forEach(k => { if (qp[k] !== undefined && qp[k] !== '') data[k] = qp[k] })
   const existing = savedSchemes.value.findIndex(s => s.name === name)
@@ -1512,7 +1513,7 @@ function handleUpdate(row) {
     form.value = response.data
     // 解析动态字段到表单顶层字段
     const extra = parseExtraData(form.value.extraData)
-    form.value.projectType = extra.projectType
+    form.value.projectType = toProjectTypeArray(extra.projectType)
     form.value.surveyAddress = extra.surveyAddress
     // 拆出后缀：如果编号以配置前缀开头则去掉前缀，否则原样展示
     if (form.value.contractNo && contractPrefix.value && form.value.contractNo.startsWith(contractPrefix.value)) {
@@ -1604,18 +1605,19 @@ function loadDetailAttachments(contractId) {
 function submitForm() {
   proxy.$refs["contractRef"].validate(valid => {
     if (!valid) {
-      proxy.$modal.msgWarning("请先完成基本信息中的必填项（合同编号、合同名称）")
+      proxy.$modal.msgWarning("请先完成基本信息中的必填项")
       activeTab.value = "info"
       return
     }
     const isAdd = form.value.id == undefined
-    // 提交前拼接前缀 + 用户输入的后缀
-    const suffix = form.value.contractNo || ""
-    form.value.contractNo = contractPrefix.value + suffix
+    // 用「编号前缀 + 用户输入后缀」拼出完整编号；编号允许为空（须等合同签署完成后才有编号），
+    // 后缀为空时不拼前缀，避免存下只剩前缀的残缺编号。
+    const suffix = (form.value.contractNo || "").trim()
+    form.value.contractNo = suffix ? (contractPrefix.value + suffix) : ""
 
     // 组装动态字段 extraData（后端 extra_data 为 jsonb，需 JSON 字符串）
     const extra = {}
-    if (form.value.projectType) extra.projectType = form.value.projectType
+    if (Array.isArray(form.value.projectType) && form.value.projectType.length) extra.projectType = form.value.projectType
     if (form.value.surveyAddress) extra.surveyAddress = form.value.surveyAddress
     form.value.extraData = Object.keys(extra).length ? JSON.stringify(extra) : null
 
@@ -1662,7 +1664,7 @@ function handleCommand(cmd, row) {
 
 /** 状态变更弹窗 */
 function handleStatusChange(row) {
-  const current = row.status || "draft"
+  const current = row.status || "ongoing"
   const allowed = STATUS_TRANSITIONS[current] || []
   if (allowed.length === 0) {
     proxy.$modal.msgWarning("当前状态【" + getDictLabel(d('proj_contract_status'), current) + "】为终态，不允许变更")
@@ -2075,6 +2077,7 @@ getList()
 loadStatusCounts()
 loadSavedSchemes()
 loadClientUnits()
+ensureCategoryTree()
 getConfigKey("contract.no.prefix").then(res => {
   contractPrefix.value = res.msg || ""
 })

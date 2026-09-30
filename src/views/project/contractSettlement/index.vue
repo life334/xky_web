@@ -45,41 +45,45 @@
       <el-table-column label="合同单价" min-width="175" align="center">
         <template #default="scope">
           <el-popover
-            v-if="scope.row._priceItems && scope.row._priceItems.length"
+            v-if="scope.row._priceCount > 0"
             placement="bottom"
             :width="300"
             trigger="hover"
             :show-after="300"
             popper-class="price-popover"
+            @show="loadRowPrice(scope.row)"
           >
             <template #reference>
               <div class="price-capsule" @click.stop="openPriceCard(scope.row)">
                 <span class="capsule-icon">◆</span>
-                <span class="capsule-count">{{ scope.row._priceItems.length }}项</span>
+                <span class="capsule-count">{{ scope.row._priceCount }}项</span>
                 <span class="capsule-range" v-if="scope.row._priceMin != null && scope.row._priceMax != null">
                   &nbsp;· ¥{{ scope.row._priceMin }}~{{ scope.row._priceMax }}
                 </span>
                 <span class="capsule-arrow">▸</span>
               </div>
             </template>
-            <!-- 悬浮预览：按大类分组 -->
+            <!-- 悬浮预览：按大类分组（首次悬浮才请求明细，结果缓存到当前行） -->
             <div class="popover-price-list">
-              <template v-for="(group, gIdx) in scope.row._priceGroups" :key="gIdx">
-                <div v-if="group.parent" class="popover-parent-label">
-                  <span class="popover-parent-icon">📁</span> {{ group.parent }}
-                </div>
-                <div
-                  v-for="(item, idx) in group.items"
-                  :key="idx"
-                  class="popover-price-row"
-                  :class="{ 'popover-price-child': group.parent }"
-                >
-                  <span class="popover-cat">{{ item.name }}</span>
-                  <span class="popover-price" :class="{ 'text-muted': item.price == null }">
-                    {{ item.price != null ? '¥' + item.price : '未设' }}
-                  </span>
-                </div>
+              <template v-if="scope.row._priceLoaded">
+                <template v-for="(group, gIdx) in scope.row._priceGroups" :key="gIdx">
+                  <div v-if="group.parent" class="popover-parent-label">
+                    <span class="popover-parent-icon">📁</span> {{ group.parent }}
+                  </div>
+                  <div
+                    v-for="(item, idx) in group.items"
+                    :key="idx"
+                    class="popover-price-row"
+                    :class="{ 'popover-price-child': group.parent }"
+                  >
+                    <span class="popover-cat">{{ item.name }}</span>
+                    <span class="popover-price" :class="{ 'text-muted': item.price == null }">
+                      {{ item.price != null ? '¥' + item.price : '未设' }}
+                    </span>
+                  </div>
+                </template>
               </template>
+              <div v-else class="popover-price-loading">加载中...</div>
             </div>
           </el-popover>
           <span v-else></span>
@@ -294,21 +298,24 @@
       </template>
     </el-dialog>
 
-    <!-- 关联项目列表弹窗 -->
+    <!-- 关联项目列表弹窗（点开才请求，避免随列表一次性带出） -->
     <el-dialog :title="'关联项目 — ' + projectDialogTitle" :model-value="projectDialogVisible" @update:model-value="projectDialogVisible = $event" width="80%" destroy-on-close>
-      <el-table :data="projectDialogData" border stripe size="small" max-height="400">
-        <el-table-column label="工程编号" prop="projectCode" min-width="140" show-overflow-tooltip="false" />
-        <el-table-column label="委托单位" prop="clientUnit" min-width="160" show-overflow-tooltip="false" />
-        <el-table-column label="联系人" prop="contactName" min-width="100" show-overflow-tooltip="false" />
-        <el-table-column label="联系电话" prop="contactPhone" min-width="130" show-overflow-tooltip="false" />
-        <el-table-column label="项目类别" prop="engineeringProject" min-width="180" show-overflow-tooltip="false" />
-        <el-table-column label="工程地点" prop="projectLocation" min-width="160" show-overflow-tooltip="false" />
-        <el-table-column label="状态" prop="status" min-width="90" show-overflow-tooltip="false">
-          <template #default="scope">
-            <dict-tag v-if="scope.row.status" :options="d('proj_project_status')" :value="scope.row.status" />
-          </template>
-        </el-table-column>
-      </el-table>
+      <div v-loading="projectDialogLoading">
+        <el-table :data="projectDialogData" border stripe size="small" max-height="400">
+          <el-table-column label="工程编号" prop="project_code" min-width="140" show-overflow-tooltip="false" />
+          <el-table-column label="委托单位" prop="client_unit" min-width="160" show-overflow-tooltip="false" />
+          <el-table-column label="联系人" prop="contact_name" min-width="100" show-overflow-tooltip="false" />
+          <el-table-column label="联系电话" prop="contact_phone" min-width="130" show-overflow-tooltip="false" />
+          <el-table-column label="项目类别" prop="engineering_project" min-width="180" show-overflow-tooltip="false" />
+          <el-table-column label="工程地点" prop="project_location" min-width="160" show-overflow-tooltip="false" />
+          <el-table-column label="状态" prop="status" min-width="90" show-overflow-tooltip="false">
+            <template #default="scope">
+              <dict-tag v-if="scope.row.status" :options="d('proj_project_status')" :value="scope.row.status" />
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!projectDialogLoading && (!projectDialogData || !projectDialogData.length)" description="暂无关联项目" />
+      </div>
       <template #footer>
         <el-button @click="projectDialogVisible = false">关闭</el-button>
       </template>
@@ -318,7 +325,8 @@
 
 <script setup name="ContractSettlement">
 import { ref, reactive, onMounted, onActivated, computed, unref } from 'vue'
-import { treeListContractSettlement, getPriceDetail, getReceivedDetail, saveContractSettlement } from '@/api/project/contractSettlement'
+import { listContractSettlement, getPriceDetail, getReceivedDetail, saveContractSettlement } from '@/api/project/contractSettlement'
+import { getContractProjects } from '@/api/project/contract'
 import { ElMessage } from 'element-plus'
 
 const dicts = useDict('proj_project_status')
@@ -380,26 +388,14 @@ const receivedLoading = ref(false)
 const projectDialogVisible = ref(false)
 const projectDialogTitle = ref('')
 const projectDialogData = ref([])
+const projectDialogLoading = ref(false)
 
 // ===== 辅助函数 =====
 
-/** 将树形节点扁平化，聚合子节点信息 */
+/** 将轻量列表行映射为表格行（单价明细 / 关联项目明细均按需懒加载，不随列表带出） */
 function flattenNode(node) {
-  const children = node.children || []
-  const priceItems = parsePriceItems(node.priceDetail || [])
   const contractAmount = node.contractAmount ? Number(node.contractAmount) : 0
   const receivedAmount = node.receivedAmount != null ? Number(node.receivedAmount) : 0
-
-  // 计算单价区间
-  let priceMin = null
-  let priceMax = null
-  if (priceItems.length) {
-    const prices = priceItems.map(p => p.price).filter(p => p != null)
-    if (prices.length) {
-      priceMin = Math.min(...prices)
-      priceMax = Math.max(...prices)
-    }
-  }
 
   // 到账状态
   let paymentStatus, paymentPercent
@@ -419,44 +415,17 @@ function flattenNode(node) {
     paymentPercent = 0
   }
 
-  // 按大类分组（供悬浮预览用）
-  const priceGroups = groupByParent(priceItems)
-
   return {
     ...node,
-    _priceItems: priceItems,
-    _priceMin: priceMin,
-    _priceMax: priceMax,
-    _priceGroups: priceGroups,
+    _priceCount: Number(node.priceCount) || 0,
+    _priceMin: node.priceMin != null ? Number(node.priceMin) : null,
+    _priceMax: node.priceMax != null ? Number(node.priceMax) : null,
+    _priceGroups: [],
+    _priceLoaded: false,
     _paymentStatus: paymentStatus,
     _paymentPercent: paymentPercent,
-    _projectCodes: children.map(c => c.projectCode).filter(Boolean),
-    _children: children
+    _projectCodes: node.projectCodes || []
   }
-}
-
-/** 从 priceDetail Set 解析出 [{parent, name, price}]，支持 "大类 > 小类 价格" 格式 */
-function parsePriceItems(detailSet) {
-  if (!detailSet || !Array.isArray(detailSet)) return []
-  return detailSet
-    .map(s => {
-      if (typeof s !== 'string') return null
-      const lastSpace = s.lastIndexOf(' ')
-      if (lastSpace === -1) return { parent: null, name: s, price: null }
-      const fullName = s.substring(0, lastSpace)
-      const priceStr = s.substring(lastSpace + 1)
-      const price = priceStr ? Number(priceStr) : null
-      const gtIdx = fullName.indexOf(' > ')
-      if (gtIdx !== -1) {
-        return {
-          parent: fullName.substring(0, gtIdx),
-          name: fullName.substring(gtIdx + 3),
-          price: isNaN(price) ? null : price
-        }
-      }
-      return { parent: null, name: fullName, price: isNaN(price) ? null : price }
-    })
-    .filter(Boolean)
 }
 
 /** 按 parent 分组 [{parent, items:[{name,price}]}] */
@@ -515,7 +484,7 @@ let receivedDialogContractAmount = 0
 async function getList() {
   loading.value = true
   try {
-    const res = await treeListContractSettlement()
+    const res = await listContractSettlement()
     allContractNodes.value = res.data || []
   } finally {
     loading.value = false
@@ -555,6 +524,23 @@ async function submitForm() {
     getList()
   } finally {
     submitting.value = false
+  }
+}
+
+// ===== 单价明细：悬浮预览懒加载（首次悬浮才请求，结果缓存到行上） =====
+async function loadRowPrice(row) {
+  if (row._priceLoaded) return
+  row._priceLoaded = true
+  try {
+    const res = await getPriceDetail(row.contractId)
+    const items = (res.data || []).map(item => ({
+      parent: item.parent_name || null,
+      name: item.category_name || item.name || '',
+      price: item.price != null ? item.price : null
+    }))
+    row._priceGroups = groupByParent(items)
+  } catch {
+    row._priceGroups = []
   }
 }
 
@@ -599,11 +585,20 @@ async function openReceivedDetail(row) {
   }
 }
 
-// ===== 关联项目弹窗 =====
-function openProjectList(row) {
+// ===== 关联项目弹窗（点开才请求） =====
+async function openProjectList(row) {
   projectDialogTitle.value = row.contractName
-  projectDialogData.value = row._children || []
+  projectDialogData.value = []
   projectDialogVisible.value = true
+  projectDialogLoading.value = true
+  try {
+    const res = await getContractProjects(row.contractId)
+    projectDialogData.value = res.data || []
+  } catch {
+    projectDialogData.value = []
+  } finally {
+    projectDialogLoading.value = false
+  }
 }
 
 // ===== 导出 =====
@@ -712,6 +707,12 @@ onActivated(() => {
 }
 .popover-cat { color: #606266; }
 .popover-price { color: #303133; font-weight: 600; }
+.popover-price-loading {
+  padding: 10px 0;
+  text-align: center;
+  color: #909399;
+  font-size: 12px;
+}
 
 /* ===== 到账卡片（无 emoji，进度条式） ===== */
 .payment-card {
