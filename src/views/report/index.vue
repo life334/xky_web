@@ -110,7 +110,7 @@
             <el-tag size="small" type="info" effect="plain">{{ currentTemplate.hasSummaryRow === 'Y' ? '含合计行' : '不含合计行' }}</el-tag>
             <el-tag size="small" effect="plain">{{ (currentTemplate.fieldList || []).length }} 列</el-tag>
             <el-tag size="small" :type="previewTotal > 0 ? 'primary' : 'info'" effect="plain">命中 {{ previewTotal }} 条</el-tag>
-            <span v-if="previewTotal > 50" class="preview-limit">（仅展示前 50 行）</span>
+            <span class="preview-limit">（第 {{ previewPage.pageNum }} / {{ previewPageCount }} 页 · 每页 {{ previewPage.pageSize }} 条）</span>
           </template>
           <!-- 按单位合并开关（仅单位合并类内置模板显示）：预览实时联动，导出与预览保持一致 -->
           <div v-if="currentTemplate && isUnitMergeTemplate" class="preview-merge-toggle">
@@ -153,8 +153,8 @@
         empty-text="暂无数据 — 调整筛选条件或更换模板后导出"
         @selection-change="onSelectionChange"
       >
-        <!-- 勾选列：默认全选，去勾选的记录不导出 / 不上报 -->
-        <el-table-column type="selection" width="42" align="center" />
+        <!-- 勾选列：默认全选，去勾选的记录不导出 / 不上报（拆行模板：同一项目仅首行可勾选） -->
+        <el-table-column type="selection" width="42" align="center" :selectable="previewSelectable" />
         <!-- 上报状态标记列（仅 zdyw/byx 模板预览展示，不参与导出列） -->
         <!-- 口径与「上报时间」列一致：该模板的上报时间列有值即为「已上报」；悬停可看来源 -->
         <el-table-column v-if="showSubmitStatus" label="上报状态" width="82" align="center">
@@ -199,6 +199,15 @@
           </el-table-column>
         </template>
       </el-table>
+      <!-- 预览分页（服务端分页：每次只取一页，避免大数据量时全量加载卡顿） -->
+      <pagination
+        v-show="previewTotal > 0"
+        :total="previewTotal"
+        v-model:page="previewPage.pageNum"
+        v-model:limit="previewPage.pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        @pagination="onPreviewPageChange"
+      />
     </el-card>
 
     <!-- ═══════════ ④ 筛选设置弹窗 ═══════════ -->
@@ -522,7 +531,7 @@
             <span>模板「{{ currentTemplate.templateName }}」命中 <b class="hint-strong">{{ previewTotal }}</b> 条记录</span>
           </template>
           <div class="export-tip">
-            已勾选 <b class="ok">{{ effectiveCodes.length }}</b> 条 / 未勾选 <b class="no">{{ uncheckedCount }}</b> 条
+            已勾选 <b class="ok">{{ checkedCount }}</b> 条 / 未勾选 <b class="no">{{ uncheckedCount }}</b> 条
             <span v-if="uncheckedCount" class="tip-sub">（未勾选记录不导出）</span>
             <span v-if="!previewRows.length" class="tip-sub">（当前无预览数据，请先调整筛选条件）</span>
           </div>
@@ -746,10 +755,16 @@ const previewTotal = ref(0)
 const previewLoading = ref(false)
 const headerTree = ref([])          // 多级表头树（后端 preview 返回）
 const previewTableRef = ref(null)   // 预览表格引用（勾选全选）
-const previewCodes = ref([])        // 全量工程编号（与后端 rows 顺序一致，供勾选导出）
+const previewCodes = ref([])        // 当前页工程编号（与后端 rows 顺序一致；拆行时同一项目多行共享同一编号）
+const previewGroupSizes = ref([])   // 与 previewRows 对齐：每行所属项目的拆行数（>1 = 到账拆行，需合并其它列）
 const submittedMap = reactive({})   // { projectCode: submitTime } 已上报状态（真实上报记录）
 const submitSourceMap = reactive({}) // { projectCode: 'log' | 'history' } 上报状态来源（与「上报时间」列同源）
-const uncheckedCodes = ref(new Set()) // 用户主动去勾选的工程编号
+/* 跨页累加的「排除集」：用户主动取消勾选的工程编号（导出 = 命中全集 − 排除集；翻页不丢勾选） */
+const excludedCodes = ref(new Set())
+/* 预览分页（服务端分页，每次只取一页） */
+const previewPage = reactive({ pageNum: 1, pageSize: 20 })
+/* 程序化回填勾选状态期间，忽略 el-table 的 selection-change，避免误同步 */
+let suppressSel = false
 const exporting = ref(false)
 const submitting = ref(false)
 const categoryOptions = ref([])
@@ -816,11 +831,14 @@ const logList = ref([])
 /* ═══════════ 计算属性 ═══════════ */
 const isCustomTemplate = computed(() => currentTemplate.value?.templateType === 'custom')
 
-/* 本次导出实际生效的工程编号：全量勾选（默认）减去用户去勾选的行 */
-const effectiveCodes = computed(() => previewCodes.value.filter(c => !!c && !uncheckedCodes.value.has(c)))
+/* 预览总页数（服务端分页） */
+const previewPageCount = computed(() => Math.max(1, Math.ceil(previewTotal.value / (previewPage.pageSize || 20))))
 
-/* 去勾选条数（仅统计可见行范围内，供导出弹窗提示） */
-const uncheckedCount = computed(() => previewCodes.value.filter(c => !!c && uncheckedCodes.value.has(c)).length)
+/* 本次导出「已勾选」条数 = 命中总数 − 跨页排除数 */
+const checkedCount = computed(() => Math.max(0, previewTotal.value - excludedCodes.value.size))
+
+/* 去勾选（排除）条数，供导出弹窗提示 */
+const uncheckedCount = computed(() => excludedCodes.value.size)
 
 /* 是否「只定未验及补之前扣除项目」报表（zdyw_report）：唯一支持上报的模板 */
 const isZdywTemplate = computed(() => (currentTemplate.value?.templateFile || '').toLowerCase().includes('zdyw_report'))
@@ -858,6 +876,7 @@ watch(currentTemplateId, (id) => {
 /* 预览区「按单位合并单元格」开关：实时联动预览（后端重排 + 前端合并渲染），并记忆选择 */
 function onMergeToggle(val) {
   saveMergeUnit(currentTemplateId.value, val)
+  resetPreviewPaging()
   doPreview()
 }
 
@@ -1065,6 +1084,7 @@ async function onTemplateChange() {
   } finally {
     previewLoading.value = false
   }
+  resetPreviewPaging()
   doPreview()
 }
 
@@ -1072,7 +1092,19 @@ let previewTimer = null
 let previewSeq = 0 // 预览请求序号：丢弃过期响应，防止并发预览乱序覆盖
 function debouncePreview() {
   clearTimeout(previewTimer)
-  previewTimer = setTimeout(() => doPreview(), 400)
+  // 筛选条件变化 ⇒ 回到第 1 页并清空跨页排除集
+  previewTimer = setTimeout(() => { resetPreviewPaging(); doPreview() }, 400)
+}
+
+/* 预览跳页 / 改每页条数：保留「排除集」，仅重取当前页 */
+function onPreviewPageChange() {
+  doPreview()
+}
+
+/* 重置预览分页与跨页排除集（切换模板 / 改筛选 / 切合并开关时调用） */
+function resetPreviewPaging() {
+  previewPage.pageNum = 1
+  excludedCodes.value = new Set()
 }
 
 async function doPreview() {
@@ -1083,6 +1115,8 @@ async function doPreview() {
     const res = await previewReport({
       templateId: currentTemplateId.value,
       filter: buildBackendFilter(),
+      pageNum: previewPage.pageNum,
+      pageSize: previewPage.pageSize,
       // 预览与导出同一开关：开启时后端按单位排序 + 到账时间输出单位汇总文案
       mergeUnitCells: mergeUnitCells.value
     })
@@ -1092,6 +1126,7 @@ async function doPreview() {
     previewTotal.value = d.total || 0
     headerTree.value = d.headerTree || []
     previewCodes.value = d.codes || []
+    previewGroupSizes.value = d.groupSizes || []
     // 已上报状态表 { code: submitTime }
     Object.keys(submittedMap).forEach(k => delete submittedMap[k])
     Object.assign(submittedMap, d.submitted || {})
@@ -1101,19 +1136,39 @@ async function doPreview() {
     // 当月是否已上报过：置灰工具栏复选框并取消勾选
     monthSubmitted.value = !!d.monthSubmitted
     if (monthSubmitted.value) submitAsReport.value = false
-    previewRows.value = (d.rows || []).map((arr, idx) => {
-      const o = {}
-      ;(arr || []).forEach((v, i) => { o['c' + i] = v })
-      o.__code = previewCodes.value[idx] || ''
-      o.__submitted = !!submittedMap[o.__code]
-      o.__submitSource = submitSourceMap[o.__code] || ''
-      return o
-    })
-    // 预览刷新后默认全部勾选
-    uncheckedCodes.value = new Set()
+    // 组装预览行：按 groupSizes 标记拆行组首行（__grpHead），供「其它列合并」与勾选使用
+    const arr = d.rows || []
+    const rows = []
+    let i = 0
+    while (i < arr.length) {
+      const gs = Math.max(1, Number(previewGroupSizes.value[i]) || 1)
+      for (let k = 0; k < gs && i + k < arr.length; k++) {
+        const idx = i + k
+        const o = {}
+        ;(arr[idx] || []).forEach((v, ci) => { o['c' + ci] = v })
+        o.__code = previewCodes.value[idx] || ''
+        o.__grpSize = gs
+        o.__grpHead = k === 0
+        o.__submitted = !!submittedMap[o.__code]
+        o.__submitSource = submitSourceMap[o.__code] || ''
+        rows.push(o)
+      }
+      i += gs
+    }
+    previewRows.value = rows
+    // 回填勾选：默认全选，再按跨页「排除集」取消勾选（拆行项目仅首行可勾选）
     nextTick(() => {
-      previewTableRef.value?.clearSelection()
-      previewTableRef.value?.toggleAllSelection()
+      const tbl = previewTableRef.value
+      if (!tbl) return
+      suppressSel = true
+      tbl.clearSelection()
+      tbl.toggleAllSelection()
+      rows.forEach(r => {
+        if (r.__grpHead && r.__code && excludedCodes.value.has(r.__code)) {
+          tbl.toggleRowSelection(r, false)
+        }
+      })
+      nextTick(() => { suppressSel = false })
     })
   } catch (e) {
     // 错误已由拦截器提示
@@ -1122,11 +1177,22 @@ async function doPreview() {
   }
 }
 
-/* 预览勾选变化：记录去勾选的工程编号（仅可见行；未展示行默认导出） */
+/* 预览勾选变化：把当前页勾选状态并入跨页「排除集」（取消勾选 ⇒ 加入排除；重新勾上 ⇒ 移出排除） */
 function onSelectionChange(rows) {
-  const sel = new Set((rows || []).map(r => r.__code))
-  const visibleCodes = previewRows.value.map(r => r.__code).filter(c => !!c)
-  uncheckedCodes.value = new Set(visibleCodes.filter(c => !sel.has(c)))
+  if (suppressSel) return
+  const sel = new Set((rows || []).map(r => r.__code).filter(Boolean))
+  const pageCodes = [...new Set(previewRows.value.filter(r => r.__grpHead && r.__code).map(r => r.__code))]
+  const next = new Set(excludedCodes.value)
+  pageCodes.forEach(c => {
+    if (sel.has(c)) next.delete(c)
+    else next.add(c)
+  })
+  excludedCodes.value = next
+}
+
+/* 拆行模板：同一项目仅首行可勾选，尾行不可单独勾选（避免同项目勾选状态不一致） */
+function previewSelectable(row) {
+  return row.__grpSize <= 1 || row.__grpHead
 }
 
 /* ═══════════ 筛选值构建（后端扁平键） ═══════════ */
@@ -1245,6 +1311,7 @@ async function onFilterChange(id) {
     applyFilterConfig(cfg)
     currentFilterSchemeName.value = detail.filterName
     clearTimeout(previewTimer)
+    resetPreviewPaging()
     await doPreview()
     if (unknownCount > 0) {
       proxy.$modal.msgWarning(`${unknownCount} 个筛选条件在当前模板不可用，已自动忽略`)
@@ -1263,6 +1330,7 @@ function applyDefaultFilter(withPreview = true) {
   currentFilterSchemeName.value = '模板默认方案'
   if (withPreview) {
     clearTimeout(previewTimer)
+    resetPreviewPaging()
     doPreview()
   }
 }
@@ -1766,13 +1834,13 @@ function openExportDialog() {
 /* 确认导出：工具栏勾选「上报记录」且为 zdyw 模板且当月未上报时，导出文件并同时上报 */
 async function confirmExport() {
   if (!currentTemplateId.value) return
-  if (!effectiveCodes.value.length) { proxy.$modal.msgWarning('请至少勾选一条记录'); return }
+  if (!checkedCount.value) { proxy.$modal.msgWarning('请至少勾选一条记录'); return }
   const wantSubmit = submitAsReport.value && isZdywTemplate.value && !monthSubmitted.value
   const ok = await doExport(wantSubmit)
   if (ok && wantSubmit) await doSubmitReport()
 }
 
-/* 导出文件：projectCodes 传勾选集合，未勾选记录不导出；quiet=true 时成功提示由上报结果合并给出 */
+/* 导出文件：excludedCodes 传跨页排除集，命中全集减去排除集；quiet=true 时成功提示由上报结果合并给出 */
 async function doExport(quiet = false) {
   const tpl = currentTemplate.value
   const suffix = tpl?.templateType === 'custom'
@@ -1784,7 +1852,7 @@ async function doExport(quiet = false) {
     const res = await exportReport({
       templateId: currentTemplateId.value,
       filter: buildBackendFilter(true),
-      projectCodes: effectiveCodes.value,
+      excludedCodes: [...excludedCodes.value],
       mergeUnitCells: mergeUnitCells.value
     })
     saveMergeUnit(currentTemplateId.value, mergeUnitCells.value)
@@ -1797,7 +1865,7 @@ async function doExport(quiet = false) {
       return false
     }
     saveAs(new Blob([blob]), parseExportFileName(res, fallback))
-    if (!quiet) proxy.$modal.msgSuccess(`导出成功：${effectiveCodes.value.length} 条`)
+    if (!quiet) proxy.$modal.msgSuccess(`导出成功：${checkedCount.value} 条`)
     exportDialogVisible.value = false
     loadLogs()
     return true
@@ -1816,7 +1884,7 @@ async function doSubmitReport() {
     const res = await submitReport({
       templateId: currentTemplateId.value,
       filter: buildBackendFilter(true),
-      projectCodes: effectiveCodes.value,
+      excludedCodes: [...excludedCodes.value],
       remark: null
     })
     const d = res?.data || {}
@@ -2117,8 +2185,31 @@ const unitMergeSpans = computed(() => {
   return spans
 })
 
-/* el-table span-method：仅对委托单位列生效（勾选列/上报状态列等不合并）；开关关闭时不合并 */
+/* 拆行模板（模板4/7）：「到账金额 / 到账时间」两列不合并，其余列同项目跨行合并 */
+const paySplitSkipCols = computed(() => {
+  const skip = new Set()
+  const walk = (ns) => (ns || []).forEach(n => {
+    if (n.isGroup) walk(n.children)
+    else if (n.fieldKey === 'receivedAmount' || n.fieldKey === 'lastPayTime') skip.add(n.colIndex)
+  })
+  walk(headerTree.value)
+  return skip
+})
+
+/* el-table span-method：拆行模板合并同项目其它列；单位合并模板仅合并委托单位列 */
 function previewSpanMethod({ column, rowIndex }) {
+  const row = previewRows.value[rowIndex]
+  // 1) 到账拆行（模板4/7）：同项目连续多行，除「到账金额/到账时间」外全部跨行合并
+  if (row && row.__grpSize > 1) {
+    const prop = column && column.property
+    const isSkip = typeof prop === 'string' && prop.startsWith('c')
+      && paySplitSkipCols.value.has(Number(prop.slice(1)))
+    if (!isSkip) {
+      return row.__grpHead ? { rowspan: row.__grpSize, colspan: 1 } : { rowspan: 0, colspan: 0 }
+    }
+    return
+  }
+  // 2) 单位合并模板（原逻辑）：仅委托单位列合并
   if (!mergeUnitCells.value) return
   const leaf = clientUnitLeaf.value
   if (!leaf) return
