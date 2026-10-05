@@ -40,11 +40,12 @@
             <div class="stat-pill stat-ready">可导入 ✅ <b>{{ preview.readyCount ?? 0 }}</b></div>
             <div v-if="(preview.existsCount ?? 0) > 0" class="stat-pill stat-skip">已存在·将跳过 ⏭️ <b>{{ preview.existsCount ?? 0 }}</b></div>
             <div v-if="(preview.payWriteCount ?? 0) > 0" class="stat-pill stat-payonly">待补到账 💰 <b>{{ preview.payWriteCount ?? 0 }}</b></div>
+            <div v-if="(preview.workloadWriteCount ?? 0) > 0" class="stat-pill stat-payonly">待补工作量 📊 <b>{{ preview.workloadWriteCount ?? 0 }}</b></div>
             <div class="stat-pill stat-warn">待修正 ⚠️ <b>{{ preview.warningCount ?? 0 }}</b></div>
             <div class="stat-pill stat-err">无法导入 ❌ <b>{{ preview.errorCount ?? 0 }}</b></div>
             <div style="flex:1"></div>
             <el-button @click="step = 0; resetAll()">重选文件</el-button>
-            <el-button type="primary" :disabled="!(preview.readyCount ?? 0) && !(preview.payWriteCount ?? 0)" :loading="committing" @click="doCommit">
+            <el-button type="primary" :disabled="!(preview.readyCount ?? 0) && !(preview.payWriteCount ?? 0) && !(preview.workloadWriteCount ?? 0)" :loading="committing" @click="doCommit">
               确认导入（{{ commitButtonText }}）
             </el-button>
           </div>
@@ -54,8 +55,8 @@
             <div class="problem-card problem-skip">
               <div class="problem-icon">⏭️</div>
               <div class="problem-body">
-                <div class="problem-title">{{ preview.existsCount }} 行（{{ (preview.existsCodes || []).length }} 个工程编号）已存在于系统中{{ (preview.readyCount ?? 0) === 0 && (preview.payWriteCount ?? 0) === 0 ? '，本次没有可导入的数据' : '，项目/工作量将整组跳过' }}</div>
-                <div class="problem-desc">已存在的工程编号不会重复创建项目、子项、任务、负责人和资料，也不会覆盖项目信息与工作量；到账信息<strong>仅在本次金额/到账时间与系统现值不同时才补写</strong>（同类型付款按最新值覆盖），与系统一致的不做任何改动。</div>
+                <div class="problem-title">{{ preview.existsCount }} 行（{{ (preview.existsCodes || []).length }} 个工程编号）已存在于系统中{{ (preview.readyCount ?? 0) === 0 && (preview.payWriteCount ?? 0) === 0 && (preview.workloadWriteCount ?? 0) === 0 ? '，本次没有可导入的数据' : '，项目/工作量按差异补写' }}</div>
+                <div class="problem-desc">已存在的工程编号不会重复创建项目、子项、任务、负责人和资料，也不会覆盖项目信息；到账信息<strong>仅在本次金额/到账时间与系统现值不同时才补写</strong>（同类型付款按最新值覆盖），<strong>工作量与办结时间也仅在本次明细与系统现值不同时才补写</strong>（办结时间只补空、不覆盖现值），与系统一致的不做任何改动。</div>
               </div>
             </div>
           </div>
@@ -66,7 +67,18 @@
               <div class="problem-icon">💰</div>
               <div class="problem-body">
                 <div class="problem-title">{{ preview.payWriteCount }} 个已存在项目的到账信息将被补写，不新建项目</div>
-                <div class="problem-desc">这些工程编号在系统中已有对应项目，且本文件带的到账（金额或到账时间）<strong>与系统现值不同</strong>：提交时<strong>只覆盖写入到账信息</strong>（同类型付款按最新值覆盖），项目、工作量、负责人、任务等一律跳过、不做任何改动。与系统一致的到账行不会重复写入。</div>
+                <div class="problem-desc">这些工程编号在系统中已有对应项目，且本文件带的到账（金额或到账时间）<strong>与系统现值不同</strong>：提交时<strong>只覆盖写入到账信息</strong>（同类型付款按最新值覆盖），项目、负责人、任务等一律跳过、不做任何改动。与系统一致的到账行不会重复写入。</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 待补工作量提示（编号已存在，Excel 修表头/补列后重导） -->
+          <div v-if="(preview.workloadWriteCount ?? 0) > 0" class="problem-section">
+            <div class="problem-card problem-payonly">
+              <div class="problem-icon">📊</div>
+              <div class="problem-body">
+                <div class="problem-title">{{ preview.workloadWriteCount }} 个已存在项目的工作量/办结时间将被补写，不新建项目</div>
+                <div class="problem-desc">这些工程编号已存在，且本文件的工作量明细（如之前未识别的 GPS固定点 等列）或办结时间<strong>与系统现值不同</strong>：提交时<strong>只重写该项目的工作量明细、并补填缺失的办结时间</strong>（已有办结时间不覆盖）。⚠️ 若这些项目的工作量曾在系统中手工调整过，将被本文件数据覆盖；组内存在待修正行时本次不会重写工作量（先修正后重导）。</div>
               </div>
             </div>
           </div>
@@ -163,6 +175,7 @@
                 <div class="sum-label">导入成功</div>
                 <div class="sum-num">{{ result.successCount ?? 0 }}</div>
                 <div v-if="(result.payWriteCount ?? 0) > 0" class="sum-hint">其中补到账 {{ result.payWriteCount }} 项</div>
+                <div v-if="(result.workloadWriteCount ?? 0) > 0" class="sum-hint">其中补工作量/办结时间 {{ result.workloadWriteCount }} 项</div>
               </el-card>
             </el-col>
             <el-col :span="8">
@@ -183,6 +196,15 @@
           <el-collapse v-if="result.payWriteDetails && result.payWriteDetails.length" class="mt20">
             <el-collapse-item name="paywrite" :title="'补到账明细（' + result.payWriteDetails.length + '行）'">
               <el-table :data="result.payWriteDetails" size="small" border stripe max-height="300">
+                <el-table-column label="Excel行号" prop="excelRow" width="100" align="center" />
+                <el-table-column label="工程编号" prop="projectCode" width="180" />
+                <el-table-column label="处理说明" prop="reason" show-overflow-tooltip />
+              </el-table>
+            </el-collapse-item>
+          </el-collapse>
+          <el-collapse v-if="result.workWriteDetails && result.workWriteDetails.length" class="mt20">
+            <el-collapse-item name="workwrite" :title="'补工作量/办结时间明细（' + result.workWriteDetails.length + '行）'">
+              <el-table :data="result.workWriteDetails" size="small" border stripe max-height="300">
                 <el-table-column label="Excel行号" prop="excelRow" width="100" align="center" />
                 <el-table-column label="工程编号" prop="projectCode" width="180" />
                 <el-table-column label="处理说明" prop="reason" show-overflow-tooltip />
@@ -451,13 +473,13 @@ const problemCollapse = ref(['problems']) // 默认折叠
 const preview = reactive({
   token: '', totalRows: 0, readyCount: 0, warningCount: 0, errorCount: 0,
   existsCount: 0, existsCodes: [],
-  payOnlyCount: 0, payWriteCount: 0, unmatchedPayCodes: [],
+  payOnlyCount: 0, payWriteCount: 0, workloadWriteCount: 0, unmatchedPayCodes: [],
   problemSummary: null,
   rows: [],
   problemRows: []
 })
 
-const result = reactive({ logId: null, successCount: 0, skippedCount: 0, failedCount: 0, payWriteCount: 0, failedDetails: [], skippedDetails: [], payWriteDetails: [] })
+const result = reactive({ logId: null, successCount: 0, skippedCount: 0, failedCount: 0, payWriteCount: 0, workloadWriteCount: 0, failedDetails: [], skippedDetails: [], payWriteDetails: [], workWriteDetails: [] })
 
 const hasProblems = computed(() =>
   (preview.warningCount > 0) || (preview.errorCount > 0)
@@ -467,10 +489,12 @@ const hasProblems = computed(() =>
 const commitButtonText = computed(() => {
   const ready = preview.readyCount ?? 0
   const pay = preview.payWriteCount ?? 0
-  if (ready > 0 && pay > 0) return `${ready}行 + 补到账${pay}项`
-  if (ready > 0) return `${ready}行`
-  if (pay > 0) return `补到账${pay}项`
-  return '0行'
+  const wl = preview.workloadWriteCount ?? 0
+  const parts = []
+  if (ready > 0) parts.push(`${ready}行`)
+  if (pay > 0) parts.push(`补到账${pay}项`)
+  if (wl > 0) parts.push(`补工作量${wl}项`)
+  return parts.length ? parts.join(' + ') : '0行'
 })
 
 // 合同类型字典值 → 中文标签（兼容旧中文原文）
@@ -513,6 +537,7 @@ async function doPreview() {
     preview.existsCodes = d.existsCodes || []
     preview.payOnlyCount = d.payOnlyCount ?? 0
     preview.payWriteCount = d.payWriteCount ?? 0
+    preview.workloadWriteCount = d.workloadWriteCount ?? 0
     preview.unmatchedPayCodes = d.unmatchedPayCodes || []
     preview.warningCount = d.warningCount
     preview.errorCount = d.errorCount
@@ -552,16 +577,20 @@ function fillImportResult(d) {
   result.successCount = d.successCount
   result.skippedCount = d.skippedCount
   result.failedCount = d.failedCount
-  result.payWriteCount = d.payWriteCount ?? 0
-  result.failedDetails = Array.isArray(d.failedDetails) ? d.failedDetails : []
-  result.skippedDetails = Array.isArray(d.skippedDetails) ? d.skippedDetails : []
-  result.payWriteDetails = Array.isArray(d.payWriteDetails) ? d.payWriteDetails : []
+    result.payWriteCount = d.payWriteCount ?? 0
+    result.workloadWriteCount = d.workloadWriteCount ?? 0
+    result.failedDetails = Array.isArray(d.failedDetails) ? d.failedDetails : []
+    result.skippedDetails = Array.isArray(d.skippedDetails) ? d.skippedDetails : []
+    result.payWriteDetails = Array.isArray(d.payWriteDetails) ? d.payWriteDetails : []
+    result.workWriteDetails = Array.isArray(d.workWriteDetails) ? d.workWriteDetails : []
 }
 // 结果提示：补到账是「已存在项目、本次只更新了到账」，计入成功，单独注明便于理解
 function importResultText(d) {
   const pay = d.payWriteCount ?? 0
+  const wl = d.workloadWriteCount ?? 0
   return `导入完成：成功 ${d.successCount ?? 0}`
     + (pay > 0 ? `（其中补到账 ${pay} 项）` : '')
+    + (wl > 0 ? `（其中补工作量/办结时间 ${wl} 项）` : '')
     + `，跳过 ${d.skippedCount ?? 0}，失败 ${d.failedCount ?? 0}`
 }
 async function doCommit() {
@@ -676,10 +705,10 @@ function resetAll() {
   Object.assign(preview, {
     token: '', totalRows: 0, readyCount: 0, warningCount: 0, errorCount: 0,
     existsCount: 0, existsCodes: [],
-    payOnlyCount: 0, payWriteCount: 0, unmatchedPayCodes: [],
+    payOnlyCount: 0, payWriteCount: 0, workloadWriteCount: 0, unmatchedPayCodes: [],
     problemSummary: null, rows: [], problemRows: []
   })
-  Object.assign(result, { logId: null, successCount: 0, skippedCount: 0, failedCount: 0, payWriteCount: 0, failedDetails: [], skippedDetails: [], payWriteDetails: [] })
+  Object.assign(result, { logId: null, successCount: 0, skippedCount: 0, failedCount: 0, payWriteCount: 0, workloadWriteCount: 0, failedDetails: [], skippedDetails: [], payWriteDetails: [], workWriteDetails: [] })
 }
 
 // ============ 合同导入 ============
