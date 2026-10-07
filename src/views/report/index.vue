@@ -148,6 +148,7 @@
         v-loading="previewLoading"
         :data="previewRows"
         :span-method="previewSpanMethod"
+        :row-class-name="previewRowClassName"
         border size="small"
         max-height="460"
         empty-text="暂无数据 — 调整筛选条件或更换模板后导出"
@@ -1155,6 +1156,16 @@ async function doPreview() {
       }
       i += gs
     }
+    // 合计行（后端按全量筛选数据、与导出 Excel 同口径计算）：追加为预览末行，所见即所得
+    if (Array.isArray(d.summaryRow) && d.summaryRow.length) {
+      const s = {}
+      d.summaryRow.forEach((v, ci) => { s['c' + ci] = v })
+      s.__summary = true
+      s.__grpSize = 1
+      s.__grpHead = false
+      s.__code = ''
+      rows.push(s)
+    }
     previewRows.value = rows
     // 回填勾选：默认全选，再按跨页「排除集」取消勾选（拆行项目仅首行可勾选）
     nextTick(() => {
@@ -1192,7 +1203,13 @@ function onSelectionChange(rows) {
 
 /* 拆行模板：同一项目仅首行可勾选，尾行不可单独勾选（避免同项目勾选状态不一致） */
 function previewSelectable(row) {
+  if (row.__summary) return false // 合计行不参与勾选/导出选择
   return row.__grpSize <= 1 || row.__grpHead
+}
+
+/* 合计行样式标记（与导出 Excel 的合计行对应） */
+function previewRowClassName({ row }) {
+  return row.__summary ? 'preview-summary-tr' : ''
 }
 
 /* ═══════════ 筛选值构建（后端扁平键） ═══════════ */
@@ -2950,6 +2967,12 @@ function leafWidth(leaf) {
   .field-dot.src-agg, .cell-dot.src-agg, .legend-dot.src-agg { background: #e6a23c; }
   .field-dot.src-dynamic, .cell-dot.src-dynamic, .legend-dot.src-dynamic { background: #a855f7; }
   .field-dot.src-dynamic, .cell-dot.src-dynamic { background: #9254de; }
+
+  /* 预览合计行（与导出 Excel 的合计行对应）：底色 + 加粗 */
+  :deep(tr.preview-summary-tr) {
+    background-color: var(--el-fill-color-light);
+    td { font-weight: 600; }
+  }
 </style>
 <style lang="scss">
 /* 字段设计器弹窗：append-to-body → 脱离 scoped 样式，所以用非 scoped 全局样式。

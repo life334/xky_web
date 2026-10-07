@@ -2004,6 +2004,10 @@ if (drillQuery.overdue) queryParams.value.overdue = String(drillQuery.overdue)
 if (drillQuery.projectNature) queryParams.value.projectNature = String(drillQuery.projectNature)
 if (drillQuery.dataSource) queryParams.value.dataSource = String(drillQuery.dataSource)
 if (drillQuery.status) queryParams.value.status = String(drillQuery.status)
+// 通知中心跳转定位：按工程编号直接筛选
+if (drillQuery.from === 'notify' && drillQuery.projectCode) {
+  queryParams.value.projectCode = String(drillQuery.projectCode)
+}
 
 // 新增口径（来源分流）
 if (drillQuery.newDateBegin && drillQuery.newDateEnd) {

@@ -803,6 +803,7 @@ import { checkPermi } from "@/utils/permission"
 import { invoiceStatusText, invoiceStatusTagType, invoicePaymentText, invoicePaymentTagType, isVoidedInvoice, projectNatureText, projectNatureTagType } from "@/utils/projStatus"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
 import cache from '@/plugins/cache'
+import { useRoute } from "vue-router"
 
 const { proxy } = getCurrentInstance()
 
@@ -1818,6 +1819,12 @@ refreshAll()
 // 全局工程编号回填：仅回填输入框，不自动查询（用户点「查询」才生效）
 if (searchMemory.projectCode && !queryParams.value.projectCode) {
   queryParams.value.projectCode = searchMemory.projectCode
+}
+// 通知中心跳转定位：?projectCode=xxx&from=notify → 自动填入编号并立即查询（覆盖全局回填）
+const route = useRoute()
+if (route.query.from === 'notify' && route.query.projectCode) {
+  queryParams.value.projectCode = String(route.query.projectCode)
+  handleQuery()
 }
 loadDistinctValues()
 
