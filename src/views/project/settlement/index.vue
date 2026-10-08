@@ -57,6 +57,12 @@
                   </el-select>
                </div>
                <div class="filter-item">
+                  <div class="filter-item-label">委托单位性质</div>
+                  <el-select v-model="queryParams.clientUnitNature" clearable placeholder="全部" style="width:100%" @change="handleQuery">
+                     <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
                   <div class="filter-item-label">工程地点</div>
                   <el-input v-model="queryParams.projectLocation" placeholder="工程地点" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
                </div>
@@ -817,6 +823,21 @@ const sourceOptions = computed(() => {
     { value: 'import', label: 'Excel 导入' }
   ]
 })
+// 字典：委托单位性质（见 sql/26_add_client_unit_nature.sql）；字典未部署时用内置项兜底
+const { proj_client_unit_nature } = useDict("proj_client_unit_nature")
+const clientUnitNatureOptions = computed(() => {
+  const dict = proj_client_unit_nature.value || []
+  if (dict.length) return dict
+  return [
+    { value: 'government', label: '政府机关' },
+    { value: 'institution', label: '事业单位' },
+    { value: 'state_owned', label: '国有企业' },
+    { value: 'private', label: '民营企业' },
+    { value: 'collective', label: '集体企业' },
+    { value: 'foreign', label: '外资（含合资）' },
+    { value: 'other', label: '其他' }
+  ]
+})
 const searchMemory = useSearchMemoryStore()
 
 const treeData = ref([])
@@ -839,6 +860,7 @@ const COLUMNS_STORAGE_KEY = 'settlement-list-columns'
 /** 兜底清单：后端接口不可用（如后端未重启）时使用，保证表格不退化（与后端 /columns 默认可见列一致） */
 const FALLBACK_COLUMNS = [
   { key: 'projectCode', label: '工程编号', type: 'text', group: 'business', prop: 'projectCode', defaultVisible: true },
+  { key: 'relatedProjectCode', label: '关联定线', type: 'text', group: 'business', prop: 'relatedProjectCode', defaultVisible: true },
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
   { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
@@ -993,6 +1015,7 @@ const data = reactive({
     keyword: undefined,
     projectCode: undefined,
     clientUnit: undefined,
+    clientUnitNature: undefined,
     projectLocation: undefined,
     projectCategoryId: undefined,
     leaderId: undefined,
@@ -1308,6 +1331,7 @@ function resetQuery() {
   queryParams.value.keyword = undefined
   queryParams.value.projectCode = undefined
   queryParams.value.clientUnit = undefined
+  queryParams.value.clientUnitNature = undefined
   queryParams.value.projectLocation = undefined
   queryParams.value.projectCategoryId = undefined
   queryParams.value.leaderId = undefined

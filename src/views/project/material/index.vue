@@ -57,6 +57,12 @@
                   </el-select>
                </div>
                <div class="filter-item">
+                  <div class="filter-item-label">委托单位性质</div>
+                  <el-select v-model="queryParams.clientUnitNature" clearable placeholder="全部" style="width:100%" @change="handleQuery">
+                     <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
                   <div class="filter-item-label">项目来源</div>
                   <el-select v-model="queryParams.dataSource" clearable placeholder="全部来源" style="width:100%" @change="handleQuery">
                      <el-option v-for="dict in sourceOptions" :key="dict.value" :label="dict.label" :value="dict.value" />
@@ -475,6 +481,21 @@ const sourceOptions = computed(() => {
     { value: 'import', label: 'Excel 导入' }
   ]
 })
+// 字典：委托单位性质（见 sql/26_add_client_unit_nature.sql）；字典未部署时用内置项兜底
+const { proj_client_unit_nature } = useDict("proj_client_unit_nature")
+const clientUnitNatureOptions = computed(() => {
+  const dict = proj_client_unit_nature.value || []
+  if (dict.length) return dict
+  return [
+    { value: 'government', label: '政府机关' },
+    { value: 'institution', label: '事业单位' },
+    { value: 'state_owned', label: '国有企业' },
+    { value: 'private', label: '民营企业' },
+    { value: 'collective', label: '集体企业' },
+    { value: 'foreign', label: '外资（含合资）' },
+    { value: 'other', label: '其他' }
+  ]
+})
 
 const materialList = ref([])
 const open = ref(false)
@@ -609,6 +630,7 @@ const data = reactive({
     status: undefined,
     archiveFlag: undefined,
     contractId: undefined,
+    clientUnitNature: undefined,
     dataSource: undefined,
     closeDateBegin: undefined,
     closeDateEnd: undefined
@@ -662,6 +684,7 @@ function resetQuery() {
   queryParams.value.status = undefined
   queryParams.value.archiveFlag = undefined
   queryParams.value.contractId = undefined
+  queryParams.value.clientUnitNature = undefined
   queryParams.value.dataSource = undefined
   queryParams.value.closeDateBegin = undefined
   queryParams.value.closeDateEnd = undefined

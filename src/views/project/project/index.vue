@@ -78,6 +78,12 @@
                   </el-select>
                </div>
                <div class="filter-item">
+                  <div class="filter-item-label">委托单位性质</div>
+                  <el-select v-model="queryParams.clientUnitNature" clearable placeholder="全部" style="width: 100%" @change="handleQuery">
+                     <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
+                  </el-select>
+               </div>
+               <div class="filter-item">
                   <div class="filter-item-label">工程地点</div>
                   <el-input v-model="queryParams.projectLocation" placeholder="模糊搜索" clearable style="width: 100%" @keyup.enter="handleQuery" @clear="handleQuery" />
                </div>
@@ -284,17 +290,24 @@
                   </el-form-item>
                </el-col>
                <el-col :span="8">
+                  <el-form-item label="委托单位性质" prop="clientUnitNature">
+                     <el-select v-model="form.clientUnitNature" clearable placeholder="请选择委托单位性质" style="width: 100%">
+                        <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
+                     </el-select>
+                  </el-form-item>
+               </el-col>
+               <el-col :span="8">
                   <el-form-item label="工程地点" prop="projectLocation">
                      <el-input v-model="form.projectLocation" placeholder="请输入工程地点" maxlength="300" />
                   </el-form-item>
                </el-col>
+            </el-row>
+            <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="联系人" prop="contactName">
                      <el-input v-model="form.contactName" placeholder="请输入联系人" maxlength="50" />
                   </el-form-item>
                </el-col>
-            </el-row>
-            <el-row :gutter="20">
                <el-col :span="8">
                   <el-form-item label="联系电话" prop="contactPhone">
                      <el-input v-model="form.contactPhone" placeholder="请输入联系电话" maxlength="30" />
@@ -457,6 +470,10 @@
             <el-descriptions-item label="项目类别">{{ detail.categoryName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="关联定线编号">{{ detail.relatedProjectCode || '-' }}</el-descriptions-item>
             <el-descriptions-item label="委托单位">{{ detail.clientUnit || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="委托单位性质">
+               <dict-tag v-if="detail.clientUnitNature" :options="clientUnitNatureOptions" :value="detail.clientUnitNature" />
+               <span v-else>-</span>
+            </el-descriptions-item>
             <el-descriptions-item label="工程地点">{{ detail.projectLocation || '-' }}</el-descriptions-item>
             <el-descriptions-item label="联系人">{{ detail.contactName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="联系电话">{{ detail.contactPhone || '-' }}</el-descriptions-item>
@@ -677,7 +694,7 @@ import useSearchMemoryStore from "@/store/modules/searchMemory"
 function fmt(d) { return d.toISOString().slice(0, 10) }
 
 const { proxy } = getCurrentInstance()
-const { proj_project_status, proj_task_status, proj_project_source, proj_project_nature } = useDict("proj_project_status", "proj_task_status", "proj_project_source", "proj_project_nature")
+const { proj_project_status, proj_task_status, proj_project_source, proj_project_nature, proj_client_unit_nature } = useDict("proj_project_status", "proj_task_status", "proj_project_source", "proj_project_nature", "proj_client_unit_nature")
 // 项目来源下拉项：字典优先，未部署时用内置项兜底
 const sourceOptions = computed(() => {
   const dict = proj_project_source.value || []
@@ -714,6 +731,7 @@ const COLUMNS_KNOWN_KEY = 'project-list-columns-known'
 const FALLBACK_COLUMNS = [
   { key: 'projectCode', label: '工程编号', type: 'text', group: 'business', prop: 'projectCode', defaultVisible: true },
   { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
+  { key: 'clientUnitNature', label: '委托单位性质', type: 'dict', group: 'business', prop: 'clientUnitNature', defaultVisible: true },
   { key: 'engineeringProject', label: '项目类别', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
   { key: 'relatedProjectCode', label: '关联定线编号', type: 'text', group: 'business', prop: 'relatedProjectCode', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
@@ -805,6 +823,25 @@ const natureOptions = computed(() => {
   ]
 })
 
+/**
+ * 委托单位性质下拉选项（字典 proj_client_unit_nature，见 sql/26_add_client_unit_nature.sql）。
+ * 注意：与「项目性质」（常规 / 指令性任务）无关，二者独立。
+ * 字典未部署时用内置项兜底，避免退化成空白。
+ */
+const clientUnitNatureOptions = computed(() => {
+  const dict = proj_client_unit_nature.value || []
+  if (dict.length) return dict
+  return [
+    { value: 'government', label: '政府机关' },
+    { value: 'institution', label: '事业单位' },
+    { value: 'state_owned', label: '国有企业' },
+    { value: 'private', label: '民营企业' },
+    { value: 'collective', label: '集体企业' },
+    { value: 'foreign', label: '外资（含合资）' },
+    { value: 'other', label: '其他' }
+  ]
+})
+
 function dictOptionsFor(col) {
   if (col.key === 'dataSource') {
     const dict = proj_project_source.value || []
@@ -820,6 +857,19 @@ function dictOptionsFor(col) {
     return [
       { value: 'normal', label: '市场性任务', elTagType: 'info' },
       { value: 'mandate', label: '指令性任务', elTagType: 'warning' }
+    ]
+  }
+  if (col.key === 'clientUnitNature') {
+    const dict = proj_client_unit_nature.value || []
+    if (dict.length) return dict
+    return [
+      { value: 'government', label: '政府机关', elTagType: 'primary' },
+      { value: 'institution', label: '事业单位', elTagType: 'success' },
+      { value: 'state_owned', label: '国有企业', elTagType: 'warning' },
+      { value: 'private', label: '民营企业', elTagType: 'info' },
+      { value: 'collective', label: '集体企业', elTagType: '' },
+      { value: 'foreign', label: '外资（含合资）', elTagType: '' },
+      { value: 'other', label: '其他', elTagType: 'info' }
     ]
   }
   return proj_project_status.value
@@ -1076,6 +1126,7 @@ const data = reactive({
     contactName: undefined,
     projectLocation: undefined,
     clientUnit: undefined,
+    clientUnitNature: undefined,
     assignDateBegin: undefined,
     assignDateEnd: undefined,
     contractStatus: undefined,
@@ -1449,6 +1500,7 @@ function reset() {
     relatedProjectId: undefined,
     relatedProjectCodeText: undefined,
     clientUnit: undefined,
+    clientUnitNature: undefined,
     contactName: undefined,
     contactPhone: undefined,
     projectLocation: undefined,
@@ -1492,6 +1544,7 @@ function resetQuery() {
   queryParams.value.contactName = undefined
   queryParams.value.projectLocation = undefined
   queryParams.value.clientUnit = undefined
+  queryParams.value.clientUnitNature = undefined
   queryParams.value.assignDateBegin = undefined
   queryParams.value.assignDateEnd = undefined
   queryParams.value.contractStatus = undefined

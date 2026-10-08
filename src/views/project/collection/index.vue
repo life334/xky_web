@@ -114,6 +114,12 @@
                         <el-input v-model="queryParams.clientUnit" placeholder="客户全称" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
                      </div>
                      <div class="filter-item">
+                        <div class="filter-item-label">委托单位性质</div>
+                        <el-select v-model="queryParams.clientUnitNature" clearable placeholder="全部" style="width:100%" @change="handleQuery">
+                           <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
+                        </el-select>
+                     </div>
+                     <div class="filter-item">
                         <div class="filter-item-label">账龄(月)</div>
                         <div class="range-inline">
                            <el-input-number v-model="queryParams.ageBegin" :min="0" :controls="false" placeholder="起" class="range-input" @keyup.enter="handleQuery" />
@@ -309,6 +315,12 @@
                         <el-input v-model="unsettledQuery.clientUnit" placeholder="客户全称" clearable @keyup.enter="handleUnsettledQuery" @clear="handleUnsettledQuery" />
                      </div>
                      <div class="filter-item">
+                        <div class="filter-item-label">委托单位性质</div>
+                        <el-select v-model="unsettledQuery.clientUnitNature" clearable placeholder="全部" style="width:100%" @change="handleUnsettledQuery">
+                           <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
+                        </el-select>
+                     </div>
+                     <div class="filter-item">
                         <div class="filter-item-label">完成时间（办结）</div>
                         <el-date-picker v-model="unsettledCloseRange" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD" style="width:100%" @change="handleUnsettledQuery" />
                      </div>
@@ -387,6 +399,12 @@
                      <div class="filter-item">
                         <div class="filter-item-label">客户全称</div>
                         <el-input v-model="summaryQuery.clientUnit" placeholder="客户全称" clearable @keyup.enter="handleSummaryQuery" @clear="handleSummaryQuery" />
+                     </div>
+                     <div class="filter-item">
+                        <div class="filter-item-label">委托单位性质</div>
+                        <el-select v-model="summaryQuery.clientUnitNature" clearable placeholder="全部" style="width:100%" @change="handleSummaryQuery">
+                           <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
+                        </el-select>
                      </div>
                      <div class="filter-item">
                         <div class="filter-item-label">负责人</div>
@@ -651,7 +669,25 @@ import WorkloadDialog from "@/components/WorkloadDialog"
 import { useRoute } from "vue-router"
 
 const { proxy } = getCurrentInstance()
-const { proj_payment_type } = useDict('proj_payment_type')
+const { proj_payment_type, proj_client_unit_nature } = useDict('proj_payment_type', 'proj_client_unit_nature')
+
+/**
+ * 委托单位性质下拉选项（字典 proj_client_unit_nature，见 sql/26_add_client_unit_nature.sql）。
+ * 注意：与「项目性质」（常规 / 指令性任务）无关，二者独立。字典未部署时用内置项兜底。
+ */
+const clientUnitNatureOptions = computed(() => {
+   const dict = proj_client_unit_nature.value || []
+   if (dict.length) return dict
+   return [
+      { value: 'government', label: '政府机关' },
+      { value: 'institution', label: '事业单位' },
+      { value: 'state_owned', label: '国有企业' },
+      { value: 'private', label: '民营企业' },
+      { value: 'collective', label: '集体企业' },
+      { value: 'foreign', label: '外资（含合资）' },
+      { value: 'other', label: '其他' }
+   ]
+})
 
 const activeTab = ref('pending')
 const viewMode = ref('project')
@@ -721,7 +757,7 @@ const summaryAdvancedVisible = ref(false)
 const summaryLoading = ref(false)
 const summarySummary = ref({})
 const summaryGroups = ref([])
-const summaryQuery = ref({ keyword: undefined, clientUnit: undefined, leaderId: undefined, projectCategoryId: undefined, paymentType: undefined, payUnit: undefined })
+const summaryQuery = ref({ keyword: undefined, clientUnit: undefined, clientUnitNature: undefined, leaderId: undefined, projectCategoryId: undefined, paymentType: undefined, payUnit: undefined })
 
 // 项目类别下拉（扁平化树）
 const categoryOptions = ref([])
@@ -752,6 +788,7 @@ const data = reactive({
       keyword: undefined,
       projectName: undefined,
       clientUnit: undefined,
+      clientUnitNature: undefined,
       collectStatus: undefined,
       ageBegin: undefined,
       ageEnd: undefined,
@@ -764,6 +801,7 @@ const data = reactive({
       projectCode: undefined,
       projectName: undefined,
       clientUnit: undefined,
+      clientUnitNature: undefined,
       leaderId: undefined
    },
    payRules: {
@@ -791,7 +829,7 @@ const receivedCompareLabel = computed(() => (payTimeRange.value && payTimeRange.
 /** 是否有生效筛选（决定统计范围提示与「清除筛选」入口） */
 const hasActiveFilter = computed(() => {
    const q = queryParams.value
-   return !!(q.keyword || q.projectName || q.clientUnit || q.collectStatus || q.leaderId
+   return !!(q.keyword || q.projectName || q.clientUnit || q.clientUnitNature || q.collectStatus || q.leaderId
       || q.ageBegin != null || q.ageEnd != null
       || (closeTimeRange.value && closeTimeRange.value.length === 2)
       || (payTimeRange.value && payTimeRange.value.length === 2))
@@ -799,7 +837,7 @@ const hasActiveFilter = computed(() => {
 
 /** 统计口径说明（卡片②口径与其他三张不同，必须显式告知） */
 const SCOPE_TIP = '① 待回款 / ③ 超账期 / ④ 待结算：随全部筛选条件联动。'
-   + '② 到账额：只随「委托单位 / 负责人 / 关键词 / 完成时间」联动（账龄、催收状态不参与）；'
+   + '② 到账额：只随「委托单位 / 委托单位性质 / 负责人 / 关键词 / 完成时间」联动（账龄、催收状态不参与）；'
    + '未填「到账时间」时统计本月并与上月对比，填了则统计该区间并与前一等长区间对比。' 
 
 const overdueCount = computed(() => stats.value.overdueCount || 0)
@@ -968,6 +1006,7 @@ function resetQuery() {
    q.keyword = undefined
    q.projectName = undefined
    q.clientUnit = undefined
+   q.clientUnitNature = undefined
    q.collectStatus = undefined
    q.ageBegin = undefined
    q.ageEnd = undefined
@@ -992,6 +1031,7 @@ function resetUnsettledQuery() {
    q.projectCode = undefined
    q.projectName = undefined
    q.clientUnit = undefined
+   q.clientUnitNature = undefined
    q.leaderId = undefined
    q.pageNum = 1
    unsettledCloseRange.value = []
@@ -1387,7 +1427,7 @@ function resetSummaryQuery() {
    summaryQuick.value = 'all'
    summaryRange.value = []
    summaryGroupBy.value = 'none'
-   summaryQuery.value = { keyword: undefined, clientUnit: undefined, leaderId: undefined, projectCategoryId: undefined, paymentType: undefined, payUnit: undefined }
+   summaryQuery.value = { keyword: undefined, clientUnit: undefined, clientUnitNature: undefined, leaderId: undefined, projectCategoryId: undefined, paymentType: undefined, payUnit: undefined }
    getSummary()
 }
 
