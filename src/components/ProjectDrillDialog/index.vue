@@ -17,7 +17,7 @@
         class="drill-table"
         max-height="440"
         :row-class-name="rowClass"
-        @row-click="onRowClick"
+        @row-dblclick="onRowDblClick"
       >
         <el-table-column
           v-for="col in columns"
@@ -178,7 +178,7 @@ const emptyText = computed(() => ({
   payment: "没有符合条件的到账记录"
 }[props.type] || "暂无数据"))
 
-const footHint = computed(() => (CLICKABLE.includes(props.type) ? "点击任意行查看项目详情" : ""))
+const footHint = computed(() => (CLICKABLE.includes(props.type) ? "双击任意行查看项目详情" : ""))
 
 const openLabel = computed(() => ({
   project: "在项目列表中打开",
@@ -223,7 +223,8 @@ function fetchList() {
   })
 }
 
-function onRowClick(row) {
+/** 双击行打开项目详情抽屉（单击保留为选中/复制文本，不触发跳转） */
+function onRowDblClick(row) {
   if (!CLICKABLE.includes(props.type)) return
   if (!row || !row.id && !row.projectId) return
   detailId.value = row.id || row.projectId
