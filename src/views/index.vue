@@ -74,6 +74,7 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <el-button size="small" plain @click="toggleAll">{{ allCollapsed ? '全部展开' : '全部收起' }}</el-button>
       </div>
     </div>
 
@@ -85,14 +86,16 @@
     </div>
 
     <!-- ===== 段1 经营快照：六磁贴 ===== -->
-    <div class="seg-head">
+    <div class="seg-head seg-toggle" :class="{ 'seg-collapsed': collapsed.seg1 }" @click="toggleSeg('seg1')">
+      <span class="seg-caret"></span>
       <span class="seg-title">经营快照</span>
       <span class="seg-pill">新增按创建日期 · 办结/产值按办结日期 · 到账按到账日期</span>
       <span class="kpi-strip">
         进行中 <b>{{ kpi.activeProjects ?? 0 }}</b> · 在册 <b>{{ kpi.allProjects ?? 0 }}</b> · 本期办结率 <b>{{ kpi.completedRate ?? 0 }}%</b>
       </span>
     </div>
-    <div class="tile-row" v-loading="loading">
+    <el-collapse-transition>
+    <div v-show="!collapsed.seg1" class="tile-row" v-loading="loading">
       <div v-for="t in tiles" :key="t.key" class="tile tile-click" :class="{ 'tile-warn': t.warn }" @click="t.drill()">
         <div class="tile-label">
           {{ t.label }}
@@ -111,13 +114,17 @@
         </div>
       </div>
     </div>
+    </el-collapse-transition>
 
     <!-- ===== 段2 业务结构：类别构成 + 类别画像 / 本期办结占比 ===== -->
-    <div class="seg-head">
+    <div class="seg-head seg-toggle" :class="{ 'seg-collapsed': collapsed.seg2 }" @click="toggleSeg('seg2')">
+      <span class="seg-caret"></span>
       <span class="seg-title">业务结构</span>
       <span class="seg-pill">数量/合同额按创建日期 · 产值按办结日期 · 类别口径：定线/验线/管线图/实测/其它</span>
+      <span v-if="collapsed.seg2" class="seg-collapse-summary">{{ seg2Summary }}</span>
     </div>
-    <div class="chart-row structure-row">
+    <el-collapse-transition>
+    <div v-show="!collapsed.seg2" class="chart-row structure-row">
       <div class="chart-card chart-wide" v-loading="structureLoading">
         <div class="chart-header">
           <span class="chart-title">项目类别构成与产值画像</span>
@@ -221,13 +228,17 @@
         </div>
       </div>
     </div>
+    </el-collapse-transition>
 
     <!-- ===== 段3 人员效能：项目经理 × 类别矩阵 ===== -->
-    <div class="seg-head">
+    <div class="seg-head seg-toggle" :class="{ 'seg-collapsed': collapsed.seg3 }" @click="toggleSeg('seg3')">
+      <span class="seg-caret"></span>
       <span class="seg-title">人员效能</span>
       <span class="seg-pill">多负责人项目按人重复计数 · 颜色仅标识类别，大小看数字与条长 · 三项指标均按项目办结日期计入统计周期</span>
+      <span v-if="collapsed.seg3" class="seg-collapse-summary">{{ seg3Summary }}</span>
     </div>
-    <div class="chart-card matrix-card" v-loading="structureLoading">
+    <el-collapse-transition>
+    <div v-show="!collapsed.seg3" class="chart-card matrix-card" v-loading="structureLoading">
       <div class="chart-header">
         <span class="chart-title">项目经理 × 类别</span>
         <span class="chart-subtitle">点列头排序 · 点格子查看明细</span>
@@ -290,13 +301,17 @@
         </table>
       </div>
     </div>
+    </el-collapse-transition>
 
     <!-- ===== 段4 经营走势 ===== -->
-    <div class="seg-head">
+    <div class="seg-head seg-toggle" :class="{ 'seg-collapsed': collapsed.seg4 }" @click="toggleSeg('seg4')">
+      <span class="seg-caret"></span>
       <span class="seg-title">经营走势</span>
       <span class="seg-pill">产值按办结日期 · 仅外部产值 · 到账按到账日期</span>
+      <span v-if="collapsed.seg4" class="seg-collapse-summary">{{ seg4Summary }}</span>
     </div>
-    <div class="chart-row">
+    <el-collapse-transition>
+    <div v-show="!collapsed.seg4" class="chart-row">
       <div class="chart-card chart-wide" v-loading="trendLoading">
         <div class="chart-header">
           <span class="chart-title">外部产值累计趋势</span>
@@ -312,18 +327,21 @@
         <div ref="dynamicRef" class="chart-canvas"></div>
       </div>
     </div>
+    </el-collapse-transition>
 
     <!-- ===== 段5 风险与执行 ===== -->
-    <div class="seg-head">
+    <div class="seg-head seg-toggle" :class="{ 'seg-collapsed': collapsed.seg5 }" @click="toggleSeg('seg5')">
+      <span class="seg-caret"></span>
       <span class="seg-title">风险与执行</span>
       <span class="risk-badges">
-        <span class="risk-badge clickable" @click="openRiskGroup('debt')">欠款 {{ riskCounts.debtCount ?? 0 }}</span>
-        <span class="risk-badge clickable" @click="openRiskGroup('overdue')">工期超期 {{ riskCounts.overdueCount ?? 0 }}</span>
-        <span class="risk-badge clickable" @click="openRiskGroup('contractMissing')">未关联合同 {{ riskCounts.contractMissingCount ?? 0 }}</span>
+        <span class="risk-badge clickable" @click.stop="openRiskGroup('debt')">欠款 {{ riskCounts.debtCount ?? 0 }}</span>
+        <span class="risk-badge clickable" @click.stop="openRiskGroup('overdue')">工期超期 {{ riskCounts.overdueCount ?? 0 }}</span>
+        <span class="risk-badge clickable" @click.stop="openRiskGroup('contractMissing')">未关联合同 {{ riskCounts.contractMissingCount ?? 0 }}</span>
         <span class="risk-badge">待办 {{ riskCounts.alertCount ?? 0 }}</span>
       </span>
     </div>
-    <div class="chart-row last">
+    <el-collapse-transition>
+    <div v-show="!collapsed.seg5" class="chart-row last">
       <div class="chart-card chart-wide">
         <div class="chart-header">
           <span class="chart-title">应收欠款（按办结年份）</span>
@@ -384,6 +402,7 @@
         </div>
       </div>
     </div>
+    </el-collapse-transition>
 
     <!-- ===== 明细弹窗（磁贴 / 饼图 / 效能矩阵 / 类别画像 / 走势 / 风险区 统一点击后弹窗显示明细） ===== -->
     <ProjectDrillDialog
@@ -1265,6 +1284,62 @@ function handleResize() {
   Object.values(charts).forEach(c => c?.resize())
 }
 
+// ===== 栏目折叠（段级，纯展示状态，不影响数据请求与口径） =====
+const SEG_KEYS = ["seg1", "seg2", "seg3", "seg4", "seg5"]
+const collapsed = reactive({ seg1: false, seg2: false, seg3: false, seg4: false, seg5: false })
+const allCollapsed = computed(() => SEG_KEYS.every(k => collapsed[k]))
+
+/** 段2 收起态摘要：本期办结数与覆盖类别数 */
+const seg2Summary = computed(() =>
+  "本期办结 " + closedTotal.value + " 个 · 覆盖 " + closedSegments.value.length + " 个类别"
+)
+
+/** 段3 收起态摘要：负责人数与当前指标合计（跟随矩阵指标切换） */
+const matrixGrandTotal = computed(() => matrixRows.value.reduce((s, r) => s + (Number(r.total) || 0), 0))
+const seg3Summary = computed(() => matrixRows.value.length + " 人 · 合计 " + fmtMetric(matrixGrandTotal.value))
+
+/** 段4 收起态摘要：累计外部产值与末月增量 */
+const seg4Summary = computed(() => {
+  const list = trend.value.cumulativeOutput || []
+  if (!list.length) return ""
+  const last = list[list.length - 1]
+  return "累计外产值 ¥" + formatMoney(last.cumulative) + " · 末月新增 ¥" + formatMoney(last.monthly)
+})
+
+function toggleSeg(key) {
+  collapsed[key] = !collapsed[key]
+  if (!collapsed[key]) resizeVisibleCharts()
+}
+
+function toggleAll() {
+  const next = !allCollapsed.value
+  SEG_KEYS.forEach(k => { collapsed[k] = next })
+  if (!next) resizeVisibleCharts()
+}
+
+/**
+ * 折叠用 display:none 隐藏内容 ⇒ ECharts 容器宽高归零，展开后必须重算尺寸。
+ * 等折叠高度过渡（约 0.3s）结束，仅对「当前真实渲染」的图表 resize，隐藏的跳过。
+ */
+function resizeVisibleCharts() {
+  const entries = [
+    ["pieCount", pieCountRef], ["pieContract", pieContractRef],
+    ["pieInternal", pieInternalRef], ["pieExternal", pieExternalRef],
+    ["cumulative", cumulativeRef], ["dynamic", dynamicRef], ["debt", debtRef]
+  ]
+  nextTick(() => {
+    window.setTimeout(() => {
+      entries.forEach(([key, elRef]) => {
+        const el = elRef.value
+        const chart = charts[key]
+        if (!chart || !el) return
+        if (!el.getClientRects().length) return
+        chart.resize()
+      })
+    }, 320)
+  })
+}
+
 // ===== 筛选下拉数据 =====
 function loadFilterOptions() {
   getDistinctValues("client_unit").then(res => {
@@ -1444,12 +1519,50 @@ $accent-red: #ff4d4f;
   flex-wrap: wrap;
 }
 
-/* ===== 段标题行 ===== */
+/* ===== 段标题行（点击整行收起 / 展开该栏目） ===== */
 .seg-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 4px 0 10px;
+  /* 负外边距抵消 hover 内边距，保证标题视觉位置与改动前完全一致 */
+  margin: -2px -12px 10px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: rgba(24, 144, 255, 0.06);
+
+    .seg-caret { border-color: $accent-blue; }
+  }
+
+  /* 折叠箭头：展开态朝下，收起态朝右 */
+  .seg-caret {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    margin-top: -4px;
+    border-right: 1.5px solid $text-muted;
+    border-bottom: 1.5px solid $text-muted;
+    transform: rotate(45deg);
+    transition: transform 0.2s ease, border-color 0.15s ease;
+  }
+
+  &.seg-collapsed {
+    margin-bottom: 12px;
+
+    .seg-caret { transform: rotate(-45deg); }
+  }
+
+  /* 收起后仍可见的关键数字（段2 / 段3 / 段4） */
+  .seg-collapse-summary {
+    margin-left: auto;
+    font-size: 12px;
+    color: $text-secondary;
+    white-space: nowrap;
+  }
 
   .seg-title {
     font-size: 15px;
