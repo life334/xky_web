@@ -84,7 +84,6 @@
           <div v-if="taskLoading" class="tab-loading"><el-icon class="is-loading"><Loading /></el-icon></div>
           <div v-else class="task-list">
             <div class="tab-toolbar">
-              <span class="hint">点击行首 checkbox 直接标记完成</span>
               <el-radio-group v-model="taskFilter" size="small">
                 <el-radio-button label="all">全部</el-radio-button>
                 <el-radio-button label="overdue">超期</el-radio-button>
@@ -95,8 +94,7 @@
             <div v-for="t in filteredTasks" :key="t.id" class="task-row" :class="{ overdue: t.isOverdue, done: isTaskDone(t.status) }">
               <el-checkbox
                 :model-value="isTaskDone(t.status)"
-                @change="(v) => toggleTask(t, v)"
-                :disabled="isTaskDone(t.status)"
+                disabled
               />
               <div class="task-main">
                 <div class="task-name">
@@ -507,24 +505,6 @@ async function handleTabChange(name) {
   else if (name === 'materials' && !tabLoaded.materials) await loadMaterials()
 }
 
-async function toggleTask(task, checked) {
-  const old = task.status
-  task.status = checked ? 'completed' : old
-  if (checked) {
-    task.actualFinishDate = new Date().toISOString().slice(0, 10)
-    task.isOverdue = false
-    task.overdueDays = 0
-  }
-  try {
-    await proxy.$http.put('/project/task', { ...task, status: checked ? 'completed' : old })
-    proxy.$modal.msgSuccess(`任务【${task.taskName}】已标记完成`)
-    loadTaskStats()
-  } catch (e) {
-    task.status = old
-    proxy.$modal.msgError('操作失败')
-  }
-}
-
 function jumpToPayments(contractId) {
   activeTab.value = 'payments'
   proxy.$modal.msgInfo(`已切换到付款明细`)
@@ -728,13 +708,9 @@ function jumpToPayments(contractId) {
 
 .tab-toolbar {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-bottom: 12px;
-}
-.tab-toolbar .hint {
-  font-size: 12px;
-  color: #86909c;
 }
 
 .task-row {
