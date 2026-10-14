@@ -28,7 +28,6 @@
           </div>
         </div>
         <div class="header-right">
-          <el-button type="primary" plain size="small" icon="Download" @click="handleExport">导出资料</el-button>
           <el-button icon="Close" circle text @click="localVisible = false" />
         </div>
       </header>
@@ -530,10 +529,6 @@ function jumpToPayments(contractId) {
   activeTab.value = 'payments'
   proxy.$modal.msgInfo(`已切换到付款明细`)
   handleTabChange('payments')
-}
-
-function handleExport() {
-  proxy.download('/project/project/export', { id: props.projectId }, `project_${project.value?.projectCode}_${new Date().getTime()}.xlsx`)
 }
 </script>
 
