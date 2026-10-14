@@ -280,6 +280,13 @@
                </el-col>
             </el-row>
             <el-row :gutter="20">
+               <el-col :span="8">
+                  <el-form-item label="登记时间" prop="submitTime">
+                     <el-date-picker v-model="form.submitTime" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" placeholder="默认当前时间，可修改" style="width: 100%" :disabled="registrationTimeLocked" />
+                  </el-form-item>
+               </el-col>
+            </el-row>
+            <el-row :gutter="20">
                <el-col :span="24">
                   <el-form-item label="登记备注" prop="remark">
                      <el-input v-model="form.remark" type="textarea" placeholder="资料登记说明（长期保留，不随领取覆盖）" maxlength="500" :rows="2" />
@@ -338,9 +345,14 @@
 
                <div class="form-group-title">归档</div>
                <el-row :gutter="20">
-                  <el-col :span="24">
+                  <el-col :span="12">
                      <el-form-item label="档案室归档">
-                        <el-checkbox v-model="form.archiveFlag" true-value="Y" false-value="N">已档案室归档</el-checkbox>
+                        <el-checkbox v-model="form.archiveFlag" true-value="Y" false-value="N" @change="onArchiveFlagChange">已档案室归档</el-checkbox>
+                     </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                     <el-form-item label="归档时间" prop="archiveTime">
+                        <el-date-picker v-model="form.archiveTime" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" placeholder="默认当前时间，可修改" style="width: 100%" :disabled="archiveTimeLocked" />
                      </el-form-item>
                   </el-col>
                </el-row>
@@ -378,8 +390,7 @@
          </div>
          <template #footer>
             <div class="dialog-footer">
-               <el-button :type="isRegistered ? '' : 'primary'" @click="submitRegister" :loading="submitLoading">保存登记</el-button>
-               <el-button v-if="isRegistered" type="primary" @click="submitForm" :loading="submitLoading">确认领取</el-button>
+               <el-button type="primary" @click="submitForm" :loading="submitLoading">保 存</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
          </template>
@@ -512,7 +523,7 @@ const FALLBACK_COLUMNS = [
   { key: 'engineeringProject', label: '项目类别', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: true },
-  { key: 'submitTime', label: '交付时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
+  { key: 'submitTime', label: '登记时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
   { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
   { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
   { key: 'resultType', label: '成果类型', type: 'dict', group: 'business', prop: 'resultType', defaultVisible: true },
@@ -640,6 +651,12 @@ const data = reactive({
 
 const { queryParams, form, rules } = toRefs(data)
 
+// 登记 / 归档时间：打开时库里已有值 → 锁定不可改（写一次即锁）
+const submitTimeSaved = ref(false)
+const archiveTimeSaved = ref(false)
+const registrationTimeLocked = computed(() => submitTimeSaved.value)
+const archiveTimeLocked = computed(() => archiveTimeSaved.value && form.value.archiveFlag === 'Y')
+
 /** 加载下拉选项 */
 function loadOptions() {
   optionsLoading.value = true
@@ -664,12 +681,14 @@ function cancel() { open.value = false; reset() }
 
 function reset() {
   form.value = {
-    id: undefined, projectId: undefined, submitTime: undefined,
+    id: undefined, projectId: undefined, submitTime: undefined, archiveTime: undefined,
     contactName: undefined, contactPhone: undefined,
     resultType: undefined, archiveDir: undefined, remark: undefined,
     guarantorFlag: 'N', guarantorName: undefined, borrowRemark: undefined,
     pickupType: undefined, archiveFlag: 'N'
   }
+  submitTimeSaved.value = false
+  archiveTimeSaved.value = false
   proxy.resetForm("materialRef")
 }
 
@@ -735,6 +754,15 @@ function pickupTypeLabel(val) {
 /** 取消担保时清掉担保人姓名 */
 function onGuarantorFlagChange(val) {
   if (val !== 'Y') form.value.guarantorName = undefined
+}
+
+/** 归档勾选变化：勾选且未填 → 默认当前时刻；取消勾选 → 清空归档时间 */
+function onArchiveFlagChange(val) {
+  if (val === 'Y') {
+    if (!form.value.archiveTime) form.value.archiveTime = proxy.parseTime(new Date(), '{y}-{m}-{d} {h}:{i}:{s}')
+  } else {
+    form.value.archiveTime = undefined
+  }
 }
 
 /** 加载状态统计 */
@@ -833,6 +861,12 @@ function handleUpdate(row) {
   loading.value = true
   getMaterial(id).then(response => {
     form.value = response.data
+    // 登记/归档时间：库里已存过 → 锁定不可改；未存过 → 默认当前时刻（用户可修改）
+    submitTimeSaved.value = !!form.value.submitTime
+    archiveTimeSaved.value = !!form.value.archiveTime
+    const nowStr = proxy.parseTime(new Date(), '{y}-{m}-{d} {h}:{i}:{s}')
+    if (!form.value.submitTime) form.value.submitTime = nowStr
+    if (form.value.archiveFlag === 'Y' && !form.value.archiveTime) form.value.archiveTime = nowStr
     // 联系人/电话：资料有值则保留（保留本次领取修改），为空才从关联项目带出
     const proj = projectOptions.value.find(p => p.id === form.value.projectId)
     if (proj) {
@@ -851,14 +885,11 @@ function handleUpdate(row) {
 }
 
 function submitForm() {
-  // 领取类型必填（只在「确认领取」时校验，「保存登记」不受影响）
-  if (!form.value.pickupType) { proxy.$modal.msgWarning("请选择领取类型（电子版 / 纸质版 / 电子+纸质版）"); return }
   proxy.$refs["materialRef"].validate(valid => {
     if (!valid) return
-    // 交付时间即领取时间，未填默认当前
-    if (!form.value.submitTime) {
-      form.value.submitTime = proxy.parseTime(new Date(), '{y}-{m}-{d} {h}:{i}:{s}')
-    }
+    // 已登记 + 填了领取类型 ⇒ 登记 & 领取一起提交；否则只更新登记 / 归档信息
+    const doBorrowFlow = isRegistered.value && !!form.value.pickupType
+    if (!doBorrowFlow) { submitRegister(); return }
     submitLoading.value = true
     // 领取前欠款检查
     checkPayment(form.value.projectId).then(res => {
@@ -886,6 +917,8 @@ function submitRegister() {
       resultType: form.value.resultType,
       archiveDir: form.value.archiveDir,
       remark: form.value.remark,
+      submitTime: form.value.submitTime,
+      archiveTime: form.value.archiveTime,
       guarantorFlag: form.value.guarantorFlag,
       guarantorName: form.value.guarantorFlag === 'Y' ? form.value.guarantorName : null,
       archiveFlag: form.value.archiveFlag

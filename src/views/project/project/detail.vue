@@ -404,7 +404,7 @@ const MATERIAL_COLUMNS_STORAGE_KEY = 'material-detail-columns'
 const materialColumns = ref({})
 const materialVisibleColumns = computed(() => Object.values(materialColumns.value).filter(c => c.visible))
 const materialFallbackColumns = [
-  { key: 'submitTime', label: '交付时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
+  { key: 'submitTime', label: '登记时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
   { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
   { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
   { key: 'resultType', label: '成果类型', type: 'dict', group: 'business', prop: 'resultType', defaultVisible: true },

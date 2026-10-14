@@ -225,7 +225,7 @@
     <!-- ===== 段3 人员效能：项目经理 × 类别矩阵 ===== -->
     <div class="seg-head">
       <span class="seg-title">人员效能</span>
-      <span class="seg-pill">多负责人项目按人重复计数 · 颜色仅标识类别，大小看数字与条长</span>
+      <span class="seg-pill">多负责人项目按人重复计数 · 颜色仅标识类别，大小看数字与条长 · 三项指标均按项目办结日期计入统计周期</span>
     </div>
     <div class="chart-card matrix-card" v-loading="structureLoading">
       <div class="chart-header">
@@ -715,7 +715,9 @@ function matrixCellClick(row, b) {
   const v = mxVal(row, b)
   if (v <= 0) return
   const metric = matrixMetric.value
-  const dateField = metric === "count" ? "new" : "close"
+  // 矩阵三指标统一按「项目办结日期」口径（见 ProjDashboardMapper#leaderBucketMatrix）
+  // ⇒ 下钻一律用办结窗口，保证弹窗明细与格子数值同源（若用新增窗口会与格子数字对不上）
+  const dateField = "close"
   const outputOrder = metric === "count" ? null : `${metric}_desc`
   openDrill(
     `${row.leaderName} · ${bucketName(b)} · ${METRIC_LABEL[metric] || metric}`,

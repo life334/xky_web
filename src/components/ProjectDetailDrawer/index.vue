@@ -199,7 +199,7 @@
               <el-icon class="file-icon"><Document /></el-icon>
               <div class="mat-main">
                 <div class="mat-type">{{ materialResultTypeText(m.resultType) || m.materialName || '-' }}</div>
-                <div class="mat-meta">提交时间：{{ m.submitTime ? parseTime(m.submitTime, '{y}-{m}-{d}') : '—' }} <span v-if="m.receiverName">| 领取人：{{ m.receiverName }}</span></div>
+                <div class="mat-meta">登记时间：{{ m.submitTime ? parseTime(m.submitTime, '{y}-{m}-{d}') : '—' }} <span v-if="m.receiverName">| 领取人：{{ m.receiverName }}</span></div>
               </div>
               <div class="mat-tags">
                 <dict-tag :options="proj_material_status" :value="m.status" />
