@@ -1152,7 +1152,8 @@ const data = reactive({
     closeDateEnd: undefined,
     newDateBegin: undefined,
     newDateEnd: undefined,
-    projectCategoryIds: undefined
+    projectCategoryIds: undefined,
+    categoryIncludeNull: undefined
   },
   rules: {
     projectCode: [{ required: true, message: "工程编号不能为空", trigger: "blur" }]
@@ -1348,6 +1349,7 @@ function onCloseDateChange(val) {
 /** 项目类别单选变化：清掉下钻带入的多选类别（projectCategoryIds），避免隐式叠加 */
 function onCategoryFilterChange() {
   queryParams.value.projectCategoryIds = undefined
+  queryParams.value.categoryIncludeNull = undefined
   handleQuery()
 }
 
@@ -1579,6 +1581,7 @@ function resetQuery() {
   queryParams.value.newDateEnd = undefined
   newDateRange.value = []
   queryParams.value.projectCategoryIds = undefined
+  queryParams.value.categoryIncludeNull = undefined
   currentSchemeName.value = ''
   handleQuery()
 }
@@ -2065,11 +2068,14 @@ const route = useRoute()
 const drillQuery = route.query || {}
 if (drillQuery.leaderId) queryParams.value.leaderId = Number(drillQuery.leaderId)
 // 下钻类别：单一小类回填单选控件（界面可见）；多小类（如「其它」桶）走隐藏多选 IN
+// 「其它」桶下钻带 categoryIncludeNull ⇒ 必须走多选 IN（单选 projectCategoryId 无「未分类」分支）
+const drillIncludeNull = drillQuery.categoryIncludeNull === 'true' || drillQuery.categoryIncludeNull === true
 if (drillQuery.categoryIds) {
   const ids = String(drillQuery.categoryIds).split(',').map(s => s.trim()).filter(Boolean)
-  if (ids.length === 1) queryParams.value.projectCategoryId = Number(ids[0])
-  else if (ids.length > 1) queryParams.value.projectCategoryIds = ids.join(',')
+  if (ids.length === 1 && !drillIncludeNull) queryParams.value.projectCategoryId = Number(ids[0])
+  else if (ids.length >= 1) queryParams.value.projectCategoryIds = ids.join(',')
 }
+if (drillIncludeNull) queryParams.value.categoryIncludeNull = 'true'
 if (drillQuery.projectCategoryId) queryParams.value.projectCategoryId = Number(drillQuery.projectCategoryId)
 else if (drillQuery.categoryId) queryParams.value.projectCategoryId = Number(drillQuery.categoryId)
 if (drillQuery.clientUnit) queryParams.value.clientUnit = drillQuery.clientUnit
@@ -2112,7 +2118,7 @@ if (drillQuery.beginDate && drillQuery.endDate && !hasDirectDate) {
     onAssignDateChange(assignDateRange.value)
   }
 }
-if (Object.keys(drillQuery).some(k => ['leaderId', 'categoryId', 'projectCategoryId', 'categoryIds', 'clientUnit', 'contractStatus', 'overdue', 'beginDate', 'endDate', 'projectNature', 'dataSource', 'newDateBegin', 'closeDateBegin', 'assignDateBegin'].includes(k))) {
+if (Object.keys(drillQuery).some(k => ['leaderId', 'categoryId', 'projectCategoryId', 'categoryIds', 'categoryIncludeNull', 'clientUnit', 'contractStatus', 'overdue', 'beginDate', 'endDate', 'projectNature', 'dataSource', 'newDateBegin', 'closeDateBegin', 'assignDateBegin'].includes(k))) {
   advancedVisible.value = true
 }
 

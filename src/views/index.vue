@@ -655,7 +655,12 @@ const tiles = computed(() => {
       key: "periodOverdue", label: "本期超期", pill: "手动录入项目", money: false,
       value: po.value ?? 0, prev: po.prev ?? 0,
       prevText: `上期 ${po.prev ?? 0} 个`,
-      drill: () => openDrill("本期超期 · 明细", "none", { overdue: "true" })
+      // 明细与磁贴数字**同源**（后端同一次 collectOverdueInPeriod 产出，含「本期内超期、后已办结」的项目）。
+      // ⚠️ 不能走项目列表 overdue 筛选：那是「在办超期」口径，会把这些项目漏掉 ⇒ 磁贴有数字、弹窗空白。
+      drill: () => {
+        const rows = summary.value.periodOverdueProjects || []
+        openDataDrill(`本期超期 · 明细（${rows.length} 个）`, "overdue", rows)
+      }
     },
     {
       // 合同超期：录入满 3 个工作日仍未关联合同的在册项目（当前时点口径，非区间）
@@ -741,7 +746,7 @@ function matrixCellClick(row, b) {
   openDrill(
     `${row.leaderName} · ${bucketName(b)} · ${METRIC_LABEL[metric] || metric}`,
     dateField,
-    { leaderId: row.leaderId, categoryIds: bucketIdsOf(b), outputOrder }
+    { leaderId: row.leaderId, ...bucketFilter(b), outputOrder }
   )
 }
 
@@ -880,7 +885,7 @@ function renderBucketPie(el, chartKey, metric) {
     openDrill(
       `${d.name} · 本期${METRIC_LABEL[metric] || metric}`,
       dateField,
-      { categoryIds: bucketIdsOf(d.bucket), outputOrder }
+      { ...bucketFilter(d.bucket), outputOrder }
     )
   })
 }
@@ -1174,6 +1179,20 @@ function bucketIdsOf(bucket) {
 }
 
 /**
+ * 桶 → 项目列表查询参数（下钻弹窗 / 列表页共用）。
+ * ⚠️「其它」桶的口径含「未分类」项目（无 project_category_id 的项目按类别名映射恒落「其它」），
+ * 故下钻必须带 categoryIncludeNull，否则桶内数字有值、点开明细为空（NULL 不匹配任何 IN）。
+ * 四大主桶（定线/验线/管线图/实测）只含其自身小类，无需该标记。
+ */
+function bucketFilter(bucket) {
+  const out = {}
+  const ids = bucketIdsOf(bucket)
+  if (ids.length) out.categoryIds = ids
+  if (bucket === "qita") out.categoryIncludeNull = true
+  return out
+}
+
+/**
  * 打开明细弹窗。query 直接透传给 /project/project/list。
  * @param {string} title 标题
  * @param {string} dateField 日期口径（'new'|'close'|'none'）
@@ -1183,6 +1202,8 @@ function openDrill(title, dateField, extra) {
   const e = extra || {}
   const q = dateWindowParams(dateField)
   if (e.categoryIds && e.categoryIds.length) q.projectCategoryIds = e.categoryIds.join(",")
+  // 「其它」桶下钻：连同「未分类」项目一并纳入，保证桶内数字与明细同口径
+  if (e.categoryIncludeNull) q.categoryIncludeNull = "true"
   if (e.leaderId != null) q.leaderId = e.leaderId
   if (e.outputOrder) q.outputOrder = e.outputOrder
   if (e.contractStatus) q.contractStatus = e.contractStatus
@@ -1215,13 +1236,13 @@ function monthRange(label) {
 
 /** 类别画像表格行 → 明细弹窗（数量口径：新增窗口） */
 function bucketDrill(c) {
-  openDrill(`${c.bucketName} · 本期明细`, "new", { categoryIds: bucketIdsOf(c.bucket) })
+  openDrill(`${c.bucketName} · 本期明细`, "new", { ...bucketFilter(c.bucket) })
 }
 
 /** 本期办结占比（堆叠条 / 图例）→ 明细弹窗（办结窗口） */
 function closedDrill(seg) {
   if (!seg || !Number(seg.count)) return
-  openDrill(`${seg.bucketName} · 本期办结明细`, "close", { categoryIds: bucketIdsOf(seg.bucket) })
+  openDrill(`${seg.bucketName} · 本期办结明细`, "close", { ...bucketFilter(seg.bucket) })
 }
 
 /** 合同额磁贴 → 合同明细弹窗（签署日期窗口：本年 / 本月 至今天） */
