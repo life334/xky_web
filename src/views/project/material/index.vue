@@ -904,6 +904,7 @@ function doBorrow() {
   submitLoading.value = true
   borrowMaterial(form.value.id, form.value).then(() => {
     proxy.$modal.msgSuccess("领取成功")
+    paymentOpen.value = false   // 领取成功一并关闭欠款确认弹窗（否则 append-to-body 会残留在页面上）
     open.value = false
     getList()
     loadStatusCounts()

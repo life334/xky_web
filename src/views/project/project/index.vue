@@ -203,7 +203,7 @@
          </div>
       </el-row>
 
-      <el-table ref="tableRef" row-key="id" v-loading="loading" v-hover-h-scroll :data="projectList" stripe border @selection-change="handleSelectionChange">
+      <el-table ref="tableRef" row-key="id" v-loading="loading" v-hover-h-scroll :data="projectList" stripe border :row-class-name="overdueRowClass" @selection-change="handleSelectionChange">
          <el-table-column min-width="70" align="center" label="序号">
             <template #header>
                <el-checkbox :model-value="isAllChecked" :indeterminate="isIndeterminate" @change="handleCheckAll" /> 序号
@@ -240,6 +240,12 @@
             </template>
          </el-table-column>
          
+         <el-table-column label="超期" align="center" min-width="96">
+            <template #default="scope">
+               <span v-if="scope.row.overdueDays > 0" class="overdue-badge">超期 {{ scope.row.overdueDays }} 天</span>
+            </template>
+         </el-table-column>
+
          <el-table-column label="操作" align="center" min-width="120" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
                <el-button link type="primary" size="small" @click="handleView(scope.row)">详情</el-button>
@@ -685,7 +691,7 @@ import { listTask } from "@/api/project/task"
 import { listContract } from "@/api/project/contract"
 import { ArrowRight } from '@element-plus/icons-vue'
 import { checkRole } from "@/utils/permission"
-import { countWorkdays } from "@/utils/workday"
+import { countWorkdays, batchCountWorkdays } from "@/utils/workday"
 import { withTaskStatusAliases } from "@/utils/projStatus"
 import { nextTick } from "vue"
 import { useRoute } from "vue-router"
@@ -804,6 +810,15 @@ function colWidth(col) {
   if (col.type === 'duration' || col.type === 'total' || col.type === 'dict') return 100
   if (col.type === 'dynamic') return 140
   return 140
+}
+
+/**
+ * 在办超期行高亮（方案A：左色条 + 浅底纹 + 行尾徽标）。
+ * overdueDays 由后端按工作日口径（安排日期 + 工期要求）回填，>0 即在办超期；
+ * 口径唯一出处为驾驶舱服务，前端只负责染色，不做任何日期计算。
+ */
+function overdueRowClass({ row }) {
+  return row && row.overdueDays > 0 ? 'row-overdue' : ''
 }
 
 /**
@@ -1265,9 +1280,11 @@ function getList() {
   fetchStatusCounts()
 }
 
-/** 列表进行中项目：按"安排日期→今天"实时计算工作日总时长（办结/归档不计算，显示存储值） */
-function refreshRowDurations() {
+/** 列表进行中项目：按"安排日期→今天"实时计算工作日总时长（办结/归档不计算，显示存储值）
+ *  日历数据整页只拉一次（取最早安排日期→今天），再逐行复用 ⇒ 避免 N 行发 N 个请求 */
+async function refreshRowDurations() {
   const rows = projectList.value || []
+  const targets = []
   rows.forEach(r => {
     if (r.status === 'closed' || r.status === 'archived') return
     if (!r.assignDate) {
@@ -1275,9 +1292,13 @@ function refreshRowDurations() {
       return
     }
     r._duration = null // 先显示"计算中..."
-    countWorkdays(r.assignDate, new Date())
-      .then(v => { r._duration = v })
-      .catch(() => { r._duration = r.totalDuration != null ? r.totalDuration : null })
+    targets.push(r)
+  })
+  if (targets.length === 0) return
+  const res = await batchCountWorkdays(targets.map(r => r.assignDate), new Date())
+  targets.forEach(r => {
+    const v = res.get(r.assignDate)
+    r._duration = v != null ? v : (r.totalDuration != null ? r.totalDuration : null)
   })
 }
 
@@ -2347,4 +2368,29 @@ if (drillQuery.id) {
   color: #606266;
 }
 .mandate-num { color: #e6a23c; font-size: 15px; }
+
+/* ===== 在办超期行高亮（方案A：左色条 + 浅底纹 + 行尾徽标） =====
+   注意：表格为 stripe 斑马纹，行底色必须 !important 才能覆盖 .el-table__row--striped 与 hover 底色；
+   左色条用 inset box-shadow 画在首列单元格上，避免额外占位导致列错位。 */
+:deep(.el-table .row-overdue > td.el-table__cell) {
+  background: #fcebeb !important;
+}
+:deep(.el-table .row-overdue:hover > td.el-table__cell) {
+  background: #f9dede !important;
+}
+:deep(.el-table .row-overdue > td.el-table__cell:first-child) {
+  box-shadow: inset 3px 0 0 0 #e24b4a;
+}
+:deep(.el-table .row-overdue td.el-table__cell) {
+  color: #a32d2d;
+}
+.overdue-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 9px;
+  background: #f7c1c1;
+  color: #501313;
+  font-size: 12px;
+  white-space: nowrap;
+}
 </style>

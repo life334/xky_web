@@ -831,6 +831,7 @@ import { UploadFilled, Folder, Document, Paperclip, Search, Loading } from '@ele
 import request from '@/utils/request'
 import cache from '@/plugins/cache'
 import { paymentTypeText, attachmentCategoryText, settledFlagText } from '@/utils/projStatus'
+import { useRoute } from "vue-router"
 
 const { proxy } = getCurrentInstance()
 
@@ -1133,7 +1134,7 @@ function toProjectTypeArray(v) {
 
 function getList() {
   loading.value = true
-  listContract(queryParams.value).then(response => {
+  return listContract(queryParams.value).then(response => {
     contractList.value = response.rows || []
     total.value = response.total
     // 只做本地解析。附件数量由列表接口一条 SQL 带出（attachmentCount），
@@ -2110,6 +2111,26 @@ ensureCategoryTree()
 getConfigKey("contract.no.prefix").then(res => {
   contractPrefix.value = res.msg || ""
 })
+
+// 通知中心跳转定位：?from=notify 且带 contractNo / contractId → 自动定位并打开该合同详情
+const route = useRoute()
+if (route.query.from === 'notify') {
+  const notifyNo = route.query.contractNo ? String(route.query.contractNo) : ''
+  const notifyId = route.query.contractId ? Number(route.query.contractId) : null
+  if (notifyId) {
+    handleView({ id: notifyId })
+  } else if (notifyNo) {
+    queryParams.value.contractNo = notifyNo
+    getList().then(() => {
+      const hit = contractList.value.find(r => String(r.contractNo) === notifyNo)
+      if (hit) {
+        handleView(hit)
+      } else {
+        proxy.$modal.msgWarning('未找到合同：' + notifyNo)
+      }
+    })
+  }
+}
 </script>
 
 <style scoped>

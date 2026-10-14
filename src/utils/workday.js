@@ -78,6 +78,42 @@ export function isWorkday(date, map) {
 }
 
 /**
+ * 批量计算「各行起始日期 → end」的工作日总数（含头含尾）
+ * 整批只拉 1 次日历数据（取最早起始日 → end），避免列表页 N 行发 N 个请求
+ * （注意：getWorkdayMap 的区间缓存要等第一个响应回来才生效，并发调用时无法去重）
+ * @param {Array<string|Date>} starts 各行的起始日期
+ * @param {Date|string} end 统一结束日期（通常为今天）
+ * @returns {Promise<Map<string, number>>} 起始日('yyyy-MM-dd') → 工作日数
+ */
+export async function batchCountWorkdays(starts, end) {
+  const keys = []
+  const seen = new Set()
+  for (const s of (starts || [])) {
+    const k = formatDate(s)
+    if (k && !seen.has(k)) {
+      seen.add(k)
+      keys.push(k)
+    }
+  }
+  const result = new Map()
+  if (keys.length === 0) return result
+  const e = formatDate(end)
+  const earliest = keys.reduce((min, k) => (min && min <= k ? min : k), null)
+  let map
+  try {
+    map = await getWorkdayMap(earliest, e)
+  } catch (err) {
+    // 日历数据不可用（接口异常/无权限）时退化为"仅排除周末"，不中断列表渲染
+    console.warn('[workday] 日历数据拉取失败，退化为仅排除周末计算', err)
+    map = new Map()
+  }
+  for (const k of keys) {
+    result.set(k, await countWorkdays(k, e, map))
+  }
+  return result
+}
+
+/**
  * 计算 [start, end] 区间的工作日天数（含头含尾）
  * @param {Date|string} start 开始日期
  * @param {Date|string} end   结束日期

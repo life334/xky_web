@@ -42,6 +42,7 @@
             v-model="submitAsReport"
             :disabled="monthSubmitted"
             class="submit-toggle"
+            @change="onSubmitAsReportChange"
           >
             上报记录
             <span v-if="monthSubmitted" class="submit-toggle-tip">本月已上报，下月可再上报</span>
@@ -162,7 +163,7 @@
           <template #default="{ row }">
             <el-tooltip
               v-if="row.__submitSource"
-              :content="row.__submitSource === 'history' ? '历史项目：上报时间按到账时间推导，无系统上报记录' : '已通过「导出并上报领导」上报'"
+              :content="row.__submitSource === 'history' ? '历史导入补录（未走系统上报流程，上报时间取补录记录）' : '已通过「导出并上报领导」上报'"
               placement="top"
             >
               <el-tag type="success" size="small" effect="plain">已上报</el-tag>
@@ -707,7 +708,8 @@ const FILTER_MAP = {
   contactPhone: { widget: 'input', mapKey: 'contactPhone' },
   projectLocation: { widget: 'input', mapKey: 'projectLocation' },
   leaderName: { widget: 'input', mapKey: 'leaderName' },
-  projectCategoryId: { widget: 'select', mapKey: 'categoryId', source: 'category' },
+  /* 项目类别（小类）：支持多选（后端按逗号拆分 → project_category_id in (...)） */
+  projectCategoryId: { widget: 'multiSelect', mapKey: 'categoryId', source: 'category' },
   projectStatus: { widget: 'multiSelect', mapKey: 'projectStatus' },
   /* 上报状态（已上报/未上报）：与「上报时间」列同源，后端 SQL 判定的服务端筛选，导出同样生效 */
   submitStatus: { widget: 'select', mapKey: 'submitStatus', source: 'field' },
@@ -725,6 +727,8 @@ const FILTER_MAP = {
   assignDate: { widget: 'daterange', range: ['assignDateBegin', 'assignDateEnd'] },
   createTime: { widget: 'daterange', range: ['createTimeBegin', 'createTimeEnd'] },
   closeTime: { widget: 'daterange', range: ['closeTimeBegin', 'closeTimeEnd'] },
+  /* 关联定线项目时间段：系统关联取定线项目创建时间；手工编号按其编号里的年份（见后端 relatedProjStartExpr / EndExpr） */
+  relatedProjectCreate: { widget: 'daterange', range: ['relatedProjectCreateBegin', 'relatedProjectCreateEnd'] },
   receivedAmount: { widget: 'numberRange', range: ['receivedAmountMin', 'receivedAmountMax'] },
   lastPayTime: { widget: 'daterange', range: ['lastPayTimeBegin', 'lastPayTimeEnd'] },
   pendingAmount: { widget: 'numberRange', range: ['pendingAmountMin', 'pendingAmountMax'] },
@@ -1046,10 +1050,13 @@ async function loadCategories() {
     const tree = res?.data || []
     const flat = []
     const subNames = new Set()
+    /* 仅收集小类（depth===1）作为「项目类别」筛选项，与项目编辑页 subCategoryOptions 同源同范围（不含大类） */
     const walk = (nodes, depth) => {
       ;(nodes || []).forEach(n => {
-        flat.push({ value: n.id, label: (depth > 0 ? '　'.repeat(depth) : '') + n.label })
-        if (depth === 1) subNames.add(n.label)
+        if (depth === 1) {
+          flat.push({ value: n.id, label: n.label })
+          subNames.add(n.label)
+        }
         if (n.children && n.children.length) walk(n.children, depth + 1)
       })
     }
@@ -1108,6 +1115,11 @@ function resetPreviewPaging() {
   excludedCodes.value = new Set()
 }
 
+/* 勾选/取消「上报记录」：重取预览，使未上报行的「上报时间」列随之显示/隐藏当月 */
+function onSubmitAsReportChange() {
+  doPreview()
+}
+
 async function doPreview() {
   if (!currentTemplateId.value) return
   const seq = ++previewSeq
@@ -1119,7 +1131,9 @@ async function doPreview() {
       pageNum: previewPage.pageNum,
       pageSize: previewPage.pageSize,
       // 预览与导出同一开关：开启时后端按单位排序 + 到账时间输出单位汇总文案
-      mergeUnitCells: mergeUnitCells.value
+      mergeUnitCells: mergeUnitCells.value,
+      // 勾选「上报记录」时：未上报行的「上报时间」列按报表年月显示（仅 zdyw 模板有效）
+      fillSubmitMonth: submitAsReport.value && isZdywTemplate.value
     })
     if (seq !== previewSeq) return // 已有更新的预览请求，丢弃本次过期响应
     const d = res?.data || {}
@@ -1857,8 +1871,8 @@ async function confirmExport() {
   if (ok && wantSubmit) await doSubmitReport()
 }
 
-/* 导出文件：excludedCodes 传跨页排除集，命中全集减去排除集；quiet=true 时成功提示由上报结果合并给出 */
-async function doExport(quiet = false) {
+/* 导出文件：excludedCodes 传跨页排除集，命中全集减去排除集；asReport=true 表示本次导出同时上报（填充未上报行上报时间，且成功提示由上报结果合并给出） */
+async function doExport(asReport = false) {
   const tpl = currentTemplate.value
   const suffix = tpl?.templateType === 'custom'
     ? '.xlsx'
@@ -1870,7 +1884,9 @@ async function doExport(quiet = false) {
       templateId: currentTemplateId.value,
       filter: buildBackendFilter(true),
       excludedCodes: [...excludedCodes.value],
-      mergeUnitCells: mergeUnitCells.value
+      mergeUnitCells: mergeUnitCells.value,
+      // 本次导出同时上报：未上报行的「上报时间」列按报表年月填充（与预览一致）
+      fillSubmitMonth: asReport
     })
     saveMergeUnit(currentTemplateId.value, mergeUnitCells.value)
     const blob = res.data
@@ -1882,7 +1898,7 @@ async function doExport(quiet = false) {
       return false
     }
     saveAs(new Blob([blob]), parseExportFileName(res, fallback))
-    if (!quiet) proxy.$modal.msgSuccess(`导出成功：${checkedCount.value} 条`)
+    if (!asReport) proxy.$modal.msgSuccess(`导出成功：${checkedCount.value} 条`)
     exportDialogVisible.value = false
     loadLogs()
     return true

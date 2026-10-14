@@ -1,6 +1,6 @@
 <template>
   <div>
-    <el-popover ref="noticePopover" placement="bottom-end" :width="400" trigger="manual" v-model:visible="noticeVisible" popper-class="notify-popover-v2">
+    <el-popover ref="noticePopover" placement="bottom-end" :width="400" trigger="click" v-model:visible="noticeVisible" popper-class="notify-popover-v2">
       <div class="nh-header">
         <span class="nh-title">通知中心</span>
         <span v-if="activeTab === 'message'" class="nh-mark-all" @click="onMarkAllRead">全部已读</span>
@@ -73,7 +73,7 @@
       </div>
 
       <template #reference>
-        <div class="right-menu-item hover-effect notice-trigger" @mouseenter="onNoticeEnter" @mouseleave="onNoticeLeave">
+        <div class="right-menu-item hover-effect notice-trigger">
           <svg-icon icon-class="bell" />
           <span v-if="summary.todoCount > 0" class="notice-badge">{{ summary.todoCount > 99 ? '99+' : summary.todoCount }}</span>
           <span v-else-if="summary.alertCount > 0" class="notice-dot"></span>
@@ -98,7 +98,6 @@ const router = useRouter()
 
 const noticePopover = ref(null)
 const noticeVisible = ref(false)
-const noticeLeaveTimer = ref(null)
 const activeTab = ref('todo')
 const tabLoading = ref(false)
 const todoList = ref([])
@@ -118,7 +117,6 @@ function handleMuteToday() { setNoPopupToday() }
 function openPanelFromPopup() {
   activeTab.value = 'todo'
   noticeVisible.value = true
-  loadTab()
 }
 
 // ==================== 面板数据 ====================
@@ -232,25 +230,10 @@ function onMarkAllRead() {
   })
 }
 
-// ==================== 悬停开合（保留原交互） ====================
-function onNoticeEnter() {
-  clearTimeout(noticeLeaveTimer.value)
-  noticeVisible.value = true
-  loadTab()
-  nextTick(() => {
-    const popper = noticePopover.value?.popperRef?.contentRef
-    if (popper && !popper._noticeBound) {
-      popper._noticeBound = true
-      popper.addEventListener('mouseenter', () => clearTimeout(noticeLeaveTimer.value))
-      popper.addEventListener('mouseleave', () => {
-        noticeLeaveTimer.value = setTimeout(() => { noticeVisible.value = false }, 100)
-      })
-    }
-  })
-}
-function onNoticeLeave() {
-  noticeLeaveTimer.value = setTimeout(() => { noticeVisible.value = false }, 150)
-}
+// ==================== 点击开合（鼠标移开不再收起；点铃铛切换、点击外部/Esc 关闭） ====================
+watch(noticeVisible, (v) => {
+  if (v) loadTab()
+})
 </script>
 
 <style lang="scss" scoped>

@@ -234,7 +234,7 @@
 import { listTask, getTask, addTask, updateTask, delTask } from "@/api/project/task"
 import { listProject } from "@/api/project/project"
 import { listUserOptions } from "@/api/system/user"
-import { countWorkdays } from "@/utils/workday"
+import { batchCountWorkdays } from "@/utils/workday"
 import { withTaskStatusAliases } from "@/utils/projStatus"
 
 const { proxy } = getCurrentInstance()
@@ -333,13 +333,13 @@ function getList() {
     const rows = response.rows || []
     // 总时长：办结显示存储值；进行中实时算「安排日期→今天」工作日（countWorkdays 是异步的，
     // 不能直接在模板调用，这里加载后预计算写入每行 liveDuration）
-    rows.forEach(row => {
-      if (row.totalDuration == null && row.assignDate) {
-        countWorkdays(row.assignDate, new Date())
-          .then(v => { row.liveDuration = v })
-          .catch(() => { row.liveDuration = null })
-      }
-    })
+    // 日历数据整页只拉一次（取最早安排日期→今天），再逐行复用 ⇒ 避免 N 行发 N 个请求
+    const targets = rows.filter(row => row.totalDuration == null && row.assignDate)
+    if (targets.length > 0) {
+      batchCountWorkdays(targets.map(row => row.assignDate), new Date())
+        .then(res => { targets.forEach(row => { row.liveDuration = res.get(row.assignDate) }) })
+        .catch(() => { targets.forEach(row => { row.liveDuration = null }) })
+    }
     taskList.value = rows
     total.value = response.total
     loading.value = false
