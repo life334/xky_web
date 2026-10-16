@@ -832,6 +832,7 @@ import request from '@/utils/request'
 import cache from '@/plugins/cache'
 import { paymentTypeText, attachmentCategoryText, settledFlagText } from '@/utils/projStatus'
 import { useRoute } from "vue-router"
+import { useNotifyLanding } from "@/utils/useNotifyLanding"
 
 const { proxy } = getCurrentInstance()
 
@@ -2103,7 +2104,6 @@ function closeSidePanel() {
 }
 
 loadColumns()
-getList()
 loadStatusCounts()
 loadSavedSchemes()
 loadClientUnits()
@@ -2113,24 +2113,43 @@ getConfigKey("contract.no.prefix").then(res => {
 })
 
 // 通知中心跳转定位：?from=notify 且带 contractNo / contractId → 自动定位并打开该合同详情
-const route = useRoute()
-if (route.query.from === 'notify') {
-  const notifyNo = route.query.contractNo ? String(route.query.contractNo) : ''
-  const notifyId = route.query.contractId ? Number(route.query.contractId) : null
-  if (notifyId) {
-    handleView({ id: notifyId })
-  } else if (notifyNo) {
-    queryParams.value.contractNo = notifyNo
-    getList().then(() => {
-      const hit = contractList.value.find(r => String(r.contractNo) === notifyNo)
-      if (hit) {
-        handleView(hit)
-      } else {
-        proxy.$modal.msgWarning('未找到合同：' + notifyNo)
-      }
-    })
+function openContractByNo(no) {
+  const hit = contractList.value.find(r => String(r.contractNo) === no)
+  if (hit) {
+    handleView(hit)
+  } else {
+    proxy.$modal.msgWarning('未找到合同：' + no)
   }
 }
+const notify = useNotifyLanding({
+  apply: (q) => {
+    const notifyId = q.contractId ? Number(q.contractId) : null
+    if (notifyId) {
+      // 按 id 直接打开详情（列表照常加载）
+      handleView({ id: notifyId })
+      return true
+    }
+    const notifyNo = q.contractNo ? String(q.contractNo) : ''
+    if (notifyNo) {
+      // 先设好编号，再由下面唯一的一次 getList 结果定位并打开
+      queryParams.value.contractNo = notifyNo
+      queryParams.value.pageNum = 1
+      return true
+    }
+    return false
+  },
+  clearKeys: ['contractNo', 'contractId'],
+  onReenter: () => getList().then(() => {
+    if (queryParams.value.contractNo) openContractByNo(String(queryParams.value.contractNo))
+  })
+})
+const notifyLanded = notify.applyNotifyLanding()
+// 唯一一次列表查询（已带落地编号）
+getList().then(() => {
+  if (notifyLanded && queryParams.value.contractNo) {
+    openContractByNo(String(queryParams.value.contractNo))
+  }
+})
 </script>
 
 <style scoped>

@@ -801,8 +801,7 @@
 import { treeListSettlement, getSettlementDetail, savePayment, getSettlementColumns, getSettlementEntryStatusCounts } from "@/api/project/settlement"
 import { workloadOutputSummary, workloadOutputDetail } from "@/api/project/workload"
 import WorkloadDialog from "@/components/WorkloadDialog"
-import { categoryTreeselectFull } from "@/api/project/category"
-import { listUserOptions } from "@/api/system/user"
+import { ensureCategoryBaseData } from "@/utils/categoryBaseData"
 import { getDistinctValues } from "@/api/project/project"
 import { listContract } from "@/api/project/contract"
 import { checkPermi } from "@/utils/permission"
@@ -810,6 +809,7 @@ import { invoiceStatusText, invoiceStatusTagType, invoicePaymentText, invoicePay
 import useSearchMemoryStore from "@/store/modules/searchMemory"
 import cache from '@/plugins/cache'
 import { useRoute } from "vue-router"
+import { useNotifyLanding } from "@/utils/useNotifyLanding"
 
 const { proxy } = getCurrentInstance()
 
@@ -1422,34 +1422,16 @@ function flattenCategoryTree(nodes, onlyLeaf) {
   return out
 }
 
-let baseDataCache = null   // 已 resolve 的 Promise（命中即同步返回）
-let baseDataPending = null // 进行中的 Promise（防止并发重复请求）
+// 基础数据（类别树 / 用户）统一走共享缓存模块（「项目类别」页变更后会显式作废该缓存）
 function ensureBaseData() {
-  if (baseDataCache) return baseDataCache
-  if (!baseDataPending) {
-    baseDataLoading.value = true
-    baseDataPending = Promise.all([
-      categoryTreeselectFull(),
-      listUserOptions({ pageNum: 1, pageSize: 1000 })
-    ]).then(([catRes, userRes]) => {
-      const base = {
-        userOptions: userRes.rows || [],
-        projectCategoryOptions: flattenCategoryTree(catRes.data || [], true)
-      }
-      baseDataCache = Promise.resolve(base)
-      return base
-    }).catch(err => {
-      baseDataPending = null
-      throw err
-    }).finally(() => { baseDataLoading.value = false })
-  }
-  return baseDataPending
+  baseDataLoading.value = true
+  return ensureCategoryBaseData().finally(() => { baseDataLoading.value = false })
 }
 
-/** 把 ensureBaseData 的结果写入各下拉的 ref（缓存命中时同步返回，重复调用不产生额外请求） */
+/** 把基础数据写入各下拉的 ref（共享缓存命中时零额外请求） */
 function applyBaseData(base) {
   userOptions.value = base.userOptions
-  projectCategoryOptions.value = base.projectCategoryOptions
+  projectCategoryOptions.value = flattenCategoryTree(base.categoryTree || [], true)
 }
 
 /** 打开工作量弹窗（明细由公共组件自行加载；本页只负责传参 + 打开） */
@@ -1839,17 +1821,25 @@ function handleViewTabChange(name) {
 }
 
 loadColumns()
-refreshAll()
+// 通知中心跳转定位：?projectCode=xxx&from=notify → 先设好落地参数，再只查一次
+// （旧写法先 refreshAll() 无筛选查询、再 handleQuery() 带筛选查询，两请求并发 ⇒ 偶发显示全量）
+const notify = useNotifyLanding({
+  apply: (q) => {
+    if (!q.projectCode) return false
+    queryParams.value.projectCode = String(q.projectCode)
+    queryParams.value.pageNum = 1
+    searchMemory.setProjectCode(queryParams.value.projectCode)
+    return true
+  },
+  clearKeys: ['projectCode'],
+  onReenter: () => refreshAll()
+})
+const notifyLanded = notify.applyNotifyLanding()
 // 全局工程编号回填：仅回填输入框，不自动查询（用户点「查询」才生效）
-if (searchMemory.projectCode && !queryParams.value.projectCode) {
+if (!notifyLanded && searchMemory.projectCode && !queryParams.value.projectCode) {
   queryParams.value.projectCode = searchMemory.projectCode
 }
-// 通知中心跳转定位：?projectCode=xxx&from=notify → 自动填入编号并立即查询（覆盖全局回填）
-const route = useRoute()
-if (route.query.from === 'notify' && route.query.projectCode) {
-  queryParams.value.projectCode = String(route.query.projectCode)
-  handleQuery()
-}
+refreshAll()
 loadDistinctValues()
 
 // 高级筛选「负责人 / 项目类别」下拉的数据源在此预热：ensureBaseData 自带缓存 + 防并发，
@@ -1859,7 +1849,12 @@ loadDistinctValues()
 ensureBaseData().then(base => applyBaseData(base)).catch(() => {})
 
 // keep-alive 缓存下切回本页时刷新列表（否则在项目列表删除项目后，本页仍显示旧数据）
+// 首次挂载不重复刷新：初始加载已由上方 refreshAll() 完成，这里只负责「再次激活」
+let firstActivation = true
 onActivated(() => {
+  if (firstActivation) { firstActivation = false; return }
+  // 兜底：命中通知落地时先补齐参数（幂等），避免与刷新竞态
+  notify.applyNotifyLanding()
   refreshAll(false)
 })
 </script>

@@ -254,6 +254,7 @@
 
 <script setup name="Category">
 import { listCategory, categoryTreeselect, getCategory, addCategory, updateCategory, delCategory, listBilling, getBilling, listBillingCategories } from "@/api/project/category"
+import { invalidateCategoryBaseData } from "@/utils/categoryBaseData"
 
 const { proxy } = getCurrentInstance()
 const { sys_normal_disable } = useDict("sys_normal_disable")
@@ -507,7 +508,8 @@ function submitForm() {
         form.value.billingList = undefined
       }
       submitLoading.value = true
-      const done = () => { open.value = false; getList(); loadBilling(); loadBillingCategories() }
+      // 类别 / 计费方式变更后作废共享基础数据缓存：确保其它页（工作量录入、费用结算、回款）下次取到最新类别
+      const done = () => { open.value = false; getList(); loadBilling(); loadBillingCategories(); invalidateCategoryBaseData() }
       if (form.value.id != undefined) {
         updateCategory(form.value).then(() => {
           proxy.$modal.msgSuccess("修改成功")
@@ -531,6 +533,7 @@ function handleDelete(row) {
   }).then(() => {
     getList()
     loadBilling()
+    invalidateCategoryBaseData()
     proxy.$modal.msgSuccess("删除成功")
   }).catch(() => {
     loading.value = false  // 用户取消或请求失败复位

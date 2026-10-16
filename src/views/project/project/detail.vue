@@ -20,6 +20,7 @@
          <el-tab-pane label="基本信息" name="info">
             <el-descriptions :column="3" border style="margin-top: 8px">
                <el-descriptions-item label="工程编号">{{ projectInfo.projectCode || '-' }}</el-descriptions-item>
+               <el-descriptions-item label="关联项目编号">{{ projectInfo.relatedProjectCode || '-' }}</el-descriptions-item>
                <el-descriptions-item label="项目名称">{{ projectInfo.projectName || '-' }}</el-descriptions-item>
                <el-descriptions-item label="项目类别">{{ projectInfo.categoryName || '-' }}</el-descriptions-item>
                <el-descriptions-item label="委托单位">{{ projectInfo.clientUnit || '-' }}</el-descriptions-item>
@@ -404,6 +405,7 @@ const MATERIAL_COLUMNS_STORAGE_KEY = 'material-detail-columns'
 const materialColumns = ref({})
 const materialVisibleColumns = computed(() => Object.values(materialColumns.value).filter(c => c.visible))
 const materialFallbackColumns = [
+  { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
   { key: 'submitTime', label: '登记时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
   { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
   { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },

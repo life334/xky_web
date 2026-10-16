@@ -664,7 +664,7 @@ import { collectionList, collectionClientList, collectionStats, collectionUnsett
 import { addPayment } from "@/api/project/payment"
 import { listUserOptions } from "@/api/system/user"
 import { paymentTypeText } from "@/utils/projStatus"
-import { categoryTreeselectFull } from "@/api/project/category"
+import { ensureCategoryBaseData } from "@/utils/categoryBaseData"
 import WorkloadDialog from "@/components/WorkloadDialog"
 import { useRoute } from "vue-router"
 
@@ -1384,9 +1384,8 @@ function getSummary() {
 
 /** 加载项目类别下拉（仅首次） */
 function loadCategoryOptions() {
-   if (categoryOptions.value.length > 0) return
    categoryLoading.value = true
-   categoryTreeselectFull().then(res => {
+   ensureCategoryBaseData().then(base => {
       // 只取叶子节点（小类）：项目只能挂小类，列出大类会选不到任何数据
       const flat = []
       const walk = nodes => (nodes || []).forEach(n => {
@@ -1396,7 +1395,7 @@ function loadCategoryOptions() {
             flat.push({ id: n.id, name: n.name || n.label })
          }
       })
-      walk(res.data)
+      walk(base.categoryTree || [])
       categoryOptions.value = flat
    }).catch(() => { /* 下拉加载失败不影响主流程 */ }).finally(() => { categoryLoading.value = false })
 }

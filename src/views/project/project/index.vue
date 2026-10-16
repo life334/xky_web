@@ -696,6 +696,7 @@ import { withTaskStatusAliases } from "@/utils/projStatus"
 import { nextTick } from "vue"
 import { useRoute } from "vue-router"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
+import { useNotifyLanding } from "@/utils/useNotifyLanding"
 /** 格式化日期 YYYY-MM-DD */
 function fmt(d) { return d.toISOString().slice(0, 10) }
 
@@ -2084,10 +2085,18 @@ if (drillQuery.overdue) queryParams.value.overdue = String(drillQuery.overdue)
 if (drillQuery.projectNature) queryParams.value.projectNature = String(drillQuery.projectNature)
 if (drillQuery.dataSource) queryParams.value.dataSource = String(drillQuery.dataSource)
 if (drillQuery.status) queryParams.value.status = String(drillQuery.status)
-// 通知中心跳转定位：按工程编号直接筛选
-if (drillQuery.from === 'notify' && drillQuery.projectCode) {
-  queryParams.value.projectCode = String(drillQuery.projectCode)
-}
+// 通知中心跳转定位：?projectCode=xxx&from=notify → 先设好落地参数（紧随其后的唯一一次 getList 查询）
+const notify = useNotifyLanding({
+  apply: (q) => {
+    if (!q.projectCode) return false
+    queryParams.value.projectCode = String(q.projectCode)
+    queryParams.value.pageNum = 1
+    searchMemory.setProjectCode(queryParams.value.projectCode)
+    return true
+  },
+  clearKeys: ['projectCode'],
+  onReenter: () => handleQuery()
+})
 
 // 新增口径（来源分流）
 if (drillQuery.newDateBegin && drillQuery.newDateEnd) {
@@ -2122,9 +2131,10 @@ if (Object.keys(drillQuery).some(k => ['leaderId', 'categoryId', 'projectCategor
   advancedVisible.value = true
 }
 
+const notifyLanded = notify.applyNotifyLanding()
 getList()
 // 全局工程编号回填：仅回填输入框，不自动查询（用户点「查询」才生效）
-if (searchMemory.projectCode && !queryParams.value.projectCode) {
+if (!notifyLanded && searchMemory.projectCode && !queryParams.value.projectCode) {
   queryParams.value.projectCode = searchMemory.projectCode
 }
 loadColumns()

@@ -475,6 +475,7 @@ import useSearchMemoryStore from "@/store/modules/searchMemory"
 import { invoiceStatusText, invoiceStatusTagType } from "@/utils/projStatus"
 import cache from '@/plugins/cache'
 import { useRoute } from "vue-router"
+import { useNotifyLanding } from "@/utils/useNotifyLanding"
 
 
 const { proxy } = getCurrentInstance()
@@ -520,9 +521,9 @@ const COLUMNS_STORAGE_KEY = 'material-list-columns'
 /** 兜底清单：后端接口不可用（如后端未重启）时使用，保证表格不退化（与后端 getListColumns 默认可见列一致） */
 const FALLBACK_COLUMNS = [
   { key: 'projectCode', label: '工程编号', type: 'text', group: 'business', prop: 'projectCode', defaultVisible: true },
+  { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
   { key: 'engineeringProject', label: '项目类别', type: 'text', group: 'business', prop: 'engineeringProject', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
-  { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: true },
   { key: 'submitTime', label: '登记时间', type: 'date', group: 'business', prop: 'submitTime', defaultVisible: true },
   { key: 'contactName', label: '联系人', type: 'text', group: 'business', prop: 'contactName', defaultVisible: true },
   { key: 'contactPhone', label: '联系电话', type: 'text', group: 'business', prop: 'contactPhone', defaultVisible: true },
@@ -1132,17 +1133,25 @@ function handleExport() {
 
 loadOptions()
 loadColumns()
-getList()
+// 通知中心跳转定位：?projectCode=xxx&from=notify → 先设好落地参数，再只查一次
+// （旧写法先发「无筛选查询」再发「带筛选查询」，两请求并发、谁后返回谁覆盖表格 ⇒ 偶发显示全量）
+const notify = useNotifyLanding({
+  apply: (q) => {
+    if (!q.projectCode) return false
+    queryParams.value.projectCode = String(q.projectCode)
+    queryParams.value.pageNum = 1
+    searchMemory.setProjectCode(queryParams.value.projectCode)
+    return true
+  },
+  clearKeys: ['projectCode'],
+  onReenter: () => handleQuery()
+})
+const notifyLanded = notify.applyNotifyLanding()
 // 全局工程编号回填：仅回填输入框，不自动查询（用户点「查询」才生效）
-if (searchMemory.projectCode && !queryParams.value.projectCode) {
+if (!notifyLanded && searchMemory.projectCode && !queryParams.value.projectCode) {
   queryParams.value.projectCode = searchMemory.projectCode
 }
-// 通知中心跳转定位：?projectCode=xxx&from=notify → 自动填入编号并立即查询（覆盖全局回填）
-const route = useRoute()
-if (route.query.from === 'notify' && route.query.projectCode) {
-  queryParams.value.projectCode = String(route.query.projectCode)
-  handleQuery()
-}
+getList()
 loadStatusCounts()
 </script>
 

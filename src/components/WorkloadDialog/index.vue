@@ -42,7 +42,7 @@
                <div class="quick-add-bar">
                   <span class="qa-label">计费类别</span>
                   <el-select v-model="rec.quickExternalCat" placeholder="选择计费类别" style="width: 220px" @change="(val) => onQuickCatChange(val, rec, 'external')">
-                     <el-option v-for="o in externalBillingOptions(rec.subItemNo)" :key="o.value" :label="o.label" :value="o.value" />
+                     <el-option v-for="o in externalBillingOptions()" :key="o.value" :label="o.label" :value="o.value" />
                   </el-select>
                   <span class="qa-label">工作量</span>
                   <el-input-number v-model="rec.quickExternalWorkload" :min="0" :precision="2" controls-position="right" style="width: 130px" :disabled="!rec.quickExternalCat" @keyup.enter="quickAddWorkload(rec, 'external')" />
@@ -89,13 +89,14 @@
             <div class="leader-card-header">
                <span class="leader-name">{{ leader.nickName }}</span>
                <span class="leader-mini-total">内部：{{ formatMoney(leaderInternalOutput(leader.userId)) }}</span>
-               <el-button type="primary" v-if="false" size="small" icon="Plus" plain style="margin-left: auto" @click="addInternalRecord(leader)">新增记录</el-button>
+               <el-button type="primary" size="small" icon="Plus" plain style="margin-left: auto" @click="addInternalRecord(leader)">添加</el-button>
             </div>
 
-            <!-- 按记录分栏：每条记录一个子卡片 -->
-            <div v-for="rec in leader.records" :key="leader.userId + '-' + rec.subItemNo" class="record-card">
+            <!-- 每栏 = 一个记录号：自带录入栏 + 已录入行 + 小计（≥2 栏时才显示栏头，含删除） -->
+            <div v-for="(rec, recIdx) in leader.records" :key="leader.userId + '-' + rec.subItemNo" class="record-card">
                <div v-if="leader.records.length > 1" class="record-card-header">
-                  <span class="record-name">第 {{ rec.subItemNo }} 条</span>
+                  <span class="record-name">第 {{ recIdx + 1 }} 栏</span>
+                  <el-button link type="danger" icon="Delete" style="margin-left: auto" @click="removeLane(leader, rec)">删除</el-button>
                </div>
 
                <!-- 内部快速录入栏（归属该记录） -->
@@ -135,6 +136,12 @@
                      <template #default="scope"><el-button link type="danger" icon="Delete" @click="removeWorkloadRowByIdx(scope.row, leader.userId, 'internal')" /></template>
                   </el-table-column>
                </el-table>
+
+               <!-- 每栏小计（含「管线新测/修测」保底 6000） -->
+               <div class="lane-subtotal">
+                  <span class="lane-sub-label">小计</span>
+                  <span class="lane-sub-value">{{ formatMoney(laneInternalOutput(leader.userId, rec.subItemNo)) }}</span>
+               </div>
             </div>
          </div>
 
@@ -157,8 +164,7 @@
 <script setup name="WorkloadDialog">
 import { ref, computed, watch, getCurrentInstance } from 'vue'
 import { getSettlementDetail, saveWorkload } from '@/api/project/settlement'
-import { categoryTreeselectFull, listBilling } from '@/api/project/category'
-import { listUserOptions } from '@/api/system/user'
+import { ensureCategoryBaseData } from '@/utils/categoryBaseData'
 
 const { proxy } = getCurrentInstance()
 
@@ -192,58 +198,8 @@ const contractPriceMap = ref({})
 /** 弹窗内容加载中（先开弹窗再异步填充，消除点击后的空白等待） */
 const workloadLoading = ref(false)
 const workloadSaving = ref(false)
-/** 基础数据（类别树/计费项/用户）懒加载中 */
-const baseDataLoading = ref(false)
-
-// ---- 基础数据缓存：类别树 / 用户列表 / 计费档位 运行期基本不变，首次成功后复用（模块级，跨实例共享） ----
-let baseDataCache = null   // 已 resolve 的 Promise（命中即同步返回）
-let baseDataPending = null // 进行中的 Promise（防止并发重复请求）
-function ensureBaseData() {
-   if (baseDataCache) return baseDataCache
-   if (!baseDataPending) {
-      baseDataLoading.value = true
-      baseDataPending = Promise.all([
-         categoryTreeselectFull(),
-         listUserOptions({ pageNum: 1, pageSize: 1000 }),
-         listBilling()
-      ]).then(([catRes, userRes, billingRes]) => {
-         const base = {
-            categoryOptions: catRes.data || [],
-            userOptions: userRes.rows || [],
-            billingMap: buildBillingMap(billingRes.data || []),
-            categoryNameMap: buildCategoryNameMap(catRes.data || [])
-         }
-         baseDataCache = Promise.resolve(base)
-         return base
-      }).catch(err => {
-         baseDataPending = null
-         throw err
-      }).finally(() => { baseDataLoading.value = false })
-   }
-   return baseDataPending
-}
-
-/** 计费方式映射：categoryId -> 启用中的计费方式列表（停用 status=1 过滤） */
-function buildBillingMap(list) {
-   const bMap = {}
-   ;(list || []).forEach(b => {
-      if (b.status === '1') return
-      if (!bMap[b.categoryId]) bMap[b.categoryId] = []
-      bMap[b.categoryId].push(b)
-   })
-   return bMap
-}
-
-/** 类别树 -> { id: name } 映射（递归打平，供按项目类别名称兜底匹配） */
-function buildCategoryNameMap(tree) {
-   const map = {}
-   const walk = list => (list || []).forEach(n => {
-      map[n.id] = n.name
-      walk(n.children)
-   })
-   walk(tree)
-   return map
-}
+// ---- 基础数据（类别树 / 计费项 / 用户）：统一走共享缓存模块 @/utils/categoryBaseData ----
+// 「项目类别」页增/改/删后会显式作废该缓存，另有 TTL 兜底，避免新类别进不了下拉。
 
 const onVisibleChange = (val) => { emit('update:modelValue', val) }
 
@@ -264,7 +220,7 @@ function openDialog() {
 
 function loadWorkloadDetail() {
    workloadLoading.value = true
-   Promise.all([ensureBaseData(), getSettlementDetail(props.projectId)])
+   Promise.all([ensureCategoryBaseData(), getSettlementDetail(props.projectId)])
       .then(([base, detailRes]) => {
          userOptions.value = base.userOptions
          billingMap.value = base.billingMap
@@ -305,6 +261,7 @@ function loadWorkloadDetail() {
                externalOutput: w.externalOutput,
                output: output != null ? Number(output) : null,
                subItemNo: w.subItemNo != null ? Number(w.subItemNo) : null,
+               dupNo: w.dupNo != null ? Number(w.dupNo) : 1,
                subItemName: w.subItemName || null
             }
          })
@@ -357,24 +314,11 @@ function loadWorkloadDetail() {
       .finally(() => { workloadLoading.value = false })
 }
 
-// 内部产值合计（含「管线新测 + 管线修测」保底 6000：差额只进合计，不改变各行产值）
+// 内部产值合计（含「管线新测 + 管线修测」保底 6000；⚠️ 保底按「栏」各自计算 = Σ 各负责人各栏小计）
 const internalOutputTotal = computed(() => {
-   let sum = 0
-   let reviseSum = 0
-   let hasRevise = false
-   workloadForm.value.workloads.forEach(row => {
-      if (row.billingType !== 'internal' || row.output == null) return
-      const v = Number(row.output)
-      sum += v
-      if (row.billingCategory === '管线新测' || row.billingCategory === '管线修测') {
-         reviseSum += v
-         hasRevise = true
-      }
-   })
-   if (hasRevise && reviseSum < 6000) {
-      sum = sum - reviseSum + 6000
-   }
-   return sum
+   let total = 0
+   leaderList.value.forEach(leader => { total += leaderInternalOutput(leader.userId) })
+   return total
 })
 
 // 外部产值合计（= 结算总额）
@@ -396,15 +340,33 @@ function externalRowsBySub(subItemNo) {
    return workloadForm.value.workloads.filter(r => r.billingType === 'external' && Number(r.subItemNo) === Number(subItemNo))
 }
 
-/** 某负责人内部产值 */
-function leaderInternalOutput(userId) {
+/** 某栏内部小计（含每栏保底：该栏其他行 + max(该栏「管线新测+修测」, 6000)；无保底类别则照实求和） */
+function laneInternalOutput(userId, subItemNo) {
    let sum = 0
+   let reviseSum = 0
    workloadForm.value.workloads.forEach(row => {
-      if (Number(row.userId) === Number(userId) && row.billingType === 'internal' && row.output) {
-         sum += Number(row.output)
-      }
+      if (row.billingType !== 'internal' || row.output == null) return
+      if (Number(row.userId) !== Number(userId)) return
+      if (Number(row.subItemNo) !== Number(subItemNo)) return
+      const v = Number(row.output)
+      sum += v
+      if (row.billingCategory === '管线新测' || row.billingCategory === '管线修测') reviseSum += v
    })
-   return sum
+   return reviseSum > 0 ? (sum - reviseSum + Math.max(reviseSum, 6000)) : sum
+}
+
+/** 某负责人内部产值 = Σ 该负责人各栏小计（含每栏保底） */
+function leaderInternalOutput(userId) {
+   const lanes = new Set()
+   workloadForm.value.workloads.forEach(row => {
+      if (row.billingType !== 'internal' || Number(row.userId) !== Number(userId)) return
+      lanes.add(row.subItemNo != null ? Number(row.subItemNo) : 0)
+   })
+   const leader = leaderList.value.find(l => Number(l.userId) === Number(userId))
+   if (leader) leader.records.forEach(rec => lanes.add(Number(rec.subItemNo)))
+   let total = 0
+   lanes.forEach(no => { total += laneInternalOutput(userId, no) })
+   return total
 }
 
 /** 某负责人某记录的内部行（按记录 subItemNo 归属） */
@@ -551,22 +513,16 @@ function internalBillingOptions(userId, subItemNo) {
    return opts
 }
 
-/** 外部计费方式下拉选项（聚合所有类别下的外部计费方式，已过滤当前记录已添加过的类别） */
-function externalBillingOptions(subItemNo) {
+/** 外部计费方式下拉选项（聚合所有类别下的外部计费方式；⚠️ 不再过滤已录入类别 ⇒ 同一栏内同类别可多行） */
+function externalBillingOptions() {
    const opts = []
    const seen = new Set()
-   const usedKeys = new Set(
-      workloadForm.value.workloads
-         .filter(r => r.billingType === 'external' && Number(r.subItemNo) === Number(subItemNo))
-         .map(r => r.billingKey)
-   )
    scopedCategoryIds().forEach(catId => {
       const list = billingMap.value[catId] || []
       list.filter(b => b.billingType === 'external').forEach(b => {
          const val = b.billingType + '#' + b.billingCategory
          if (!seen.has(val)) {
             seen.add(val)
-            if (usedKeys.has(val)) return
             const label = b.billingCategory + '（¥' + formatMoney(b.unitPrice) + '/' + (b.priceUnit || '项') + (Number(b.minQuantity) > 1 ? ('，起步' + b.minQuantity) : '') + '）'
             opts.push({ value: val, label: label, raw: b, categoryId: catId })
          }
@@ -578,7 +534,7 @@ function externalBillingOptions(subItemNo) {
 /** 快速录入栏选择计费类别后带出单价（外部不依赖负责人） */
 function onQuickCatChange(val, rec, type) {
    if (type === 'external') {
-      const options = externalBillingOptions(rec.subItemNo)
+      const options = externalBillingOptions()
       const opt = options.find(o => o.value === val)
       if (!opt || !opt.raw) {
          rec.quickExternalPrice = null
@@ -608,7 +564,9 @@ function onQuickCatChange(val, rec, type) {
    rec.quickInternalUnit = b.priceUnit || ''
 }
 
-/** 快速添加工作量行（外部不依赖负责人；内部按记录 rec 归属 subItemNo）；兜底：若同类别已存在则累加工作量 */
+/** 快速添加工作量行（外部不依赖负责人；内部按记录 rec 归属 subItemNo）
+ *  · 外部：不去重、不累加 ⇒ 同栏同类别可多行（dupNo 依次 2,3… 满足唯一约束）
+ *  · 内部：下拉已隐藏本栏已用类别，兜底同类别仍累加（避免重复行） */
 function quickAddWorkload(rec, type) {
    const isExternal = type === 'external'
    const cat = isExternal ? rec.quickExternalCat : rec.quickInternalCat
@@ -617,20 +575,21 @@ function quickAddWorkload(rec, type) {
    if (!cat || workload == null) return
 
    const subItemNo = rec.subItemNo
-   const options = isExternal ? externalBillingOptions(rec.subItemNo) : internalBillingOptions(rec.userId, rec.subItemNo)
+   const options = isExternal ? externalBillingOptions() : internalBillingOptions(rec.userId, rec.subItemNo)
    const opt = options.find(o => o.value === cat)
    if (!opt || !opt.raw) return
 
-   const existRow = workloadForm.value.workloads.find(r => {
-      if (r.billingType !== (isExternal ? 'external' : 'internal') || r.billingKey !== cat) return false
-      if (Number(r.subItemNo) !== Number(subItemNo)) return false
-      return isExternal ? true : Number(r.userId) === Number(rec.userId)
-   })
-   if (existRow) {
-      existRow.workload = (Number(existRow.workload) || 0) + (Number(workload) || 0)
-      calcRow(existRow)
-      clearQuickBar(rec, isExternal)
-      return
+   // 内部：同栏同类别累加（正常走不到 —— 下拉已隐藏，仅兜底）
+   if (!isExternal) {
+      const existRow = workloadForm.value.workloads.find(r =>
+         r.billingType === 'internal' && r.billingKey === cat &&
+         Number(r.subItemNo) === Number(subItemNo) && Number(r.userId) === Number(rec.userId))
+      if (existRow) {
+         existRow.workload = (Number(existRow.workload) || 0) + (Number(workload) || 0)
+         calcRow(existRow)
+         clearQuickBar(rec, isExternal)
+         return
+      }
    }
 
    const b = opt.raw
@@ -655,6 +614,9 @@ function quickAddWorkload(rec, type) {
 
    const subName = workloadForm.value.workloads.find(r => Number(r.subItemNo) === Number(subItemNo) && r.subItemName)?.subItemName || ''
 
+   // dupNo：外部同栏同类别多行时的行内序号（内部恒 1；栏内不重复靠下拉过滤）
+   const dupNo = isExternal ? nextExternalDupNo(opt, subItemNo) : 1
+
    const newRow = {
       workloadId: null,
       userId: isExternal ? 0 : rec.userId,
@@ -674,6 +636,7 @@ function quickAddWorkload(rec, type) {
       externalOutput: null,
       output: null,
       subItemNo: subItemNo,
+      dupNo: dupNo,
       subItemName: subName
    }
    calcRow(newRow)
@@ -681,6 +644,20 @@ function quickAddWorkload(rec, type) {
 
    // 清空快速录入栏
    clearQuickBar(rec, isExternal)
+}
+
+/** 外部：计算该栏(subItemNo)下同计费类别下一条重复行的 dupNo（已有最大值 +1；首条 = 1） */
+function nextExternalDupNo(opt, subItemNo) {
+   let max = 0
+   workloadForm.value.workloads.forEach(r => {
+      if (r.billingType !== 'external') return
+      if (Number(r.subItemNo) !== Number(subItemNo)) return
+      if (Number(r.categoryId) !== Number(opt.categoryId)) return
+      if (r.billingCategory !== (opt.raw && opt.raw.billingCategory)) return
+      const d = Number(r.dupNo) || 1
+      if (d > max) max = d
+   })
+   return max + 1
 }
 
 /** 清空快速录入栏 */
@@ -743,6 +720,21 @@ function addExternalRecord() {
 function removeWorkloadRowByIdx(row) {
    const idx = workloadForm.value.workloads.indexOf(row)
    if (idx >= 0) workloadForm.value.workloads.splice(idx, 1)
+}
+
+/** 删除整栏（含栏内所有行）；仅 ≥2 栏时可删（末栏禁止删，UI 上栏头此时也已隐藏），二次确认 */
+function removeLane(leader, rec) {
+   if (leader.records.length <= 1) return
+   const rows = internalRowsByUserAndSub(leader.userId, rec.subItemNo)
+   const tip = rows.length > 0
+      ? '删除该栏将同时删除栏内 ' + rows.length + ' 行工作量，确定删除？'
+      : '删除该空白栏？'
+   proxy.$modal.confirm(tip).then(() => {
+      rows.forEach(r => removeWorkloadRowByIdx(r))
+      const idx = leader.records.indexOf(rec)
+      if (idx >= 0) leader.records.splice(idx, 1)
+      proxy.$modal.msgSuccess('已删除该栏')
+   }).catch(() => {})
 }
 
 /** 保存工作量 */
@@ -843,6 +835,9 @@ defineExpose({ workloadForm, externalOutputTotal, internalOutputTotal })
 .record-card { margin: 12px; border: 1px dashed var(--el-border-color); border-radius: 6px; overflow: hidden; }
 .record-card-header { display: flex; align-items: center; padding: 6px 12px; background: var(--el-fill-color-lighter); border-bottom: 1px solid var(--el-border-color-lighter); }
 .record-name { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); }
+.lane-subtotal { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 5px 12px; background: var(--el-fill-color-light); border-top: 1px solid var(--el-border-color-lighter); }
+.lane-sub-label { font-size: 12px; color: var(--el-text-color-secondary); }
+.lane-sub-value { font-size: 13px; font-weight: 600; color: var(--el-color-primary); font-variant-numeric: tabular-nums; }
 .quick-add-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--el-fill-color-lighter); border-bottom: 1px solid var(--el-border-color-lighter); flex-wrap: wrap; }
 .qa-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
 .qa-unit { font-size: 12px; color: var(--el-text-color-placeholder); }
