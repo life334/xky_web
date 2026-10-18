@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { tansParams } from '@/utils/land'
 
 // 查询合同列表（分页）
 export function listContract(query) {
@@ -43,12 +44,17 @@ export function delContract(id) {
   })
 }
 
-// 导出合同
+// 导出合同（可选字段）
+// fields 可能很长（几十个字段拼接），故与项目列表导出一致：走 form-urlencoded 请求体而非 query string
 export function exportContract(query) {
   return request({
     url: '/project/contract/export',
     method: 'post',
-    params: query
+    data: query,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    transformRequest: [function (data) { return tansParams(data) }],
+    responseType: 'blob',
+    timeout: 180000
   })
 }
 

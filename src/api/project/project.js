@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { tansParams } from '@/utils/land'
 
 // 查询项目列表（分页）
 export function listProject(query) {
@@ -45,12 +46,17 @@ export function delProject(id) {
   })
 }
 
-// 导出项目
+// 导出项目（可选范围 scope=filter|selected + 可选字段 fields 逗号串）
+// ⚠️ 接口直接写文件流 ⇒ 必须 responseType:'blob'，否则响应拦截器会按 JSON 解析
 export function exportProject(query) {
   return request({
     url: '/project/project/export',
     method: 'post',
-    params: query
+    data: query,
+    transformRequest: [(params) => tansParams(params)],
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    responseType: 'blob',
+    timeout: 180000
   })
 }
 

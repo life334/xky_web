@@ -192,24 +192,35 @@
             <el-button type="primary" plain icon="Plus" size="small" @click="handleAdd" v-hasPermi="['project:project:add']">新增</el-button>
             <el-button type="info" plain icon="DocumentCopy" size="small" @click="handlePaste" v-hasPermi="['project:project:add']">粘贴</el-button>
             <el-button type="success" plain icon="Edit" size="small" :disabled="single || editDisabledByClosed" @click="handleUpdate" v-hasPermi="['project:project:edit']">修改</el-button>
-            <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple || deleteDisabledByClosed" @click="handleDelete" v-hasPermi="['project:project:remove']">删除</el-button>
-            <el-button type="warning" plain icon="Star" size="small" :disabled="multiple" @click="handleSetNature('mandate')" v-hasPermi="['project:project:edit']">设为指令性任务</el-button>
-            <el-button plain icon="RefreshLeft" size="small" :disabled="multiple" @click="handleSetNature('normal')" v-hasPermi="['project:project:edit']">取消指令性任务</el-button>
+            <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple || deleteDisabledByClosed || selectAllMode" @click="handleDelete" v-hasPermi="['project:project:remove']">删除</el-button>
+            <el-button type="warning" plain icon="Star" size="small" :disabled="multiple && !selectAllMode" @click="handleSetNature('mandate')" v-hasPermi="['project:project:edit']">设为指令性任务</el-button>
+            <el-button plain icon="RefreshLeft" size="small" :disabled="multiple && !selectAllMode" @click="handleSetNature('normal')" v-hasPermi="['project:project:edit']">取消指令性任务</el-button>
             <el-button type="info" plain icon="Setting" size="small" @click="openMandateRule" v-hasPermi="['project:project:edit']">指令性规则</el-button>
          </div>
          <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
-            <el-button v-if="false" type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:project:export']">导出</el-button>
+            <el-button type="warning" plain icon="Download" size="small" @click="openExportDialog" v-hasPermi="['project:project:export']">导出</el-button>
             <right-toolbar size="small" v-model:showSearch="showSearch" :columns="columns" storage-key="project-list-columns" @queryTable="getList" />
          </div>
       </el-row>
 
-      <el-table ref="tableRef" row-key="id" v-loading="loading" v-hover-h-scroll :data="projectList" stripe border :row-class-name="overdueRowClass" @selection-change="handleSelectionChange">
+      <!-- 跨页勾选提示条：普通跨页勾选 / 全选引导 / 全选模式（三者互斥） -->
+      <div v-if="selectAllMode" class="cross-select-bar is-all">
+         <span>已选择全部筛选结果 <b>{{ total || 0 }}</b> 条</span>
+         <el-button link type="primary" size="small" @click="exitSelectAllMode">取消全选</el-button>
+      </div>
+      <div v-else-if="ids.length" class="cross-select-bar">
+         <span>已选 <b>{{ ids.length }}</b> 条（跨页保留）</span>
+         <el-button link type="primary" size="small" @click="clearCrossSelection">清空</el-button>
+         <el-button v-if="showSelectAllHint" link type="primary" size="small" @click="enterSelectAllMode">选择全部 {{ total || 0 }} 条</el-button>
+      </div>
+
+      <el-table ref="tableRef" row-key="id" v-loading="loading" v-hover-h-scroll :data="projectList" stripe border :row-class-name="overdueRowClass">
          <el-table-column min-width="70" align="center" label="序号">
             <template #header>
-               <el-checkbox :model-value="isAllChecked" :indeterminate="isIndeterminate" @change="handleCheckAll" /> 序号
+               <el-checkbox :model-value="isAllChecked" :indeterminate="isIndeterminate" :disabled="selectAllMode" @change="handleCheckAll" /> 序号
             </template>
             <template #default="scope">
-               <el-checkbox :model-value="!!checkedMap[scope.row.id]" style="margin-right:6px" @change="toggleRow(scope.row)" />
+               <el-checkbox :model-value="!!checkedMap[scope.row.id]" style="margin-right:6px" :disabled="selectAllMode" @change="toggleRow(scope.row)" />
                <span>{{ (queryParams.pageNum - 1) * queryParams.pageSize + scope.$index + 1 }}</span>
             </template>
          </el-table-column>
@@ -679,11 +690,97 @@
             <el-button @click="mandateRuleOpen = false">关 闭</el-button>
          </template>
       </el-dialog>
+
+      <!-- 导出项目数据：可选范围（全部筛选结果 / 仅已勾选的行）+ 可选字段（拖拽排序） -->
+      <el-dialog
+         :model-value="exportOpen"
+         @update:model-value="exportOpen = $event"
+         title="导出项目数据"
+         append-to-body
+         :close-on-click-modal="false"
+         class="scrollbar"
+         width="760px"
+      >
+         <el-form label-width="76px" size="small">
+            <el-form-item label="导出范围">
+               <el-radio-group v-model="exportScope">
+                  <el-radio value="filter">全部筛选结果（{{ total || 0 }} 条）</el-radio>
+                  <el-radio value="selected" :disabled="!ids.length">仅已勾选的行（{{ ids.length }} 条）</el-radio>
+               </el-radio-group>
+            </el-form-item>
+         </el-form>
+
+         <div class="export-tip">
+            左侧勾选要导出的字段，右侧可拖拽调整列顺序；单次最多导出 {{ EXPORT_MAX_ROWS }} 行，超出请先用筛选条件缩小范围。
+         </div>
+
+         <div class="export-panes">
+            <!-- 左：可选字段 -->
+            <div class="export-pane">
+               <div class="export-pane-head">
+                  <el-checkbox
+                     :model-value="exportAllChecked"
+                     :indeterminate="exportSomeChecked"
+                     @change="toggleExportAll"
+                  >全部字段（{{ exportColumnList.length }}）</el-checkbox>
+               </div>
+               <div class="export-pane-body">
+                  <div v-for="c in exportColumnList" :key="c.key" class="export-field" @click="toggleExportField(c)">
+                     <el-checkbox :model-value="!!exportFieldSet[c.key]" @click.stop @change="toggleExportField(c)" />
+                     <span class="export-field-label">{{ c.label }}</span>
+                     <span v-if="c.group === 'system'" class="export-field-tag">系统</span>
+                     <span v-else-if="c.group === 'dynamic'" class="export-field-tag">自定义</span>
+                  </div>
+               </div>
+            </div>
+
+            <!-- 右：已选字段（拖拽排序） -->
+            <div class="export-pane">
+               <div class="export-pane-head">
+                  <span>已选字段（{{ exportFields.length }}）· 拖拽排序</span>
+                  <el-button link type="primary" size="small" @click="resetExportFields">恢复默认</el-button>
+               </div>
+               <div class="export-pane-body">
+                  <div
+                     v-for="(key, idx) in exportFields"
+                     :key="key"
+                     :class="['export-sel', { 'is-dragging': exportDragIdx === idx, 'is-over': exportOverIdx === idx && exportDragIdx !== idx }]"
+                     @dragover.prevent="exportOverIdx = idx"
+                     @dragleave="exportOverIdx = -1"
+                     @drop.prevent="exportDrop(idx)"
+                     @dragend="exportDragIdx = -1; exportOverIdx = -1"
+                  >
+                     <span class="drag-handle" title="拖拽调整顺序" draggable="true" @dragstart="exportDragStart(idx)"></span>
+                     <span class="export-sel-idx">{{ idx + 1 }}</span>
+                     <span class="export-sel-label">{{ exportLabelOf(key) }}</span>
+                     <span class="export-sel-ops">
+                        <el-button link size="small" :disabled="idx === 0" @click="moveExportField(idx, -1)" title="上移">↑</el-button>
+                        <el-button link size="small" :disabled="idx === exportFields.length - 1" @click="moveExportField(idx, 1)" title="下移">↓</el-button>
+                        <el-button link type="danger" size="small" @click="removeExportField(key)" title="移除">✕</el-button>
+                     </span>
+                  </div>
+                  <div v-if="!exportFields.length" class="export-empty">请至少选择一个字段</div>
+               </div>
+            </div>
+         </div>
+
+         <template #footer>
+            <el-button size="small" @click="exportOpen = false">取 消</el-button>
+            <el-button
+               type="primary"
+               size="small"
+               :loading="exportLoading"
+               :disabled="!exportFields.length"
+               @click="submitExport"
+            >确定导出</el-button>
+         </template>
+      </el-dialog>
    </div>
 </template>
 
 <script setup name="Project">
-import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues, getProjectColumns, getRelatedCandidates, getLeaderOptions, ensureLeader } from "@/api/project/project"
+import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues, getProjectColumns, getRelatedCandidates, getLeaderOptions, ensureLeader, exportProject } from "@/api/project/project"
+import { saveAs } from 'file-saver'
 import { mandateRuleList, mandatePreview, addMandateRule, updateMandateRule, delMandateRule, applyMandateRule, setProjectNature, setMandateAutoMatch } from "@/api/project/mandate"
 import cache from '@/plugins/cache'
 import { categoryTreeselectFull } from "@/api/project/category"
@@ -747,6 +844,10 @@ const FALLBACK_COLUMNS = [
   { key: 'projectNature', label: '项目性质', type: 'dict', group: 'business', prop: 'projectNature', defaultVisible: true },
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
   { key: 'contractName', label: '合同', type: 'text', group: 'business', prop: 'contractName', defaultVisible: false },
+  { key: 'contractNo', label: '合同编号', type: 'text', group: 'business', prop: 'contractNo', defaultVisible: false },
+  { key: 'contractAmount', label: '合同金额', type: 'number', group: 'business', prop: 'contractAmount', defaultVisible: false },
+  { key: 'internalOutput', label: '内部产值', type: 'number', group: 'business', prop: 'internalOutput', defaultVisible: false },
+  { key: 'externalOutput', label: '外部产值', type: 'number', group: 'business', prop: 'externalOutput', defaultVisible: false },
   { key: 'leaderNames', label: '负责人', type: 'text', group: 'business', prop: 'leaderNames', defaultVisible: true },
   { key: 'assignDate', label: '安排日期', type: 'date', group: 'business', prop: 'assignDate', defaultVisible: true },
   { key: 'durationRequire', label: '工期要求', type: 'duration', group: 'business', prop: 'durationRequire', defaultVisible: true },
@@ -893,11 +994,44 @@ function dictOptionsFor(col) {
 
 const title = ref("")
 const total = ref(0)
-const single = ref(true)
-const multiple = ref(true)
 const tableRef = ref(null)
-/** 当前勾选的行对象（用于判断选中项是否含已办结项目） */
-const currentSelection = ref([])
+
+/**
+ * 跨页勾选：选中项目 id 集合（唯一真源）。
+ * 背景：el-table 的 selection 依附于当前页数据行对象，翻页后数据整体替换 ⇒ 勾选被清空，
+ *       导致「先在第 1 页勾几条、翻到第 2 页再勾几条」这种跨页批量操作根本做不了。
+ * 方案：勾选状态改由本集合承载，每次列表刷新后按集合回显当前页勾选态 ⇒ 翻页 / 刷新不丢。
+ */
+const crossIds = ref([])
+/** 跨页勾选行快照（id → row）：跨页后行对象已不在当前页数据中，需留档用于「含已办结」等判定 */
+const selectedRowMap = new Map()
+/** 回显 / 清空期间抑制 selection-change：否则这些内部动作会反噬累加回集合 */
+let suppressSelectionChange = false
+
+/** 当前生效的选中 id（只读取自跨页集合） */
+const ids = computed(() => crossIds.value)
+/** 当前生效的选中行：取自快照 Map，而非仅当前页数据 ⇒ 跨页后仍能判断状态 */
+const currentSelection = computed(() =>
+  crossIds.value.map(id => selectedRowMap.get(id)).filter(Boolean)
+)
+/** 非「恰好选中 1 条」→ 禁用修改 */
+const single = computed(() => currentSelection.value.length !== 1)
+/** 未选中任何行 → 禁用批量按钮 */
+const multiple = computed(() => currentSelection.value.length === 0)
+
+/** 全选模式：已选择「全部筛选结果」（跨全部页），批量标记改为按条件执行 */
+const selectAllMode = ref(false)
+/** 当前页整页被勾选、且筛选结果多于当前页 ⇒ 引导升级为全选模式 */
+const showSelectAllHint = computed(() => {
+  return projectList.value.length > 0
+    && projectList.value.every(r => crossIds.value.includes(r.id))
+    && (total.value || 0) > projectList.value.length
+})
+function enterSelectAllMode() { selectAllMode.value = true }
+function exitSelectAllMode() {
+  selectAllMode.value = false
+  clearSelection()
+}
 /** 已办结项目非超管不可修改：单选且选中已办结且非超管 → 禁用修改按钮 */
 const editDisabledByClosed = computed(() =>
   currentSelection.value.length === 1
@@ -1019,7 +1153,6 @@ function fmtContractDetail(c) {
   return fmtContractOption(c || {})
 }
 const detail = ref({})
-const ids = ref([])
 const dateRange = ref([])
 const assignDateRange = ref([])
 const advancedVisible = ref(false)
@@ -1274,9 +1407,10 @@ function getList() {
     projectList.value = response.rows
     total.value = response.total
     loading.value = false
-    // 数据整体替换后清空选中：避免 el-table 残留的 selection 错位套到新行上
-    // （表现为"删除/翻页后某些记录莫名被勾选"，甚至引发误删）
-    nextTick(() => clearSelection())
+    // 数据整体替换后必须重置 el-table 内部 selection：它不会自动跟随新数据，
+    // 残留引用会错位套到新行上（表现为"删除/翻页后某些记录莫名被勾选"）。
+    // 重置后按跨页集合回显 ⇒ 翻页 / 刷新都不丢勾选。
+    nextTick(() => restoreSelection())
     refreshRowDurations()
   })
   fetchStatusCounts()
@@ -1550,6 +1684,9 @@ function reset() {
 /** 搜索按钮操作 */
 function handleQuery() {
   queryParams.value.pageNum = 1
+  // 筛选条件变化 ⇒ 结果集已变，跨页勾选必须清空（否则会误操作到看不见的行）
+  selectAllMode.value = false
+  clearSelection()
   // 同步工程编号到全局记忆（含清空）
   searchMemory.setProjectCode(queryParams.value.projectCode)
   getList()
@@ -1587,26 +1724,81 @@ function resetQuery() {
   handleQuery()
 }
 
-/** 多选框选中数据 */
-function handleSelectionChange(selection) {
-  ids.value = selection.map(item => item.id)
-  currentSelection.value = selection
-  single.value = selection.length !== 1
-  multiple.value = !selection.length
+/**
+ * 单行勾选切换：直接改跨页集合，再同步 el-table 内部选中态。
+ * ⚠️ 不再监听 selection-change 作为数据源——它只覆盖当前页，
+ *    翻页即丢，无法满足跨页批量操作。
+ */
+function toggleRow(row) {
+  const i = crossIds.value.indexOf(row.id)
+  const willSelect = i < 0
+  if (willSelect) {
+    crossIds.value.push(row.id)
+    selectedRowMap.set(row.id, row)
+  } else {
+    crossIds.value.splice(i, 1)
+    selectedRowMap.delete(row.id)
+  }
+  suppressSelectionChange = true
+  try {
+    tableRef.value?.toggleRowSelection(row, willSelect)
+  } finally {
+    nextTick(() => { suppressSelectionChange = false })
+  }
+}
+
+/** 全选切换：仅作用于当前页，跨页集合里其它页的勾选保留 */
+function handleCheckAll(checked) {
+  suppressSelectionChange = true
+  try {
+    projectList.value.forEach(row => {
+      const i = crossIds.value.indexOf(row.id)
+      if (checked && i < 0) {
+        crossIds.value.push(row.id)
+        selectedRowMap.set(row.id, row)
+      } else if (!checked && i >= 0) {
+        crossIds.value.splice(i, 1)
+        selectedRowMap.delete(row.id)
+      }
+      tableRef.value?.toggleRowSelection(row, checked)
+    })
+  } finally {
+    nextTick(() => { suppressSelectionChange = false })
+  }
 }
 
 /**
- * 清空选中状态（列表刷新后必须调用）。
- * 背景：el-table 内部维护一份 selection 引用，数据整体替换后它不会自动跟随；
- * 若不清理，删除第 1 条后原第 2 条升到首行，残留的选中引用/下标会错位套到新行上，
- * 表现为「删除后后续记录自动被勾选」，且会连带影响批量删除/导出的选中集合。
+ * 清空跨页勾选（表格内部选中态一并清）。
+ * ⚠️ 列表刷新后必须调用：el-table 不会自动跟随数据替换，残留引用会错位套到新行上
+ *    （表现为「删除后后续记录自动被勾选」，甚至引发误删）。
  */
 function clearSelection() {
-  tableRef.value?.clearSelection()
-  ids.value = []
-  currentSelection.value = []
-  single.value = true
-  multiple.value = false
+  suppressSelectionChange = true
+  try {
+    tableRef.value?.clearSelection()
+    crossIds.value = []
+    selectedRowMap.clear()
+  } finally {
+    nextTick(() => { suppressSelectionChange = false })
+  }
+}
+
+/** 列表刷新后按跨页集合回显当前页勾选态 */
+function restoreSelection() {
+  if (!crossIds.value.length) return
+  suppressSelectionChange = true
+  try {
+    projectList.value.forEach(row => {
+      if (crossIds.value.includes(row.id)) tableRef.value?.toggleRowSelection(row, true)
+    })
+  } finally {
+    nextTick(() => { suppressSelectionChange = false })
+  }
+}
+
+/** 提示条「清空」：与 clearSelection 等价，单独暴露给模板语义更清楚 */
+function clearCrossSelection() {
+  clearSelection()
 }
 
 // ==================== 指令性任务（项目性质 / 委托单位规则） ====================
@@ -1685,32 +1877,43 @@ function handleAutoMatchChange(val) {
   }).catch(() => { mandateAutoMatch.value = !val }).finally(() => { mandateAutoLoading.value = false })
 }
 
-/** 批量设置项目性质（勾选行） */
+/** 组装「按筛选条件批量操作」所需参数：与列表查询同口径，剔除分页 */
+function buildFilterPayload() {
+  const p = { ...queryParams.value }
+  delete p.pageNum
+  delete p.pageSize
+  proxy.addDateRange(p, dateRange.value)
+  return p
+}
+
+/**
+ * 批量设置项目性质。
+ * 两种模式：
+ *   1) 普通跨页勾选 → 下发 ids（集合里可能含其它页的行）
+ *   2) 全选模式（选择全部筛选结果）→ 下发 mode='filter' + 当前筛选条件，由后端按同一口径重查 id
+ */
 function handleSetNature(nature) {
-  if (!ids.value.length) return
+  const isAll = selectAllMode.value
+  const count = isAll ? (total.value || 0) : ids.value.length
+  if (count <= 0) return
+  const scopeText = isAll ? '当前筛选结果全部 ' : '选中的 '
   const isMandate = nature === 'mandate'
   const tip = isMandate
-    ? '确认将选中的 ' + ids.value.length + ' 个项目设为「指令性任务」？\n\n其外部产值将不再计入应收账款与全量外部产值，改道到「指令性任务」独立指标；内部产值照常计算。'
-    : '确认取消选中的 ' + ids.value.length + ' 个项目的「指令性任务」标记？\n\n取消后其外部产值将重新计入应收账款与全量外部产值。'
+    ? '确认将' + scopeText + count + ' 个项目设为「指令性任务」？\n\n其外部产值将不再计入应收账款与全量外部产值，改道到「指令性任务」独立指标；内部产值照常计算。'
+    : '确认取消' + scopeText + count + ' 个项目的「指令性任务」标记？\n\n取消后其外部产值将重新计入应收账款与全量外部产值。'
+  const payload = isAll
+    ? { mode: 'filter', nature, filter: buildFilterPayload() }
+    : { mode: 'ids', nature, ids: ids.value }
   proxy.$modal.confirm(tip).then(() => {
-    return setProjectNature({ ids: ids.value, nature })
+    return setProjectNature(payload)
   }).then(res => {
     proxy.$modal.msgSuccess(res.msg || '操作成功')
+    selectAllMode.value = false
+    clearSelection()
     getList()
   }).catch(() => {})
 }
 
-/** 全选切换 */
-function handleCheckAll(checked) {
-  projectList.value.forEach(row => {
-    tableRef.value?.toggleRowSelection(row, checked)
-  })
-}
-
-/** 单行选中切换 */
-function toggleRow(row) {
-  tableRef.value?.toggleRowSelection(row)
-}
 
 /** 新增按钮操作 */
 function handleAdd() {
@@ -2038,12 +2241,14 @@ function refreshListStayOnRow(id) {
 /** 删除按钮操作 */
 function handleDelete(row) {
   const idsToDelete = row.id ? [row.id] : ids.value
-  const name = row.id ? row.projectName : "所选项目"
+  const name = row.id ? row.projectName : ("所选的 " + idsToDelete.length + " 个项目")
   proxy.$modal.confirm('是否确认删除"' + name + '"?').then(function() {
     // 全屏遮罩锁页，防止删除过程中重复点击/操作
     proxy.$modal.loading("正在删除，请稍候...")
     delProject(idsToDelete.join(",")).then(() => {
       proxy.$modal.closeLoading()
+      // 批量删除后清空跨页勾选：集合里的行已不存在，保留会导致下一次误删
+      if (!row.id) clearSelection()
       getList()
       proxy.$modal.msgSuccess("删除成功")
     }).catch(() => {
@@ -2052,11 +2257,129 @@ function handleDelete(row) {
   }).catch(() => {})
 }
 
-/** 导出按钮操作 */
-function handleExport() {
-  proxy.download('/project/project/export', {
-    ...queryParams.value
-  }, `project_${new Date().getTime()}.xlsx`)
+// ==================== 导出（可选范围 + 可选字段） ====================
+/** 后端单次导出行数上限（与 ProjProjectServiceImpl.EXPORT_MAX_ROWS 保持一致） */
+const EXPORT_MAX_ROWS = 50000
+const exportOpen = ref(false)
+const exportLoading = ref(false)
+/** 导出范围：filter=全部筛选结果 / selected=仅已勾选的行 */
+const exportScope = ref('filter')
+/** 已选字段 key（有序，决定导出列顺序） */
+const exportFields = ref([])
+const exportDragIdx = ref(-1)
+const exportOverIdx = ref(-1)
+
+/** 可选字段清单：严格按后端列元数据顺序（接口不可用时用兜底清单顺序） */
+const exportColumnList = computed(() => {
+  const list = Object.values(columns.value || {})
+  return list.length ? list : FALLBACK_COLUMNS.map(c => ({ ...c }))
+})
+const exportFieldSet = computed(() => {
+  const s = {}
+  exportFields.value.forEach(k => { s[k] = true })
+  return s
+})
+const exportAllChecked = computed(() => {
+  return exportColumnList.value.length > 0 && exportFields.value.length === exportColumnList.value.length
+})
+const exportSomeChecked = computed(() => exportFields.value.length > 0 && !exportAllChecked.value)
+
+function exportLabelOf(key) {
+  const c = exportColumnList.value.find(x => x.key === key)
+  return c ? c.label : key
+}
+
+/** 打开导出弹窗：默认字段 = 当前表格可见列，与界面所见保持一致 */
+function openExportDialog() {
+  // 已勾选记录时默认导出勾选的（跨页勾选同样计数），否则导出全部筛选结果
+  exportScope.value = ids.value.length ? 'selected' : 'filter'
+  exportFields.value = exportColumnList.value.filter(c => c.visible).map(c => c.key)
+  exportDragIdx.value = -1
+  exportOverIdx.value = -1
+  exportOpen.value = true
+}
+
+/** 左栏勾选/取消：新增的字段追加到末尾，顺序在右栏调整 */
+function toggleExportField(col) {
+  const i = exportFields.value.indexOf(col.key)
+  if (i >= 0) exportFields.value.splice(i, 1)
+  else exportFields.value.push(col.key)
+}
+function toggleExportAll(val) {
+  exportFields.value = val ? exportColumnList.value.map(c => c.key) : []
+}
+function removeExportField(key) {
+  const i = exportFields.value.indexOf(key)
+  if (i >= 0) exportFields.value.splice(i, 1)
+}
+function moveExportField(idx, delta) {
+  const to = idx + delta
+  if (to < 0 || to >= exportFields.value.length) return
+  const arr = exportFields.value.slice()
+  const [item] = arr.splice(idx, 1)
+  arr.splice(to, 0, item)
+  exportFields.value = arr
+}
+function exportDragStart(idx) { exportDragIdx.value = idx }
+function exportDrop(idx) {
+  const from = exportDragIdx.value
+  exportDragIdx.value = -1
+  exportOverIdx.value = -1
+  if (from < 0 || from === idx) return
+  const arr = exportFields.value.slice()
+  const [item] = arr.splice(from, 1)
+  arr.splice(idx, 0, item)
+  exportFields.value = arr
+}
+function resetExportFields() {
+  exportFields.value = exportColumnList.value.filter(c => c.visible).map(c => c.key)
+}
+
+/** 提交导出：剔除分页参数；与列表共用同一套筛选条件（含 addDateRange 下推） */
+function submitExport() {
+  if (!exportFields.value.length) {
+    proxy.$modal.msgWarning('请至少选择一个导出字段')
+    return
+  }
+  const params = { ...queryParams.value }
+  delete params.pageNum
+  delete params.pageSize
+  proxy.addDateRange(params, dateRange.value)
+  params.fields = exportFields.value.join(',')
+  params.scope = exportScope.value
+  if (exportScope.value === 'selected') params.ids = ids.value.join(',')
+  exportLoading.value = true
+  exportProject(params).then(res => {
+    const blob = res.data
+    if (blob && blob.type && blob.type.includes('application/json')) {
+      return blob.text().then(t => {
+        try {
+          const o = JSON.parse(t)
+          proxy.$modal.msgError(o.msg || '导出失败')
+        } catch (e) { proxy.$modal.msgError('导出失败') }
+      })
+    }
+    saveAs(new Blob([blob]), parseExportFileName(res, '项目列表_' + exportFileStamp() + '.xlsx'))
+    exportOpen.value = false
+  }).catch(() => {}).finally(() => { exportLoading.value = false })
+}
+
+/** 导出文件名时间戳：yyyyMMddHHmmss（与后端命名格式一致） */
+function exportFileStamp() {
+  const d = new Date()
+  const p = n => String(n).padStart(2, '0')
+  return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds())
+}
+
+/** 优先用后端 Content-Disposition 里的文件名，解析失败回退 */
+function parseExportFileName(res, fallback) {
+  const cd = (res && res.headers && (res.headers['content-disposition'] || res.headers['Content-Disposition'])) || ''
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  if (m) {
+    try { return decodeURIComponent(m[1].replace(/\+/g, '%20')) } catch (e) { /* ignore */ }
+  }
+  const m2 = cd.match(/filename="?([^";]+)"?/i)
+  return m2 ? m2[1] : fallback
 }
 
 // ===== 首页驾驶舱 / 下钻弹窗 预置筛选 =====
@@ -2149,6 +2472,110 @@ if (drillQuery.id) {
 </script>
 
 <style scoped>
+/* ---- 导出弹窗 ---- */
+.export-tip {
+   font-size: 12px;
+   color: #909399;
+   line-height: 1.6;
+   margin-bottom: 10px;
+}
+.export-panes {
+   display: flex;
+   gap: 12px;
+}
+.export-pane {
+   flex: 1;
+   border: 1px solid #ebeef5;
+   border-radius: 6px;
+   overflow: hidden;
+}
+.export-pane-head {
+   padding: 6px 10px;
+   background: #f5f7fa;
+   border-bottom: 1px solid #ebeef5;
+   font-size: 13px;
+   color: #303133;
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+}
+.export-pane-body {
+   height: 320px;
+   overflow-y: auto;
+   padding: 4px 0;
+}
+.export-field {
+   display: flex;
+   align-items: center;
+   gap: 2px;
+   padding: 2px 10px;
+   cursor: pointer;
+}
+.export-field:hover { background: #f5f7fa; }
+.export-field-label { font-size: 13px; color: #606266; }
+.export-field-tag {
+   font-size: 11px;
+   color: #909399;
+   border: 1px solid #dcdfe6;
+   border-radius: 8px;
+   padding: 0 5px;
+   margin-left: 4px;
+}
+.export-sel {
+   display: flex;
+   align-items: center;
+   gap: 4px;
+   padding: 3px 8px;
+   border: 1px dashed transparent;
+}
+.export-sel.is-dragging { opacity: 0.4; }
+.export-sel.is-over { border-top: 2px solid #409eff; }
+.export-sel-idx {
+   width: 18px;
+   text-align: right;
+   font-size: 12px;
+   color: #c0c4cc;
+}
+.export-sel-label {
+   flex: 1;
+   font-size: 13px;
+   color: #303133;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+.export-sel-ops { display: flex; align-items: center; flex-shrink: 0; }
+.export-empty {
+   padding: 20px;
+   text-align: center;
+   font-size: 13px;
+   color: #c0c4cc;
+}
+/* ---- 跨页勾选提示条 ---- */
+.cross-select-bar {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   margin-bottom: 8px;
+   padding: 5px 12px;
+   border: 1px solid #b3d8ff;
+   background: #ecf5ff;
+   border-radius: 4px;
+   font-size: 13px;
+   color: #409eff;
+}
+.cross-select-bar.is-all {
+   border-color: #f5dab1;
+   background: #fdf6ec;
+   color: #e6a23c;
+}
+.cross-select-bar b { font-size: 14px; margin: 0 2px; }
+.drag-handle {
+   cursor: move;
+   color: #c0c4cc;
+   letter-spacing: -2px;
+   user-select: none;
+}
 /* 搜索工具栏 */
 .search-toolbar {
   display: flex;
@@ -2338,7 +2765,8 @@ if (drillQuery.id) {
 /* 操作栏紧凑化（保留兼容） */
 .compact-ops {
   margin-top: 5px !important;
-  margin-bottom: 0 !important;
+  /* 与下方表格/跨页提示条留出间距：RuoYi 的 mb8(8px) 太窄，这里统一用 12px 覆盖 */
+  margin-bottom: 5px !important;
 }
 
 /* 列表总时长"计算中..." */

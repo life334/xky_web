@@ -92,10 +92,94 @@
             <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple" @click="handleDelete" v-hasPermi="['project:contract:remove']">删除</el-button>
          </el-col>
          <el-col :span="1.5" style="margin-left:auto;display:flex;gap:8px;align-items:center">
-            <el-button v-if="false" type="warning" plain icon="Download" size="small" @click="handleExport" v-hasPermi="['project:contract:export']">导出</el-button>
+            <el-button type="warning" plain icon="Download" size="small" @click="openExportDialog" v-hasPermi="['project:contract:export']">导出</el-button>
             <right-toolbar size="small" v-model:showSearch="showSearch" :columns="columns" storage-key="contract-list-columns" @queryTable="getList" />
          </el-col>
       </el-row>
+
+      <!-- 导出弹窗：可选字段（导出全部筛选结果） -->
+      <el-dialog
+         v-model="exportOpen"
+         title="导出合同数据"
+         append-to-body
+         :close-on-click-modal="false"
+         class="scrollbar"
+         width="760px"
+      >
+         <el-form label-width="76px" size="small">
+            <el-form-item label="导出范围">
+               <el-radio-group v-model="exportScope">
+                  <el-radio value="filter">全部筛选结果（{{ total || 0 }} 条）</el-radio>
+                  <el-radio value="selected" :disabled="!ids.length">仅已勾选的行（{{ ids.length }} 条）</el-radio>
+               </el-radio-group>
+            </el-form-item>
+         </el-form>
+
+         <div class="export-tip">
+            左侧勾选要导出的字段，右侧可拖拽调整列顺序；单次最多导出 {{ EXPORT_MAX_ROWS }} 条，超出请先用筛选条件缩小范围。
+         </div>
+
+         <div class="export-panes">
+            <!-- 左：可选字段 -->
+            <div class="export-pane">
+               <div class="export-pane-head">
+                  <el-checkbox
+                     :model-value="exportAllChecked"
+                     :indeterminate="exportSomeChecked"
+                     @change="toggleExportAll"
+                  >全部字段（{{ exportColumnList.length }}）</el-checkbox>
+               </div>
+               <div class="export-pane-body">
+                  <div v-for="c in exportColumnList" :key="c.key" class="export-field" @click="toggleExportField(c)">
+                     <el-checkbox :model-value="!!exportFieldSet[c.key]" @click.stop @change="toggleExportField(c)" />
+                     <span class="export-field-label">{{ c.label }}</span>
+                     <span v-if="c.group === 'system'" class="export-field-tag">系统</span>
+                     <span v-else-if="c.group === 'dynamic'" class="export-field-tag">自定义</span>
+                  </div>
+               </div>
+            </div>
+
+            <!-- 右：已选字段（拖拽排序） -->
+            <div class="export-pane">
+               <div class="export-pane-head">
+                  <span>已选字段（{{ exportFields.length }}）· 拖拽排序</span>
+                  <el-button link type="primary" size="small" @click="resetExportFields">恢复默认</el-button>
+               </div>
+               <div class="export-pane-body">
+                  <div
+                     v-for="(key, idx) in exportFields"
+                     :key="key"
+                     :class="['export-sel', { 'is-dragging': exportDragIdx === idx, 'is-over': exportOverIdx === idx && exportDragIdx !== idx }]"
+                     @dragover.prevent="exportOverIdx = idx"
+                     @dragleave="exportOverIdx = -1"
+                     @drop.prevent="exportDrop(idx)"
+                     @dragend="exportDragIdx = -1; exportOverIdx = -1"
+                  >
+                     <span class="drag-handle" title="拖拽调整顺序" draggable="true" @dragstart="exportDragStart(idx)"></span>
+                     <span class="export-sel-idx">{{ idx + 1 }}</span>
+                     <span class="export-sel-label">{{ exportLabelOf(key) }}</span>
+                     <span class="export-sel-ops">
+                        <el-button link size="small" :disabled="idx === 0" @click="moveExportField(idx, -1)" title="上移">↑</el-button>
+                        <el-button link size="small" :disabled="idx === exportFields.length - 1" @click="moveExportField(idx, 1)" title="下移">↓</el-button>
+                        <el-button link type="danger" size="small" @click="removeExportField(key)" title="移除">✕</el-button>
+                     </span>
+                  </div>
+                  <div v-if="!exportFields.length" class="export-empty">请至少选择一个字段</div>
+               </div>
+            </div>
+         </div>
+
+         <template #footer>
+            <el-button size="small" @click="exportOpen = false">取 消</el-button>
+            <el-button
+               type="primary"
+               size="small"
+               :loading="exportLoading"
+               :disabled="!exportFields.length"
+               @click="submitExport"
+            >确定导出</el-button>
+         </template>
+      </el-dialog>
 
       <!-- 保存方案弹窗 -->
       <el-dialog v-model="saveSchemeVisible" title="保存筛选方案" width="400px" append-to-body>
@@ -821,7 +905,7 @@
 </template>
 
 <script setup name="Contract">
-import { listContract, getContract, addContract, updateContract, delContract, changeContractStatus, getContractProjects, getContractStatusCounts, getContractColumns } from "@/api/project/contract"
+import { listContract, getContract, addContract, updateContract, delContract, changeContractStatus, getContractProjects, getContractStatusCounts, getContractColumns, exportContract } from "@/api/project/contract"
 import { listContractPrice, saveContractPrice } from "@/api/project/contractPrice"
 import { getConfigKey } from "@/api/system/config"
 import { getDistinctValues } from "@/api/project/project"
@@ -831,6 +915,7 @@ import { UploadFilled, Folder, Document, Paperclip, Search, Loading } from '@ele
 import request from '@/utils/request'
 import cache from '@/plugins/cache'
 import { paymentTypeText, attachmentCategoryText, settledFlagText } from '@/utils/projStatus'
+import { saveAs } from 'file-saver'
 import { useRoute } from "vue-router"
 import { useNotifyLanding } from "@/utils/useNotifyLanding"
 
@@ -888,6 +973,132 @@ const FALLBACK_COLUMNS = [
   { key: 'updateBy', label: '更新人', type: 'text', group: 'system', prop: 'updateBy', defaultVisible: false },
   { key: 'updateTime', label: '更新时间', type: 'date', group: 'system', prop: 'updateTime', defaultVisible: false }
 ]
+
+// ==================== 导出（全部筛选结果 + 可选字段） ====================
+/** 后端单次导出行数上限（与 ProjContractServiceImpl.EXPORT_MAX_ROWS 保持一致） */
+const EXPORT_MAX_ROWS = 50000
+/** 不可导出的渲染型列：列表页上是「附件预览/下载按钮」与「付款进度条」，导出成文本无意义 */
+const NON_EXPORTABLE_KEYS = ['attachment', 'paymentProgress']
+const exportOpen = ref(false)
+const exportLoading = ref(false)
+/** 导出范围：filter=全部筛选结果 / selected=仅已勾选的行 */
+const exportScope = ref('filter')
+/** 已选字段 key（有序，决定导出列顺序） */
+const exportFields = ref([])
+const exportDragIdx = ref(-1)
+const exportOverIdx = ref(-1)
+
+/** 可选字段清单：按后端列元数据顺序，剔除不可导出的渲染型列（接口不可用时用兜底清单） */
+const exportColumnList = computed(() => {
+  const list = Object.values(columns.value || {})
+  const base = list.length ? list : FALLBACK_COLUMNS
+  return base.filter(c => !NON_EXPORTABLE_KEYS.includes(c.key))
+})
+const exportFieldSet = computed(() => {
+  const s = {}
+  exportFields.value.forEach(k => { s[k] = true })
+  return s
+})
+const exportAllChecked = computed(() => {
+  return exportColumnList.value.length > 0 && exportFields.value.length === exportColumnList.value.length
+})
+const exportSomeChecked = computed(() => exportFields.value.length > 0 && !exportAllChecked.value)
+
+function exportLabelOf(key) {
+  const c = exportColumnList.value.find(x => x.key === key)
+  return c ? c.label : key
+}
+
+/** 打开导出弹窗：默认字段 = 当前表格可见列（剔除不可导出列），与界面所见保持一致 */
+function openExportDialog() {
+  // 已勾选记录时默认导出勾选的，否则导出全部筛选结果
+  exportScope.value = ids.value.length ? 'selected' : 'filter'
+  exportFields.value = exportColumnList.value.filter(c => c.visible).map(c => c.key)
+  exportDragIdx.value = -1
+  exportOverIdx.value = -1
+  exportOpen.value = true
+}
+
+/** 左栏勾选/取消：新增的字段追加到末尾，顺序在右栏调整 */
+function toggleExportField(col) {
+  const i = exportFields.value.indexOf(col.key)
+  if (i >= 0) exportFields.value.splice(i, 1)
+  else exportFields.value.push(col.key)
+}
+function toggleExportAll(val) {
+  exportFields.value = val ? exportColumnList.value.map(c => c.key) : []
+}
+function removeExportField(key) {
+  const i = exportFields.value.indexOf(key)
+  if (i >= 0) exportFields.value.splice(i, 1)
+}
+function moveExportField(idx, delta) {
+  const to = idx + delta
+  if (to < 0 || to >= exportFields.value.length) return
+  const arr = exportFields.value.slice()
+  const [item] = arr.splice(idx, 1)
+  arr.splice(to, 0, item)
+  exportFields.value = arr
+}
+function exportDragStart(idx) { exportDragIdx.value = idx }
+function exportDrop(idx) {
+  const from = exportDragIdx.value
+  exportDragIdx.value = -1
+  exportOverIdx.value = -1
+  if (from < 0 || from === idx) return
+  const arr = exportFields.value.slice()
+  const [item] = arr.splice(from, 1)
+  arr.splice(idx, 0, item)
+  exportFields.value = arr
+}
+function resetExportFields() {
+  exportFields.value = exportColumnList.value.filter(c => c.visible).map(c => c.key)
+}
+
+/** 提交导出：剔除分页参数，与列表共用同一套筛选条件 */
+function submitExport() {
+  if (!exportFields.value.length) {
+    proxy.$modal.msgWarning('请至少选择一个导出字段')
+    return
+  }
+  const params = { ...queryParams.value }
+  delete params.pageNum
+  delete params.pageSize
+  params.fields = exportFields.value.join(',')
+  params.scope = exportScope.value
+  if (exportScope.value === 'selected') params.ids = ids.value.join(',')
+  exportLoading.value = true
+  exportContract(params).then(res => {
+    const blob = res.data
+    if (blob && blob.type && blob.type.includes('application/json')) {
+      return blob.text().then(t => {
+        try {
+          const o = JSON.parse(t)
+          proxy.$modal.msgError(o.msg || '导出失败')
+        } catch (e) { proxy.$modal.msgError('导出失败') }
+      })
+    }
+    saveAs(new Blob([blob]), parseExportFileName(res, '合同列表_' + exportFileStamp() + '.xlsx'))
+    exportOpen.value = false
+  }).catch(() => {}).finally(() => { exportLoading.value = false })
+}
+
+/** 导出文件名时间戳：yyyyMMddHHmmss（与后端命名格式一致） */
+function exportFileStamp() {
+  const d = new Date()
+  const p = n => String(n).padStart(2, '0')
+  return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds())
+}
+
+/** 优先用后端 Content-Disposition 里的文件名，解析失败回退 */
+function parseExportFileName(res, fallback) {
+  try {
+    const cd = (res.headers && (res.headers['content-disposition'] || res.headers['Content-Disposition'])) || ''
+    const m = /filename\*=UTF-8''([^;]+)/i.exec(cd) || /filename="?([^";]+)"?/i.exec(cd)
+    if (m && m[1]) return decodeURIComponent(m[1])
+  } catch (e) { /* 解析失败用回退名 */ }
+  return fallback
+}
 
 /** 把列元数据数组构建为 columns 对象（合并 localStorage 偏好） */
 function buildColumns(list) {
@@ -1754,13 +1965,6 @@ function handleShowProjects(row) {
   })
 }
 
-/** 导出 */
-function handleExport() {
-  proxy.download('/project/contract/export', {
-    ...queryParams.value
-  }, `contract_${new Date().getTime()}.xlsx`)
-}
-
 /** 金额格式化（unit: 'wan'=万元 | 'yuan'=元） */
 function formatAmount(val, unit = 'wan') {
   if (val == null) return ''
@@ -2409,6 +2613,70 @@ getList().then(() => {
   padding-right: 8px;
   box-sizing: border-box;
 }
+
+/* ---- 导出弹窗 ---- */
+.export-tip {
+   font-size: 12px;
+   color: #909399;
+   line-height: 1.6;
+   margin-bottom: 10px;
+}
+.export-panes { display: flex; gap: 12px; }
+.export-pane {
+   flex: 1;
+   border: 1px solid #ebeef5;
+   border-radius: 6px;
+   overflow: hidden;
+}
+.export-pane-head {
+   padding: 6px 10px;
+   background: #f5f7fa;
+   border-bottom: 1px solid #ebeef5;
+   font-size: 13px;
+   color: #303133;
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+}
+.export-pane-body { height: 320px; overflow-y: auto; padding: 4px 0; }
+.export-field {
+   display: flex;
+   align-items: center;
+   gap: 2px;
+   padding: 2px 10px;
+   cursor: pointer;
+}
+.export-field:hover { background: #f5f7fa; }
+.export-field-label { font-size: 13px; color: #606266; }
+.export-field-tag {
+   font-size: 11px;
+   color: #909399;
+   border: 1px solid #dcdfe6;
+   border-radius: 8px;
+   padding: 0 5px;
+   margin-left: 4px;
+}
+.export-sel {
+   display: flex;
+   align-items: center;
+   gap: 4px;
+   padding: 3px 8px;
+   border: 1px dashed transparent;
+}
+.export-sel.is-dragging { opacity: 0.4; }
+.export-sel.is-over { border-top: 2px solid #409eff; }
+.export-sel-idx { width: 18px; text-align: right; font-size: 12px; color: #c0c4cc; }
+.export-sel-label {
+   flex: 1;
+   font-size: 13px;
+   color: #303133;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+.export-sel-ops { display: flex; align-items: center; flex-shrink: 0; }
+.export-empty { padding: 20px; text-align: center; font-size: 13px; color: #c0c4cc; }
+
 </style>
 
 <style>
