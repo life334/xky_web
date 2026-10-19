@@ -59,7 +59,6 @@
     </div>
 
     <template #footer>
-      <el-button v-if="openLabel" plain @click="openInList">{{ openLabel }}</el-button>
       <el-button type="primary" @click="localVisible = false">关闭</el-button>
     </template>
   </el-dialog>
@@ -69,7 +68,6 @@
 
 <script setup>
 import { ref, computed, watch } from "vue"
-import { useRouter } from "vue-router"
 import { listProject } from "@/api/project/project"
 import { listContract } from "@/api/project/contract"
 import { collectionReceivedDetail } from "@/api/project/collection"
@@ -100,7 +98,6 @@ const props = defineProps({
 const emit = defineEmits(["update:visible"])
 
 const { proj_project_status, proj_payment_type } = useDict("proj_project_status", "proj_payment_type")
-const router = useRouter()
 
 const localVisible = computed({
   get: () => props.visible,
@@ -180,11 +177,8 @@ const emptyText = computed(() => ({
 
 const footHint = computed(() => (CLICKABLE.includes(props.type) ? "双击任意行查看项目详情" : ""))
 
-const openLabel = computed(() => ({
-  project: "在项目列表中打开",
-  contract: "在合同列表中打开",
-  payment: "在回款管理中打开"
-}[props.type] || ""))
+// ⚠️ 原「在 XX 列表中打开」按钮已下线：跳列表页会带上弹窗里的隐藏筛选条件，
+//    用户在列表页看不到这些条件、再叠加新条件查询时结果不符预期。明细只在弹窗内查看。
 
 // ===== 数据 =====
 const loading = ref(false)
@@ -233,37 +227,6 @@ function onRowDblClick(row) {
 
 function rowClass() {
   return CLICKABLE.includes(props.type) ? "drill-row-clickable" : ""
-}
-
-/** 在对应模块中打开（携带同口径筛选） */
-function openInList() {
-  const q = { ...props.query }
-  delete q.pageNum
-  delete q.pageSize
-  delete q.outputOrder
-  localVisible.value = false
-  if (props.type === "project") {
-    if (q.projectCategoryIds) {
-      q.categoryIds = q.projectCategoryIds
-      delete q.projectCategoryIds
-    }
-    router.push({ path: "/project/list", query: q })
-  } else if (props.type === "contract") {
-    if (q.signDateBegin) q.signDateBegin = q.signDateBegin
-    router.push({ path: "/contract/list", query: q })
-  } else if (props.type === "payment") {
-    router.push({
-      path: "/project/collection",
-      query: {
-        tab: "summary",
-        beginDate: q.begin,
-        endDate: q.end,
-        clientUnit: q.clientUnit,
-        leaderId: q.leaderId,
-        projectCategoryId: q.projectCategoryId
-      }
-    })
-  }
 }
 
 function dateOnly(v) {

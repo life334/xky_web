@@ -1140,13 +1140,8 @@ function dateWindowParams(dateField) {
   return { newDateBegin: w.beginDate, newDateEnd: w.endDate }
 }
 
-/** 下钻项目列表页（携带当前周期 + 轻筛选）；extra.dateField 指定日期口径 */
-function drillProjects(extra) {
-  const e = extra || {}
-  const q = dateWindowParams(e.dateField)
-  Object.keys(e).forEach(k => { if (k !== "dateField") q[k] = e[k] })
-  router.push({ path: "/project/list", query: withGlobalFilters(q) })
-}
+// ⚠️ 原「下钻项目列表页」入口已下线：带条件跳 /project/list 会把隐藏筛选带进列表页，
+//    用户看不到、再叠加条件查询时结果不符预期。统计明细一律在弹窗内查看。
 
 /** 下钻回款管理页「到账统计」tab */
 function goCollection() {

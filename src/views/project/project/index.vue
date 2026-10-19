@@ -2382,32 +2382,16 @@ function parseExportFileName(res, fallback) {
   return m2 ? m2[1] : fallback
 }
 
-// ===== 首页驾驶舱 / 下钻弹窗 预置筛选 =====
-// 支持两类传参：
-//   1) 直接键：newDateBegin/newDateEnd（新增口径）、closeDateBegin/closeDateEnd（办结口径）、
-//      assignDateBegin/assignDateEnd（安排日期）、projectCategoryId、categoryIds（多选逗号串）、
-//      leaderId、clientUnit、contractStatus、overdue、projectNature、dataSource、status
-//   2) 旧版：beginDate/endDate + dateField（assign|close|new）
+// ===== 路由入参 =====
+// ⚠️ 首页统计下钻已全部改为弹窗明细，本页不再接收任何下钻筛选条件
+//    （原 leaderId / categoryIds / categoryIncludeNull / clientUnit / overdue / 项目性质 / 来源 /
+//     三个日期窗 等带条件跳转已下线）——否则用户看不到这些隐藏条件，在高级筛选里再加条件查询时
+//     结果是「隐藏条件 ∧ 新条件」的叠加，与预期不符。
+// 仅保留两类定位参数：
+//   1) ?id=xxx           —— 首页 TOP10 / 风险清单点进来，渲染后打开该项目的修改弹窗
+//   2) ?projectCode=xxx  —— 通知中心落地（见下方 useNotifyLanding）
 const route = useRoute()
 const drillQuery = route.query || {}
-if (drillQuery.leaderId) queryParams.value.leaderId = Number(drillQuery.leaderId)
-// 下钻类别：单一小类回填单选控件（界面可见）；多小类（如「其它」桶）走隐藏多选 IN
-// 「其它」桶下钻带 categoryIncludeNull ⇒ 必须走多选 IN（单选 projectCategoryId 无「未分类」分支）
-const drillIncludeNull = drillQuery.categoryIncludeNull === 'true' || drillQuery.categoryIncludeNull === true
-if (drillQuery.categoryIds) {
-  const ids = String(drillQuery.categoryIds).split(',').map(s => s.trim()).filter(Boolean)
-  if (ids.length === 1 && !drillIncludeNull) queryParams.value.projectCategoryId = Number(ids[0])
-  else if (ids.length >= 1) queryParams.value.projectCategoryIds = ids.join(',')
-}
-if (drillIncludeNull) queryParams.value.categoryIncludeNull = 'true'
-if (drillQuery.projectCategoryId) queryParams.value.projectCategoryId = Number(drillQuery.projectCategoryId)
-else if (drillQuery.categoryId) queryParams.value.projectCategoryId = Number(drillQuery.categoryId)
-if (drillQuery.clientUnit) queryParams.value.clientUnit = drillQuery.clientUnit
-if (drillQuery.contractStatus) queryParams.value.contractStatus = String(drillQuery.contractStatus)
-if (drillQuery.overdue) queryParams.value.overdue = String(drillQuery.overdue)
-if (drillQuery.projectNature) queryParams.value.projectNature = String(drillQuery.projectNature)
-if (drillQuery.dataSource) queryParams.value.dataSource = String(drillQuery.dataSource)
-if (drillQuery.status) queryParams.value.status = String(drillQuery.status)
 // 通知中心跳转定位：?projectCode=xxx&from=notify → 先设好落地参数（紧随其后的唯一一次 getList 查询）
 const notify = useNotifyLanding({
   apply: (q) => {
@@ -2420,39 +2404,6 @@ const notify = useNotifyLanding({
   clearKeys: ['projectCode'],
   onReenter: () => handleQuery()
 })
-
-// 新增口径（来源分流）
-if (drillQuery.newDateBegin && drillQuery.newDateEnd) {
-  newDateRange.value = [drillQuery.newDateBegin, drillQuery.newDateEnd]
-  onNewDateChange(newDateRange.value)
-}
-// 办结口径（直接键）
-if (drillQuery.closeDateBegin && drillQuery.closeDateEnd) {
-  closeDateRange.value = [drillQuery.closeDateBegin, drillQuery.closeDateEnd]
-  onCloseDateChange(closeDateRange.value)
-}
-// 安排日期（直接键）
-if (drillQuery.assignDateBegin && drillQuery.assignDateEnd) {
-  assignDateRange.value = [drillQuery.assignDateBegin, drillQuery.assignDateEnd]
-  onAssignDateChange(assignDateRange.value)
-}
-// 旧版：beginDate/endDate + dateField（无直接键时才生效）
-const hasDirectDate = drillQuery.newDateBegin || drillQuery.closeDateBegin || drillQuery.assignDateBegin
-if (drillQuery.beginDate && drillQuery.endDate && !hasDirectDate) {
-  if (drillQuery.dateField === 'close') {
-    closeDateRange.value = [drillQuery.beginDate, drillQuery.endDate]
-    onCloseDateChange(closeDateRange.value)
-  } else if (drillQuery.dateField === 'new') {
-    newDateRange.value = [drillQuery.beginDate, drillQuery.endDate]
-    onNewDateChange(newDateRange.value)
-  } else {
-    assignDateRange.value = [drillQuery.beginDate, drillQuery.endDate]
-    onAssignDateChange(assignDateRange.value)
-  }
-}
-if (Object.keys(drillQuery).some(k => ['leaderId', 'categoryId', 'projectCategoryId', 'categoryIds', 'categoryIncludeNull', 'clientUnit', 'contractStatus', 'overdue', 'beginDate', 'endDate', 'projectNature', 'dataSource', 'newDateBegin', 'closeDateBegin', 'assignDateBegin'].includes(k))) {
-  advancedVisible.value = true
-}
 
 const notifyLanded = notify.applyNotifyLanding()
 getList()

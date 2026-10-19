@@ -58,6 +58,10 @@ export const constantRoutes = [
     hidden: true
   },
   {
+    // ⚠️ 这是登录后的默认落地路径（redirect 在路由守卫之前完成）。
+    // 由于它在 constantRoutes 中，不受菜单授权约束，权限门禁由 permission.js 的
+    // ROUTE_PERMS 统一处理：无 'project:dashboard:view' 权限的角色会被回落到
+    // 其第一个有权限的菜单，不会进入首页驾驶舱。
     path: '',
     component: Layout,
     redirect: '/index',
@@ -67,7 +71,7 @@ export const constantRoutes = [
         path: '/index',
         component: () => import('@/views/index'),
         name: 'Index',
-        meta: { title: '首页', icon: 'dashboard', noTagsView: true}
+        meta: { title: '首页', icon: 'dashboard', noTagsView: true }
       }
     ]
   },

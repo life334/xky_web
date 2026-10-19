@@ -11,6 +11,8 @@
 
 <script setup>
 import usePermissionStore from '@/store/modules/permission'
+import auth from '@/plugins/auth'
+import { DASHBOARD_PERM } from '@/utils/perm'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,7 +35,8 @@ function getBreadcrumb() {
     matched = route.matched.filter((item) => item.meta && item.meta.title)
   }
   // 判断是否为首页
-  if (!isDashboard(matched[0])) {
+  // 无首页权限时不前置「首页」面包屑：否则点了会被路由门禁弹回，表现为「点了没反应」
+  if (!isDashboard(matched[0]) && auth.hasPermi(DASHBOARD_PERM)) {
     matched = [{ path: "/index", meta: { title: "首页" } }].concat(matched)
   }
   levelList.value = matched.filter(item => item.meta && item.meta.title && item.meta.breadcrumb !== false)
