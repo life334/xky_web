@@ -8,7 +8,8 @@ export function notifySummary() {
   })
 }
 
-// 通知列表（分页）。type: todo | message | alert；onlyOpen: true=仅未完成/未读
+// 通知列表（分页）。type: todo | message
+// status: open=未完成(默认) | done=已完成 | ignored=已忽略 | closed=已被他人认领关闭 | all=全部
 export function notifyList(params) {
   return request({
     url: '/project/notify/list',
@@ -49,5 +50,22 @@ export function notifyIgnore(id, reason) {
     url: '/project/notify/ignore/' + id,
     method: 'put',
     data: { reason }
+  })
+}
+
+// 撤销忽略（回到未完成）
+export function notifyUnignore(id) {
+  return request({
+    url: '/project/notify/unignore/' + id,
+    method: 'put'
+  })
+}
+
+// 登录首屏「今日待处理摘要」：当前全部未完成待办 + 未处理预警（不含消息）
+// 与 notifyIncrement 的区别：不按水位线取增量，而是取全量未完成项
+export function notifyOpen() {
+  return request({
+    url: '/project/notify/open',
+    method: 'get'
   })
 }

@@ -337,7 +337,13 @@
         <span class="risk-badge clickable" @click.stop="openRiskGroup('debt')">欠款 {{ riskCounts.debtCount ?? 0 }}</span>
         <span class="risk-badge clickable" @click.stop="openRiskGroup('overdue')">工期超期 {{ riskCounts.overdueCount ?? 0 }}</span>
         <span class="risk-badge clickable" @click.stop="openRiskGroup('contractMissing')">未关联合同 {{ riskCounts.contractMissingCount ?? 0 }}</span>
-        <span class="risk-badge">待办 {{ riskCounts.alertCount ?? 0 }}</span>
+        <!-- 旧版叫「待办」且取 alertCount = 工期超期数 + 待流转资料数：
+             ① 与登录用户无关却叫"待办"，用户以为是自己的待办；
+             ② overdueCount 被计两次（本行与"工期超期"徽标里的同一批）。
+             现改为只表示资料口径并去掉可点击外观，避免误点。 -->
+        <span class="risk-badge static" title="尚未完成资料登记流转的项目数（全局口径，非个人待办）">
+          待流转资料 {{ riskCounts.pendingMaterialCount ?? 0 }}
+        </span>
       </span>
     </div>
     <el-collapse-transition>
@@ -1143,19 +1149,6 @@ function dateWindowParams(dateField) {
 // ⚠️ 原「下钻项目列表页」入口已下线：带条件跳 /project/list 会把隐藏筛选带进列表页，
 //    用户看不到、再叠加条件查询时结果不符预期。统计明细一律在弹窗内查看。
 
-/** 下钻回款管理页「到账统计」tab */
-function goCollection() {
-  const q = { tab: "summary" }
-  if (dateRange.value && dateRange.value.length === 2) {
-    q.beginDate = dateRange.value[0]
-    q.endDate = dateRange.value[1]
-  }
-  if (filters.clientUnit) q.clientUnit = filters.clientUnit
-  if (filters.leaderId) q.leaderId = filters.leaderId
-  if (filters.categoryId) q.projectCategoryId = filters.categoryId
-  router.push({ path: "/project/collection", query: q })
-}
-
 // ===== 明细弹窗（磁贴 / 饼图 / 效能矩阵 / 类别画像 / 走势 / 风险区 统一改为弹窗显示明细） =====
 const drillVisible = ref(false)
 const drillTitle = ref("明细")
@@ -1634,6 +1627,13 @@ $accent-red: #ff4d4f;
         transition: color 0.15s ease, background 0.15s ease;
 
         &:hover { color: $accent-blue; background: rgba(24, 144, 255, 0.1); }
+      }
+
+      // 纯展示型徽标：与可点击项在视觉上明确区分（此前四枚外观一致，用户点了没反应以为坏了）
+      &.static {
+        cursor: default;
+        color: $text-muted;
+        background: #f7f8fa;
       }
     }
   }

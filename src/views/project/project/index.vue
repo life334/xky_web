@@ -228,7 +228,8 @@
             <template #default="scope">
                <!-- 字典字段：按列 key 选择对应字典（status 之外还有 dataSource 等） -->
                <dict-tag v-if="col.type === 'dict'" :options="dictOptionsFor(col)" :value="scope.row[col.prop]" />
-               <!-- 日期字段 -->
+               <!-- 日期字段：办结时间是 TIMESTAMP，这里按「办结日期」列只展示到日；
+                    完整时分秒在「改办结时间」弹窗里查看与修改 -->
                <span v-else-if="col.type === 'date' && scope.row[col.prop]">{{ parseTime(scope.row[col.prop], '{y}-{m}-{d}') }}</span>
                <!-- 工期要求：X天 -->
                <span v-else-if="col.type === 'duration'"><span v-if="scope.row[col.prop] != null">{{ scope.row[col.prop] }}天</span></span>
@@ -257,11 +258,13 @@
             </template>
          </el-table-column>
 
-         <el-table-column label="操作" align="center" min-width="120" class-name="small-padding fixed-width" fixed="right">
+         <el-table-column label="操作" align="center" min-width="205" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
                <el-button link type="primary" size="small" @click="handleView(scope.row)">详情</el-button>
-               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-if="scope.row.status !== 'closed' || checkRole(['admin'])" v-hasPermi="['project:project:edit']">修改</el-button>
-               <el-button link size="small" type="primary" v-if="scope.row.status !== 'closed'" v-hasPermi="['project:project:complete']" @click="handleComplete(scope.row)">办结</el-button>
+               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-if="(scope.row.status !== 'closed' && scope.row.status !== 'archived') || checkRole(['admin'])" v-hasPermi="['project:project:edit']">修改</el-button>
+               <!-- 已办结/已归档不可再办结（此前只判 closed，归档项目还能点「办结」，一并修掉） -->
+               <el-button link size="small" type="primary" v-if="scope.row.status !== 'closed' && scope.row.status !== 'archived'" v-hasPermi="['project:project:complete']" @click="handleComplete(scope.row)">办结</el-button>
+               <el-button link size="small" type="primary" v-if="canEditCloseTime(scope.row)" @click="openCloseTime(scope.row)">改办结时间</el-button>
             </template>
          </el-table-column>
       </el-table>
@@ -476,6 +479,40 @@
                <el-button type="primary" :disabled="formLoading || submitLoading" :loading="submitLoading" @click="submitForm">确 定</el-button>
                <el-button @click="cancel">取 消</el-button>
             </div>
+         </template>
+      </el-dialog>
+
+      <!-- 修改办结时间：受限操作，唯一入口为操作列「改办结时间」按钮 -->
+      <el-dialog title="修改办结时间" :model-value="closeTimeOpen" @update:model-value="closeTimeOpen = $event" width="420px" append-to-body :close-on-click-modal="false">
+         <el-descriptions :column="1" border size="small" class="close-time-readonly">
+            <el-descriptions-item label="工程编号">{{ closeTimeForm.projectCode }}</el-descriptions-item>
+            <el-descriptions-item label="当前办结时间">
+               <span v-if="closeTimeForm.oldCloseTime" class="close-time-old">{{ closeTimeForm.oldCloseTime }}</span>
+               <span v-else class="close-time-old">未办结</span>
+            </el-descriptions-item>
+         </el-descriptions>
+
+         <div class="close-time-field">
+            <span class="close-time-label"><b style="color:#f56c6c">*</b> 新办结时间</span>
+            <el-date-picker
+               v-model="closeTimeForm.closeTime"
+               type="datetime"
+               format="YYYY-MM-DD HH:mm:ss"
+               value-format="YYYY-MM-DD HH:mm:ss"
+               placeholder="请选择日期时间"
+               :clearable="false"
+               :disabled-date="disableFutureDate"
+               style="width: 210px" />
+            <span v-if="closeTimeDurationHint" class="close-time-hint">总时长将同步为 {{ closeTimeDurationHint }}</span>
+         </div>
+
+         <div class="close-time-alert">
+            办结时间决定<b>产值归属月份、回款应收账期、欠款逾期预警</b>。跨月修改后，此前导出的月报数据将不再与当前数值匹配。
+         </div>
+
+         <template #footer>
+            <el-button type="primary" :loading="closeTimeSubmitting" @click="submitCloseTime">确 定</el-button>
+            <el-button @click="closeTimeOpen = false">取 消</el-button>
          </template>
       </el-dialog>
 
@@ -779,7 +816,7 @@
 </template>
 
 <script setup name="Project">
-import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues, getProjectColumns, getRelatedCandidates, getLeaderOptions, ensureLeader, exportProject } from "@/api/project/project"
+import { listProject, getProject, addProject, updateProject, delProject, completeProject, changeProjectStatus, batchAddProject, getProjectStatusCounts, getDistinctValues, getProjectColumns, getRelatedCandidates, getLeaderOptions, ensureLeader, exportProject, updateProjectCloseTime } from "@/api/project/project"
 import { saveAs } from 'file-saver'
 import { mandateRuleList, mandatePreview, addMandateRule, updateMandateRule, delMandateRule, applyMandateRule, setProjectNature, setMandateAutoMatch } from "@/api/project/mandate"
 import cache from '@/plugins/cache'
@@ -787,10 +824,10 @@ import { categoryTreeselectFull } from "@/api/project/category"
 import { listTask } from "@/api/project/task"
 import { listContract } from "@/api/project/contract"
 import { ArrowRight } from '@element-plus/icons-vue'
-import { checkRole } from "@/utils/permission"
+import { checkRole, checkPermi } from "@/utils/permission"
 import { countWorkdays, batchCountWorkdays } from "@/utils/workday"
 import { withTaskStatusAliases } from "@/utils/projStatus"
-import { nextTick } from "vue"
+import { nextTick, watch } from "vue"
 import { useRoute } from "vue-router"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
 import { useNotifyLanding } from "@/utils/useNotifyLanding"
@@ -2014,6 +2051,101 @@ function handleComplete(row) {
   })
 }
 
+/* ==================== 修改办结时间（受限操作） ==================== */
+
+const closeTimeOpen = ref(false)
+const closeTimeSubmitting = ref(false)
+const closeTimeDurationHint = ref(null)
+const closeTimeForm = ref({ id: null, projectCode: '', oldCloseTime: '', closeTime: '', assignDate: '' })
+
+/** 归一化成 'yyyy-MM-dd HH:mm:ss'：后端可能返回带时区的 ISO 串 */
+/** 兼容 ISO-8601（2026-09-28T14:30:00.000+08:00）与 'yyyy-MM-dd HH:mm:ss'；
+ *  历史数据若只有日期部分，补 00:00:00（可在弹窗里补填时刻） */
+function fmtCloseDateTime(v) {
+  if (!v) return ''
+  const s = String(v)
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/)
+  if (m) {
+    return m[1] + '-' + m[2] + '-' + m[3] + ' ' +
+      (m[4] || '00') + ':' + (m[5] || '00') + ':' + (m[6] || '00')
+  }
+  const d = new Date(s.replace(/-/g, '/'))
+  if (isNaN(d.getTime())) return ''
+  const p = (n) => String(n).padStart(2, '0')
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+    ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds())
+}
+
+/** 仅「已办结 / 已归档」且持有 project:project:closeTime 权限时才出现入口 */
+function canEditCloseTime(row) {
+  if (!row) return false
+  if (row.status !== 'closed' && row.status !== 'archived') return false
+  return checkPermi(['project:project:closeTime'])
+}
+
+/** 办结日期不能晚于今天（时刻部分另有校验；后端也会二次校验） */
+const disableFutureDate = (time) => {
+  return !!time && time.getTime() > Date.now()
+}
+
+/** 弹窗回填：close_time 是 TIMESTAMP，时刻部分必须带上，否则一保存就把精度抹成 00:00:00 */
+function openCloseTime(row) {
+  const old = fmtCloseDateTime(row.closeTime)
+  closeTimeForm.value = {
+    id: row.id,
+    projectCode: row.projectCode || '',
+    oldCloseTime: old,
+    closeTime: old,
+    assignDate: fmtCloseDateTime(row.assignDate).slice(0, 10)
+  }
+  closeTimeDurationHint.value = null
+  closeTimeOpen.value = true
+}
+
+/** 选了新时间后提示总时长会变成多少（改办结时间会同步重算该快照） */
+watch(() => closeTimeForm.value.closeTime, async (v) => {
+  const s = closeTimeForm.value.assignDate
+  if (!v || !s || v.slice(0, 10) < s) {
+    closeTimeDurationHint.value = null
+    return
+  }
+  try {
+    const n = await countWorkdays(s, v.slice(0, 10))
+    closeTimeDurationHint.value = n + ' 天'
+  } catch (e) {
+    closeTimeDurationHint.value = null
+  }
+})
+
+function submitCloseTime() {
+  const f = closeTimeForm.value
+  if (!f.closeTime) {
+    proxy.$modal.msgError('请选择新的办结时间')
+    return
+  }
+  if (f.assignDate && f.closeTime.slice(0, 10) < f.assignDate) {
+    proxy.$modal.msgError('办结时间不能早于安排日期（' + f.assignDate + '）')
+    return
+  }
+  // 精确到秒：不允许把办结时刻设在未来
+  if (new Date(f.closeTime.replace(/-/g, '/')).getTime() > Date.now()) {
+    proxy.$modal.msgError('办结时间不能晚于当前时间')
+    return
+  }
+  if (f.closeTime === f.oldCloseTime) {
+    closeTimeOpen.value = false
+    return
+  }
+  closeTimeSubmitting.value = true
+  updateProjectCloseTime(f.id, f.closeTime).then(() => {
+    proxy.$modal.msgSuccess('办结时间已修改')
+    closeTimeOpen.value = false
+    getList()
+  }).catch(() => {}).finally(() => {
+    closeTimeSubmitting.value = false
+  })
+}
+
 /** 状态变更 */
 function handleStatusChange(row) {
    currentRow.value = row
@@ -2423,6 +2555,38 @@ if (drillQuery.id) {
 </script>
 
 <style scoped>
+/* ---- 修改办结时间弹窗 ---- */
+.close-time-readonly {
+   margin-bottom: 14px;
+}
+.close-time-old {
+   color: #f56c6c;
+   font-weight: 600;
+}
+.close-time-field {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   margin: 6px 0 14px;
+}
+.close-time-label {
+   font-size: 13px;
+   color: #606266;
+   min-width: 84px;
+}
+.close-time-hint {
+   font-size: 12px;
+   color: #909399;
+}
+.close-time-alert {
+   padding: 9px 11px;
+   background: #fdf6ec;
+   border: 1px solid #f5dab1;
+   border-radius: 4px;
+   color: #8a6020;
+   font-size: 12px;
+   line-height: 1.6;
+}
 /* ---- 导出弹窗 ---- */
 .export-tip {
    font-size: 12px;

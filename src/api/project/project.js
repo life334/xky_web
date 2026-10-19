@@ -76,6 +76,18 @@ export function changeProjectStatus(id, status) {
   })
 }
 
+// 人工修正办结时间（受限权限 project:project:closeTime）
+// ⚠️ closeTime 必须传完整 'yyyy-MM-dd HH:mm:ss'：close_time 是 TIMESTAMP，
+//    只传日期会被解析成当天 00:00:00，等于把历史办结时刻的精度抹掉。
+// 后台校验：必须已办结/已归档、不晚于当前时刻（精确到秒）、不早于安排日期与创建时间
+export function updateProjectCloseTime(id, closeTime) {
+  return request({
+    url: '/project/project/closeTime/' + id,
+    method: 'put',
+    data: { closeTime }
+  })
+}
+
 // 批量新增项目（区域粘贴）
 export function batchAddProject(data) {
   return request({
