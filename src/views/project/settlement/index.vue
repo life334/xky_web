@@ -110,13 +110,24 @@
 
       <!-- Row 5: 操作按钮行 -->
       <el-row :gutter="10" class="mb8">
-         <el-col :span="1.5" v-if="false">
-            <el-button type="warning" size="small" plain icon="Download" @click="handleExport" v-hasPermi="['project:settlement:export']">导出</el-button>
+         <el-col :span="1.5">
+            <el-button type="warning" size="small" plain icon="Download" @click="openExportDialog" v-hasPermi="['project:settlement:export']">导出</el-button>
          </el-col>
          <el-col :span="1.5" style="margin-left:auto">
             <right-toolbar size="small" v-model:showSearch="showSearch" :columns="columns" storage-key="settlement-list-columns" @queryTable="refreshAll" />
          </el-col>
       </el-row>
+
+      <!-- 跨页勾选提示条：普通跨页勾选 / 全选引导 / 全选模式（三者互斥） -->
+      <div v-if="selectAllMode" class="cross-select-bar is-all">
+         <span>已选择全部筛选结果 <b>{{ total || 0 }}</b> 条</span>
+         <el-button link type="primary" size="small" @click="exitSelectAllMode">取消全选</el-button>
+      </div>
+      <div v-else-if="ids.length" class="cross-select-bar">
+         <span>已选 <b>{{ ids.length }}</b> 条（跨页保留）</span>
+         <el-button link type="primary" size="small" @click="clearCrossSelection">清空</el-button>
+         <el-button v-if="showSelectAllHint" link type="primary" size="small" @click="enterSelectAllMode">选择全部 {{ total || 0 }} 条</el-button>
+      </div>
 
       <el-table
          v-loading="loading"
@@ -128,6 +139,16 @@
          highlight-current-row
          @current-change="handleCurrentChange"
       >
+         <!-- 勾选列：勾选状态由跨页集合 crossIds 承载（翻页 / 刷新都不丢），
+              不用 el-table 自带 selection —— 那个依附当前页行对象，翻页即清空 -->
+         <el-table-column width="52" align="center">
+            <template #header>
+               <el-checkbox :model-value="isAllChecked" :indeterminate="isIndeterminate" :disabled="selectAllMode" @change="handleCheckAll" />
+            </template>
+            <template #default="scope">
+               <el-checkbox :model-value="!!checkedMap[scope.row.projectId]" :disabled="selectAllMode" @change="toggleRow(scope.row)" />
+            </template>
+         </el-table-column>
          <!-- 展开行明细卡列（默认收起，点击箭头懒加载明细） -->
          <el-table-column type="expand" width="1" class-name="expand-hidden-col">
             <template #default="scope">
@@ -794,11 +815,98 @@
             <el-button type="primary" @click="savePaymentData" :loading="paymentSaving" :disabled="paymentLoading">保 存</el-button>
          </template>
       </el-dialog>
+
+      <!-- 导出费用结算数据：可选范围（全部筛选结果 / 仅已勾选的行）+ 可选字段（拖拽排序） -->
+      <el-dialog
+         :model-value="exportOpen"
+         @update:model-value="exportOpen = $event"
+         title="导出费用结算数据"
+         append-to-body
+         :close-on-click-modal="false"
+         class="scrollbar"
+         width="760px"
+      >
+         <el-form label-width="76px" size="small">
+            <el-form-item label="导出范围">
+               <el-radio-group v-model="exportScope">
+                  <el-radio value="filter">全部筛选结果（{{ total || 0 }} 条）</el-radio>
+                  <el-radio value="selected" :disabled="!ids.length || selectAllMode">仅已勾选的行（{{ ids.length }} 条）</el-radio>
+               </el-radio-group>
+            </el-form-item>
+         </el-form>
+
+         <div class="export-tip">
+            左侧勾选要导出的项目字段。<b>内部</b>工作量按「负责人 + 子项（栏）」拆成多行，一栏一行；
+            <b>外部</b>工作量整项目汇总，只写在该项目第一行（重复的计费类别在单元格里重复列出）。
+            项目信息每行重复写满，便于在 Excel 里筛选 / 透视；<b>产值</b>列：外部为项目外部合计，
+            内部为该栏产值（含「管线新测 + 管线修测」保底 6000）。
+            <span v-if="!exportHasOwner" class="export-tip-warn">未勾选「负责人」：多行看不出分别属于谁，建议勾上。</span>
+            本次共 <b>{{ exportTotalCols }}</b> 列，单次最多导出 {{ EXPORT_MAX_ROWS }} 行。
+         </div>
+
+         <div class="export-panes">
+            <div class="export-pane">
+               <div class="export-pane-head">
+                  <el-checkbox
+                     :model-value="exportAllChecked"
+                     :indeterminate="exportSomeChecked"
+                     @change="toggleExportAll"
+                  >全部字段（{{ exportFieldOptions.length }}）</el-checkbox>
+               </div>
+               <div class="export-pane-body">
+                  <div v-for="c in exportFieldOptions" :key="c.key" class="export-field" @click="toggleExportField(c)">
+                     <el-checkbox :model-value="!!exportFieldSet[c.key]" @click.stop @change="toggleExportField(c)" />
+                     <span class="export-field-label">{{ c.label }}</span>
+                  </div>
+               </div>
+            </div>
+
+            <div class="export-pane">
+               <div class="export-pane-head">
+                  <span>已选字段（{{ exportFields.length }}）· 拖拽排序</span>
+                  <el-button link type="primary" size="small" @click="resetExportFields">恢复默认</el-button>
+               </div>
+               <div class="export-pane-body">
+                  <div
+                     v-for="(key, idx) in exportFields"
+                     :key="key"
+                     :class="['export-sel', { 'is-dragging': exportDragIdx === idx, 'is-over': exportOverIdx === idx && exportDragIdx !== idx }]"
+                     @dragover.prevent="exportOverIdx = idx"
+                     @dragleave="exportOverIdx = -1"
+                     @drop.prevent="exportDrop(idx)"
+                     @dragend="exportDragIdx = -1; exportOverIdx = -1"
+                  >
+                     <span class="drag-handle" title="拖拽调整顺序" draggable="true" @dragstart="exportDragStart(idx)"></span>
+                     <span class="export-sel-idx">{{ idx + 1 }}</span>
+                     <span class="export-sel-label">{{ exportLabelOf(key) }}</span>
+                     <span class="export-sel-ops">
+                        <el-button link size="small" :disabled="idx === 0" @click="moveExportField(idx, -1)" title="上移">↑</el-button>
+                        <el-button link size="small" :disabled="idx === exportFields.length - 1" @click="moveExportField(idx, 1)" title="下移">↓</el-button>
+                        <el-button link type="danger" size="small" @click="removeExportField(key)" title="移除">✕</el-button>
+                     </span>
+                  </div>
+                  <div v-if="!exportFields.length" class="export-empty">请至少选择一个字段</div>
+               </div>
+            </div>
+         </div>
+
+         <template #footer>
+            <el-button size="small" @click="exportOpen = false">取 消</el-button>
+            <el-button
+               type="primary"
+               size="small"
+               :loading="exportLoading"
+               :disabled="!exportFields.length"
+               @click="submitExport"
+            >确定导出</el-button>
+         </template>
+      </el-dialog>
    </div>
 </template>
 
 <script setup name="Settlement">
-import { treeListSettlement, getSettlementDetail, savePayment, getSettlementColumns, getSettlementEntryStatusCounts } from "@/api/project/settlement"
+import { treeListSettlement, getSettlementDetail, savePayment, getSettlementColumns, getSettlementEntryStatusCounts, exportSettlement } from "@/api/project/settlement"
+import { saveAs } from 'file-saver'
 import { workloadOutputSummary, workloadOutputDetail } from "@/api/project/workload"
 import WorkloadDialog from "@/components/WorkloadDialog"
 import { ensureCategoryBaseData } from "@/utils/categoryBaseData"
@@ -857,6 +965,8 @@ const columns = ref({})
 /** 当前可见列（按接口返回顺序过滤） */
 const visibleColumns = computed(() => Object.values(columns.value).filter(c => c.visible))
 const COLUMNS_STORAGE_KEY = 'settlement-list-columns'
+/** 「项目类别」默认可见的一次性升级标记（只写一次，之后不再干预用户的显隐选择） */
+const CATEGORY_UPGRADE_KEY = 'settlement-list-columns-upgrade-category'
 /** 兜底清单：后端接口不可用（如后端未重启）时使用，保证表格不退化（与后端 /columns 默认可见列一致） */
 const FALLBACK_COLUMNS = [
   { key: 'projectCode', label: '工程编号', type: 'text', group: 'business', prop: 'projectCode', defaultVisible: true },
@@ -864,16 +974,15 @@ const FALLBACK_COLUMNS = [
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
   { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
-  { key: 'leaderNames', label: '负责人', type: 'text', group: 'business', prop: 'leaderNames', defaultVisible: false },
-  { key: 'userName', label: '人员', type: 'text', group: 'business', prop: 'userName', defaultVisible: false },
-  { key: 'categoryName', label: '项目类别', type: 'text', group: 'business', prop: 'categoryName', defaultVisible: false },
+  { key: 'userName', label: '负责人', type: 'text', group: 'business', prop: 'userName', defaultVisible: false },
+  { key: 'categoryName', label: '项目类别', type: 'text', group: 'business', prop: 'categoryName', defaultVisible: true },
   { key: 'internalWorkload', label: '内部工作量', type: 'number', group: 'business', prop: 'internalWorkload', defaultVisible: true },
+  { key: 'internalOutput', label: '内部产值', type: 'money', group: 'business', prop: 'internalOutput', defaultVisible: true },
   { key: 'externalWorkload', label: '外部工作量', type: 'number', group: 'business', prop: 'externalWorkload', defaultVisible: true },
+  { key: 'externalOutput', label: '外部产值', type: 'money', group: 'business', prop: 'externalOutput', defaultVisible: true },
   { key: 'workload', label: '工作量', type: 'number', group: 'business', prop: 'workload', defaultVisible: false },
   { key: 'internalPrice', label: '内部单价', type: 'money', group: 'business', prop: 'internalPrice', defaultVisible: false },
   { key: 'externalPrice', label: '外部单价', type: 'money', group: 'business', prop: 'externalPrice', defaultVisible: false },
-  { key: 'internalOutput', label: '内部产值', type: 'money', group: 'business', prop: 'internalOutput', defaultVisible: true },
-  { key: 'externalOutput', label: '外部产值', type: 'money', group: 'business', prop: 'externalOutput', defaultVisible: true },
   { key: 'prepayAmount', label: '预付款', type: 'money', group: 'business', prop: 'prepayAmount', defaultVisible: true },
   { key: 'prepayDate', label: '预付款时间', type: 'date', group: 'business', prop: 'prepayDate', defaultVisible: true },
   { key: 'payUnit', label: '付款单位', type: 'text', group: 'business', prop: 'payUnit', defaultVisible: true },
@@ -905,6 +1014,14 @@ function buildColumns(list) {
       visible: saved[col.key] !== undefined ? !!saved[col.key] : !!col.defaultVisible
     }
   })
+  // 一次性升级：2026-10-20 起「项目类别」默认可见。
+  // 本地旧偏好里若显式存过 categoryName=false，这里只覆盖一次，之后用户再隐藏不会被反悔。
+  try {
+    if (obj.categoryName && !cache.local.getJSON(CATEGORY_UPGRADE_KEY)) {
+      obj.categoryName.visible = true
+      cache.local.setJSON(CATEGORY_UPGRADE_KEY, 1)
+    }
+  } catch (e) { /* 忽略本地存储异常 */ }
   columns.value = obj
 }
 
@@ -1096,6 +1213,8 @@ function getList(resetPage = true) {
     Object.keys(expandDetails).forEach(k => delete expandDetails[k])
     expandedKeys.value = []
     currentRow.value = null
+    // ⚠️ 这里**不清空**跨页勾选：翻页同样会走 getList，一清就等于回到「翻页即丢」。
+    // 筛选条件变化时由 handleQuery / resetQuery 负责清空。
   }).finally(() => {
     loading.value = false
   })
@@ -1323,6 +1442,9 @@ function onStatusChange(val) {
 function handleQuery() {
   // 同步工程编号到全局记忆（含清空）
   searchMemory.setProjectCode(queryParams.value.projectCode)
+  // 筛选条件变了 ⇒ 结果集已变，跨页勾选必须清空（否则会导出到看不见的行）
+  selectAllMode.value = false
+  clearCrossSelection()
   refreshAll()
 }
 
@@ -1581,8 +1703,218 @@ function removeRefundRow(index) {
 }
 
 /** 导出 */
-function handleExport() {
-  proxy.$modal.msgWarning("导出功能暂未实现")
+/* ==================== 导出（可选范围 + 可选字段） ==================== */
+
+/** 单次导出条数上限（与后端 EXPORT_MAX_ROWS 一致，仅用于提示文案） */
+const EXPORT_MAX_ROWS = 50000
+
+const exportOpen = ref(false)
+const exportLoading = ref(false)
+const exportScope = ref('filter')
+const exportFields = ref([])
+const exportDragIdx = ref(-1)
+const exportOverIdx = ref(-1)
+
+/* ---------- 跨页勾选（与项目列表同款） ---------- */
+/**
+ * 勾选状态由 crossIds 承载，不用 el-table 自带 selection。
+ * 原因：el-table 的 selection 依附当前页行对象，翻页数据整体替换 ⇒ 勾选被清空，
+ *       「第 1 页勾几条、翻到第 2 页再勾几条」这种跨页操作做不了。
+ * 这里存 projectId（行对象的 id 是 "p"+projectId，导出接口要的是 projectId）。
+ */
+const crossIds = ref([])
+const checkedMap = computed(() => {
+  const m = {}
+  crossIds.value.forEach(id => { m[id] = true })
+  return m
+})
+/** 对外只读别名：模板与导出逻辑沿用 ids.length / ids.join(',') */
+const ids = computed(() => crossIds.value)
+
+/** 全选模式：已选择「全部筛选结果」（跨全部页），导出时按筛选条件执行 */
+const selectAllMode = ref(false)
+const isAllChecked = computed(() => pagedTreeData.value.length > 0
+  && pagedTreeData.value.every(r => crossIds.value.includes(r.projectId)))
+const isIndeterminate = computed(() => !isAllChecked.value
+  && pagedTreeData.value.some(r => crossIds.value.includes(r.projectId)))
+/** 当前页整页被勾选、且筛选结果多于当前页 ⇒ 引导升级为全选 */
+const showSelectAllHint = computed(() => isAllChecked.value
+  && (total.value || 0) > pagedTreeData.value.length)
+
+function toggleRow(row) {
+  const pid = row && row.projectId
+  if (pid == null) return
+  const i = crossIds.value.indexOf(pid)
+  if (i >= 0) crossIds.value.splice(i, 1)
+  else crossIds.value.push(pid)
+}
+function handleCheckAll(val) {
+  if (val) {
+    pagedTreeData.value.forEach(r => {
+      if (r.projectId != null && !crossIds.value.includes(r.projectId)) crossIds.value.push(r.projectId)
+    })
+  } else {
+    crossIds.value = []
+  }
+}
+function clearCrossSelection() { crossIds.value = [] }
+function enterSelectAllMode() { selectAllMode.value = true }
+function exitSelectAllMode() {
+  selectAllMode.value = false
+  clearCrossSelection()
+}
+
+/** 可选字段清单：严格按后端列元数据顺序（接口不可用时用兜底清单顺序） */
+const exportColumnList = computed(() => {
+  const list = Object.values(columns.value || {})
+  return list.length ? list : FALLBACK_COLUMNS.map(c => ({ ...c }))
+})
+
+/**
+ * 导出时不单独成列的字段：总工作量（内外单位不同，相加无意义）与内外单价（按需求不导单价）。
+ * 弹窗里也从可选清单中摘掉，否则用户勾了却不出列，会以为功能坏了。
+ */
+const EXPORT_AGG_KEYS = ['workload', 'internalPrice', 'externalPrice']
+const exportFieldOptions = computed(() =>
+  exportColumnList.value.filter(c => !EXPORT_AGG_KEYS.includes(c.key)))
+
+/** 导出总列数 = 已选字段（单价等会被后端剔除）；不再有后端强制补的列，所见即所得 */
+const exportTotalCols = computed(() =>
+  exportFields.value.filter(k => !EXPORT_AGG_KEYS.includes(k)).length)
+const exportHasOwner = computed(() => exportFields.value.includes('userName'))
+
+const exportFieldSet = computed(() => {
+  const s = {}
+  exportFields.value.forEach(k => { s[k] = true })
+  return s
+})
+const exportAllChecked = computed(() =>
+  exportFieldOptions.value.length > 0 && exportFields.value.length === exportFieldOptions.value.length)
+const exportSomeChecked = computed(() => exportFields.value.length > 0 && !exportAllChecked.value)
+
+function exportLabelOf(key) {
+  const c = exportColumnList.value.find(x => x.key === key)
+  return c ? c.label : key
+}
+
+/**
+ * 导出默认字段 = 当前表格可见列（已排除被剔除的汇总列）
+ * ⚠️ 「负责人」特殊处理：页面表格里它默认不显示（项目级行没有登记人），
+ * 但导出是按登记人拆行的，没它就分不清每行是谁 —— 故导出默认必须勾上。
+ */
+const EXPORT_FORCE_DEFAULT_KEYS = ['userName']
+/** 反过来：页面上默认显示、但导出默认不要的字段（用户仍可在弹窗里自己勾） */
+const EXPORT_HIDDEN_DEFAULT_KEYS = ['relatedProjectCode']
+function defaultExportFields() {
+  return exportFieldOptions.value
+    .filter(c => !EXPORT_HIDDEN_DEFAULT_KEYS.includes(c.key))
+    .filter(c => c.visible || EXPORT_FORCE_DEFAULT_KEYS.includes(c.key))
+    .map(c => c.key)
+}
+
+/** 打开导出弹窗 */
+function openExportDialog() {
+  exportScope.value = (ids.value.length && !selectAllMode.value) ? 'selected' : 'filter'
+  exportFields.value = defaultExportFields()
+  exportDragIdx.value = -1
+  exportOverIdx.value = -1
+  exportOpen.value = true
+}
+
+/** 与列表完全一致的筛选参数（不含分页、不含勾选范围） */
+function buildFilterParams() {
+  const params = { ...queryParams.value }
+  delete params.pageNum
+  delete params.pageSize
+  params.projectStatus = selectedStatuses.value.join(',')
+  if (workloadFilter.value === 'done' || workloadFilter.value === 'undone') {
+    params.workloadEntry = workloadFilter.value
+  }
+  if (paymentFilter.value === 'done' || paymentFilter.value === 'undone') {
+    params.paymentEntry = paymentFilter.value
+  }
+  if (invoiceUnpaidFilter.value) params.invoiceUnpaid = 'true'
+  return params
+}
+
+function toggleExportField(col) {
+  const i = exportFields.value.indexOf(col.key)
+  if (i >= 0) exportFields.value.splice(i, 1)
+  else exportFields.value.push(col.key)
+}
+function toggleExportAll(val) {
+  exportFields.value = val ? exportFieldOptions.value.map(c => c.key) : []
+}
+function removeExportField(key) {
+  const i = exportFields.value.indexOf(key)
+  if (i >= 0) exportFields.value.splice(i, 1)
+}
+function moveExportField(idx, delta) {
+  const to = idx + delta
+  if (to < 0 || to >= exportFields.value.length) return
+  const arr = exportFields.value.slice()
+  const [item] = arr.splice(idx, 1)
+  arr.splice(to, 0, item)
+  exportFields.value = arr
+}
+function exportDragStart(idx) { exportDragIdx.value = idx }
+function exportDrop(idx) {
+  const from = exportDragIdx.value
+  exportDragIdx.value = -1
+  exportOverIdx.value = -1
+  if (from < 0 || from === idx) return
+  const arr = exportFields.value.slice()
+  const [item] = arr.splice(from, 1)
+  arr.splice(idx, 0, item)
+  exportFields.value = arr
+}
+function resetExportFields() {
+  exportFields.value = defaultExportFields()
+}
+
+/** 提交导出：与列表共用同一套筛选条件（含录入状态胶囊与项目状态） */
+function submitExport() {
+  if (!exportFields.value.length) {
+    proxy.$modal.msgWarning('请至少选择一个导出字段')
+    return
+  }
+  const params = buildFilterParams()
+  params.fields = exportFields.value.join(',')
+  // 全选模式 = 全部筛选结果；否则按弹窗里的范围选项
+  params.scope = selectAllMode.value ? 'filter' : exportScope.value
+  if (params.scope === 'selected') params.ids = ids.value.join(',')
+  exportLoading.value = true
+  exportSettlement(params).then(res => {
+    const blob = res.data
+    if (blob && blob.type && blob.type.includes('application/json')) {
+      return blob.text().then(t => {
+        try {
+          const o = JSON.parse(t)
+          proxy.$modal.msgError(o.msg || '导出失败')
+        } catch (e) { proxy.$modal.msgError('导出失败') }
+      })
+    }
+    saveAs(new Blob([blob]), parseExportFileName(res, '费用结算_' + exportFileStamp() + '.xlsx'))
+    exportOpen.value = false
+  }).catch(() => {}).finally(() => { exportLoading.value = false })
+}
+
+/** 导出文件名时间戳：yyyyMMddHHmmss（与后端命名格式一致） */
+function exportFileStamp() {
+  const d = new Date()
+  const p = n => String(n).padStart(2, '0')
+  return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds())
+}
+
+/** 优先用后端 Content-Disposition 里的文件名，解析失败回退 */
+function parseExportFileName(res, fallback) {
+  const cd = (res && res.headers && (res.headers['content-disposition'] || res.headers['Content-Disposition'])) || ''
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  if (m) {
+    try { return decodeURIComponent(m[1].replace(/\+/g, '%20')) } catch (e) { /* ignore */ }
+  }
+  const m2 = cd.match(/filename="?([^";]+)"?/i)
+  return m2 ? m2[1] : fallback
 }
 
 /** 加载委托单位去重值 */
@@ -2434,4 +2766,76 @@ onActivated(() => {
 }
 .dot-normal { background: #409eff; }
 .dot-mandate { background: #e6a23c; }
+
+/* ---- 跨页勾选提示条（与项目列表同款） ---- */
+.cross-select-bar {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   padding: 6px 12px;
+   margin-bottom: 8px;
+   font-size: 13px;
+   color: var(--el-color-primary);
+   background: var(--el-color-primary-light-9);
+   border: 1px solid var(--el-color-primary-light-7);
+   border-radius: 4px;
+}
+.cross-select-bar.is-all {
+   color: var(--el-color-warning-dark-2);
+   background: var(--el-color-warning-light-9);
+   border-color: var(--el-color-warning-light-7);
+}
+
+/* ---- 导出弹窗（与项目列表导出完全一致） ---- */
+.export-tip {
+   font-size: 12px;
+   color: #909399;
+   line-height: 1.6;
+   margin-bottom: 10px;
+}
+.export-tip-warn {
+   color: #e6a23c;
+}
+.export-panes { display: flex; gap: 12px; }
+.export-pane {
+   flex: 1;
+   border: 1px solid #ebeef5;
+   border-radius: 6px;
+   overflow: hidden;
+}
+.export-pane-head {
+   padding: 6px 10px;
+   background: #f5f7fa;
+   border-bottom: 1px solid #ebeef5;
+   font-size: 13px;
+   color: #303133;
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+}
+.export-pane-body { height: 320px; overflow-y: auto; padding: 4px 0; }
+.export-field { display: flex; align-items: center; gap: 2px; padding: 2px 10px; cursor: pointer; }
+.export-field:hover { background: #f5f7fa; }
+.export-field-label { font-size: 13px; color: #606266; }
+.export-sel {
+   display: flex;
+   align-items: center;
+   gap: 4px;
+   padding: 3px 8px;
+   border: 1px dashed transparent;
+}
+.export-sel.is-dragging { opacity: 0.4; }
+.export-sel.is-over { border-top: 2px solid #409eff; }
+.export-sel-idx { width: 18px; text-align: right; font-size: 12px; color: #c0c4cc; }
+.export-sel-label {
+   flex: 1;
+   font-size: 13px;
+   color: #303133;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+.export-sel-ops { display: flex; align-items: center; flex-shrink: 0; }
+.export-empty { padding: 20px; text-align: center; font-size: 13px; color: #c0c4cc; }
+.drag-handle { cursor: move; color: #c0c4cc; letter-spacing: -2px; user-select: none; }
 </style>

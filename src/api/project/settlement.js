@@ -1,4 +1,20 @@
 import request from '@/utils/request'
+import { tansParams } from '@/utils/land'
+
+// 导出费用结算（可选范围 scope=filter|selected + 可选字段 fields 逗号串）
+// 一个项目按工作量登记人拆成多行；工作量列是单元格内换行的明细文本
+// ⚠️ 接口直接写文件流 ⇒ 必须 responseType:'blob'，否则响应拦截器会按 JSON 解析
+export function exportSettlement(query) {
+  return request({
+    url: '/project/settlement/export',
+    method: 'post',
+    data: query,
+    transformRequest: [(params) => tansParams(params)],
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    responseType: 'blob',
+    timeout: 180000
+  })
+}
 
 // 查询费用结算树形列表（仅已办结项目，后端分页）
 export function treeListSettlement(query) {
