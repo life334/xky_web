@@ -21,25 +21,28 @@
             style="margin-bottom: 12px"
             :title="billingScopeHint"
          />
-         <!-- 外部工作量区（不按人录入，直接按计费类别录入） -->
+         <!-- 外部工作量区（按负责人录入：每人若干栏，重复计费类别自动另开一栏） -->
          <el-divider content-position="left">
             <span class="section-title-external">外部工作量</span>
             <span class="section-output-mini">产值合计：{{ formatMoney(externalOutputTotal) }}</span>
          </el-divider>
 
-         <div class="leader-card">
-            <div style="padding: 10px 12px 0; display: flex; justify-content: flex-end">
-               <el-button v-if="false" type="primary" size="small" icon="Plus" plain @click="addExternalRecord">新增记录</el-button>
+         <div v-for="leader in externalLeaders" :key="'ext-' + leader.userId" class="leader-card">
+            <div class="leader-card-header">
+               <span class="leader-name">{{ leader.nickName }}</span>
+               <span class="leader-mini-total">外部：{{ formatMoney(leaderExternalOutput(leader.userId)) }}</span>
+               <el-button v-if="!leader.unassigned" type="primary" size="small" icon="Plus" plain style="margin-left: auto" @click="addExternalRecord(leader)">添加</el-button>
             </div>
 
-            <!-- 外部按记录分栏：每条记录一个子卡片 -->
-            <div v-for="rec in externalRecords" :key="'ext-' + rec.subItemNo" class="record-card">
-               <div v-if="externalRecords.length > 1" class="record-card-header">
-                  <span class="record-name">第 {{ rec.subItemNo }} 条</span>
+            <!-- 每栏 = 一个外部子项：自带录入栏 + 已录入行 + 小计（≥2 栏时才显示栏头，含删除） -->
+            <div v-for="(rec, recIdx) in leader.records" :key="rec._uid" class="record-card">
+               <div v-if="leader.records.length > 1" class="record-card-header">
+                  <span class="record-name">第 {{ recIdx + 1 }} 栏</span>
+                  <el-button link type="danger" icon="Delete" style="margin-left: auto" @click="removeExternalLane(leader, rec)">删除</el-button>
                </div>
 
-               <!-- 外部快速录入栏（归属该记录） -->
-               <div class="quick-add-bar">
+               <!-- 外部快速录入栏（归属该负责人该栏；未指定负责人行不允许新增） -->
+               <div v-if="!leader.unassigned" class="quick-add-bar">
                   <span class="qa-label">计费类别</span>
                   <el-select v-model="rec.quickExternalCat" placeholder="选择计费类别" style="width: 220px" @change="(val) => onQuickCatChange(val, rec, 'external')">
                      <el-option v-for="o in externalBillingOptions()" :key="o.value" :label="o.label" :value="o.value" />
@@ -52,8 +55,8 @@
                   <el-button type="primary" size="small" icon="Plus" :disabled="!rec.quickExternalCat || rec.quickExternalWorkload == null" @click="quickAddWorkload(rec, 'external')">添加</el-button>
                </div>
 
-               <!-- 该记录外部已录入行 -->
-               <el-table :data="externalRowsBySub(rec.subItemNo)" border size="small" :row-class-name="() => 'wl-row-external'">
+               <!-- 该负责人该栏已录入行 -->
+               <el-table :data="externalRowsByUserAndSub(rec.userId, rec.subItemNo)" border size="small" :row-class-name="() => 'wl-row-external'">
                   <el-table-column label="计费类别" prop="billingCategory" align="center" min-width="120" />
                   <el-table-column label="工作量" align="center" width="120">
                      <template #default="scope"><el-input-number v-model="scope.row.workload" :min="0" :precision="2" controls-position="right" size="small" style="width: 100%" @change="calcRow(scope.row)" /></template>
@@ -71,10 +74,24 @@
                         <div v-if="calcExpr(scope.row)" class="cell-sub calc-hint" style="display:none">{{ calcExpr(scope.row) }}</div>
                      </template>
                   </el-table-column>
-                  <el-table-column label="操作" align="center" width="60">
+                  <!-- 未指定负责人的存量行：可在此直接指定归属，指定后自动移入该负责人卡片 -->
+                  <el-table-column v-if="leader.unassigned" label="指定负责人" align="center" width="170">
+                     <template #default="scope">
+                        <el-select :model-value="scope.row.userId || null" placeholder="选择负责人" size="small" filterable style="width: 100%" @change="(val) => assignExternalRow(scope.row, val)">
+                           <el-option v-for="u in assignableLeaders()" :key="u.userId" :label="u.nickName" :value="u.userId" />
+                        </el-select>
+                     </template>
+                  </el-table-column>
+                  <el-table-column label="操作" align="center" :width="leader.unassigned ? 90 : 60">
                      <template #default="scope"><el-button link type="danger" icon="Delete" @click="removeWorkloadRowByIdx(scope.row, null, 'external')" /></template>
                   </el-table-column>
                </el-table>
+
+               <!-- 该栏小计 -->
+               <div class="lane-subtotal">
+                  <span class="lane-sub-label">小计</span>
+                  <span class="lane-sub-value lane-sub-value-ext">{{ formatMoney(laneExternalOutput(rec.userId, rec.subItemNo)) }}</span>
+               </div>
             </div>
          </div>
 
@@ -183,8 +200,10 @@ const emit = defineEmits(['update:modelValue', 'saved'])
 const workloadForm = ref({ workloads: [] })
 // 负责人卡片列表（内部工作量按负责人 + 记录分栏）
 const leaderList = ref([])
-// 外部工作量记录列表（外部不挂负责人，按记录号分栏；每项含快速录入栏状态）
-const externalRecords = ref([])
+// 外部工作量负责人卡片（外部也按负责人录入，每人若干栏；user_id 为空/0 的存量行归入「未指定负责人」卡片）
+const externalLeaders = ref([])
+/** 外部栏本地自增 id：仅用于 v-for 的 key（空栏 subItemNo 可能为 null，不能拿它当 key） */
+let externalRecSeq = 0
 const userOptions = ref([])
 const leaderOptions = ref([])
 /** 全量计费方式：categoryId -> [{billingType, billingCategory, unitPrice, priceUnit, minQuantity}] */
@@ -212,7 +231,7 @@ function openDialog() {
    // 重置上一次的残留状态，避免串数据
    workloadForm.value = { workloads: [] }
    leaderList.value = []
-   externalRecords.value = []
+   externalLeaders.value = []
    contractPriceMap.value = {}
    currentProjectCategoryId.value = null
    loadWorkloadDetail()
@@ -245,6 +264,8 @@ function loadWorkloadDetail() {
             return {
                workloadId: w.id,
                userId: w.userId,
+               // 登记人姓名（保存不用，仅供外部区在用户下拉查不到此人时兜底显示，避免行被漏掉）
+               userName: w.userName || null,
                categoryId: w.categoryId,
                billingKey: w.billingType ? (w.billingType + '#' + w.billingCategory) : null,
                billingType: w.billingType || null,
@@ -293,25 +314,67 @@ function loadWorkloadDetail() {
             return { userId: uid, nickName: u.nickName, records }
          })
 
-         // 构建外部记录列表（外部不挂负责人，按记录号分栏）
-         const extNos = [...new Set(
-            workloadForm.value.workloads
-               .filter(w => w.billingType === 'external')
-               .map(w => w.subItemNo != null ? Number(w.subItemNo) : 0)
-         )].sort((a, b) => a - b)
-         externalRecords.value = (extNos.length ? extNos : [1]).map(no => ({
-            subItemNo: no,
-            quickExternalCat: null,
-            quickExternalWorkload: null,
-            quickExternalPrice: null,
-            quickExternalUnit: ''
-         }))
+         // 构建外部负责人卡片（外部工作量同样按负责人录入，与内部同构：
+         // 每位负责人若干栏，一栏一个子项；同栏重复录入同一计费类别时自动另开一栏）
+         externalLeaders.value = buildExternalLeaders()
       })
       .catch(err => {
          proxy.$modal.msgError('工作量数据加载失败：' + (err.message || err))
          emit('update:modelValue', false)
       })
       .finally(() => { workloadLoading.value = false })
+}
+
+/**
+ * 构建外部负责人卡片列表
+ *
+ * <p>卡片 = 项目负责人 ∪ 有工作量的负责人（与内部区一致），每人至少一栏可录入；
+ * {@code user_id} 为空 / 0 的存量外部行单独归入「未指定负责人」卡片，可在卡片内指定归属，
+ * 不做自动猜测。</p>
+ */
+function buildExternalLeaders() {
+   const extRows = workloadForm.value.workloads.filter(r => r.billingType === 'external')
+   const leaders = leaderOptions.value.map(u => ({
+      userId: u.userId,
+      nickName: u.nickName,
+      unassigned: false,
+      records: []
+   }))
+   // 未指定负责人的存量行（历史数据 / 早期新增导致）单独一张卡
+   if (extRows.some(r => !r.userId)) {
+      leaders.push({ userId: 0, nickName: '未指定负责人', unassigned: true, records: [] })
+   }
+   // 兜底：外部行的登记人不在负责人下拉里（账号已停用等）也要给一张卡，
+   // 否则该行在界面上无处可去，保存（全量替换）时会被静默丢掉
+   const knownIds = new Set(leaders.map(l => Number(l.userId)))
+   extRows.forEach(r => {
+      const uid = Number(r.userId || 0)
+      if (!uid || knownIds.has(uid)) return
+      knownIds.add(uid)
+      leaders.push({ userId: uid, nickName: r.userName || ('用户#' + uid), unassigned: false, records: [] })
+   })
+   leaders.forEach(leader => {
+      const mine = extRows.filter(r => Number(r.userId || 0) === Number(leader.userId))
+      // 该负责人已有的栏号（无行则给一个空栏，栏号待首次录入时分配，避免白占号）
+      const lanes = [...new Set(mine.map(r => (r.subItemNo != null ? Number(r.subItemNo) : null)))]
+         .filter(n => n != null)
+         .sort((a, b) => a - b)
+      leader.records = (lanes.length ? lanes : [null]).map(no => newExternalRecord(leader.userId, no))
+   })
+   return leaders
+}
+
+/** 新建一个外部栏（快速录入栏状态容器）；subItemNo 为 null 表示尚未分配栏号的空白栏 */
+function newExternalRecord(userId, subItemNo) {
+   return {
+      _uid: ++externalRecSeq,
+      userId: userId,
+      subItemNo: subItemNo,
+      quickExternalCat: null,
+      quickExternalWorkload: null,
+      quickExternalPrice: null,
+      quickExternalUnit: ''
+   }
 }
 
 // 内部产值合计（含「管线新测 + 管线修测」保底 6000；⚠️ 保底按「栏」各自计算 = Σ 各负责人各栏小计）
@@ -335,9 +398,33 @@ const internalRowCount = computed(() => workloadForm.value.workloads.filter(r =>
 // 外部计费行数
 const externalRowCount = computed(() => workloadForm.value.workloads.filter(r => r.billingType === 'external').length)
 
-/** 某记录的外部行（按记录 subItemNo 归属） */
-function externalRowsBySub(subItemNo) {
-   return workloadForm.value.workloads.filter(r => r.billingType === 'external' && Number(r.subItemNo) === Number(subItemNo))
+/** 某负责人某栏的外部行（blank 栏 subItemNo 为 null，无行） */
+function externalRowsByUserAndSub(userId, subItemNo) {
+   if (subItemNo == null) return []
+   return workloadForm.value.workloads.filter(r =>
+      r.billingType === 'external'
+      && Number(r.userId || 0) === Number(userId || 0)
+      && Number(r.subItemNo) === Number(subItemNo))
+}
+
+/** 某负责人外部产值合计（该人全部外部行之和，不按栏分） */
+function leaderExternalOutput(userId) {
+   let sum = 0
+   workloadForm.value.workloads.forEach(row => {
+      if (row.billingType !== 'external') return
+      if (Number(row.userId || 0) !== Number(userId || 0)) return
+      if (row.output) sum += Number(row.output)
+   })
+   return sum
+}
+
+/** 某负责人某栏外部产值小计 */
+function laneExternalOutput(userId, subItemNo) {
+   let sum = 0
+   externalRowsByUserAndSub(userId, subItemNo).forEach(row => {
+      if (row.output) sum += Number(row.output)
+   })
+   return sum
 }
 
 /** 某栏内部小计（含每栏保底：该栏其他行 + max(该栏「管线新测+修测」, 6000)；无保底类别则照实求和） */
@@ -564,8 +651,8 @@ function onQuickCatChange(val, rec, type) {
    rec.quickInternalUnit = b.priceUnit || ''
 }
 
-/** 快速添加工作量行（外部不依赖负责人；内部按记录 rec 归属 subItemNo）
- *  · 外部：不去重、不累加 ⇒ 同栏同类别可多行（dupNo 依次 2,3… 满足唯一约束）
+/** 快速添加工作量行（内外都按负责人 + 栏归属）
+ *  · 外部：同一位负责人的同一栏已有该计费类别 → 给该人另开一栏（一栏一个类别实例，与历史导入同形）
  *  · 内部：下拉已隐藏本栏已用类别，兜底同类别仍累加（避免重复行） */
 function quickAddWorkload(rec, type) {
    const isExternal = type === 'external'
@@ -574,10 +661,31 @@ function quickAddWorkload(rec, type) {
    const price = isExternal ? rec.quickExternalPrice : rec.quickInternalPrice
    if (!cat || workload == null) return
 
-   const subItemNo = rec.subItemNo
+   let subItemNo = rec.subItemNo
    const options = isExternal ? externalBillingOptions() : internalBillingOptions(rec.userId, rec.subItemNo)
    const opt = options.find(o => o.value === cat)
    if (!opt || !opt.raw) return
+
+   // 外部：空白栏首次录入先分配栏号；本栏已有同一计费类别 → 给该负责人另开一栏
+   let openedNewLane = false
+   if (isExternal) {
+      if (subItemNo == null) {
+         subItemNo = nextExternalSubItemNo()
+         rec.subItemNo = subItemNo
+      }
+      const dup = workloadForm.value.workloads.some(r =>
+         r.billingType === 'external'
+         && Number(r.userId || 0) === Number(rec.userId || 0)
+         && Number(r.subItemNo) === Number(subItemNo)
+         && Number(r.categoryId) === Number(opt.categoryId)
+         && r.billingCategory === opt.raw.billingCategory)
+      if (dup) {
+         subItemNo = nextExternalSubItemNo()
+         const leader = externalLeaders.value.find(l => Number(l.userId) === Number(rec.userId || 0))
+         if (leader) leader.records.push(newExternalRecord(rec.userId, subItemNo))
+         openedNewLane = true
+      }
+   }
 
    // 内部：同栏同类别累加（正常走不到 —— 下拉已隐藏，仅兜底）
    if (!isExternal) {
@@ -612,14 +720,12 @@ function quickAddWorkload(rec, type) {
       minSource = 'contract'
    }
 
-   const subName = workloadForm.value.workloads.find(r => Number(r.subItemNo) === Number(subItemNo) && r.subItemName)?.subItemName || ''
-
-   // dupNo：外部同栏同类别多行时的行内序号（内部恒 1；栏内不重复靠下拉过滤）
-   const dupNo = isExternal ? nextExternalDupNo(opt, subItemNo) : 1
+   const subName = workloadForm.value.workloads.find(r => Number(r.subItemNo) === Number(rec.subItemNo) && r.subItemName)?.subItemName || ''
 
    const newRow = {
       workloadId: null,
-      userId: isExternal ? 0 : rec.userId,
+      // 外部同样记在录入人身上（2026-10 起外部按负责人录入；历史数据的 user_id 也是真人）
+      userId: rec.userId,
       categoryId: opt.categoryId,
       billingKey: cat,
       billingType: b.billingType,
@@ -636,28 +742,100 @@ function quickAddWorkload(rec, type) {
       externalOutput: null,
       output: null,
       subItemNo: subItemNo,
-      dupNo: dupNo,
+      // dupNo 恒为 1：外部重复类别已改为「另开一栏」，同一栏内不会再出现同类别的两行
+      dupNo: 1,
       subItemName: subName
    }
    calcRow(newRow)
    workloadForm.value.workloads.push(newRow)
 
+   if (openedNewLane) {
+      const leader = externalLeaders.value.find(l => Number(l.userId) === Number(rec.userId || 0))
+      const laneIdx = leader ? leader.records.findIndex(rc => Number(rc.subItemNo) === Number(subItemNo)) : -1
+      proxy.$modal.msgWarning('该负责人本栏已录入该计费类别，已自动新增第 ' + (laneIdx + 1) + ' 栏')
+   }
+
    // 清空快速录入栏
    clearQuickBar(rec, isExternal)
 }
 
-/** 外部：计算该栏(subItemNo)下同计费类别下一条重复行的 dupNo（已有最大值 +1；首条 = 1） */
-function nextExternalDupNo(opt, subItemNo) {
+/** 计算外部的新栏号：只统计外部行的最大化栏号 + 1
+ *  ⚠️ 不能复用 nextSubItemNo() —— 那个把内外栏号混算，会让外部栏号跳号
+ *  （内外是两套独立的栏空间：唯一索引里含 billing_type，编号重号互不干扰） */
+function nextExternalSubItemNo() {
    let max = 0
    workloadForm.value.workloads.forEach(r => {
       if (r.billingType !== 'external') return
-      if (Number(r.subItemNo) !== Number(subItemNo)) return
-      if (Number(r.categoryId) !== Number(opt.categoryId)) return
-      if (r.billingCategory !== (opt.raw && opt.raw.billingCategory)) return
-      const d = Number(r.dupNo) || 1
-      if (d > max) max = d
+      const n = Number(r.subItemNo)
+      if (n > max) max = n
    })
    return max + 1
+}
+
+/** 外部区：为指定负责人新增一栏空白录入位（栏号待首次录入时分配，避免白占号） */
+function addExternalRecord(leader) {
+   leader.records.push(newExternalRecord(leader.userId, null))
+}
+
+/**
+ * 外部区：清掉已删空的栏，并把「未指定负责人」卡片在没行时整张摘掉
+ *
+ * <p>栏号不做压紧重排 —— 卡片标题用显示序号（第 N 栏），真实 sub_item_no 只用于归属行，
+ * 不动存量栏号，避免为界面美观去改写几千行历史数据。</p>
+ */
+function pruneExternalLanes(userId) {
+   const leader = externalLeaders.value.find(l => Number(l.userId) === Number(userId || 0))
+   if (!leader) return
+   if (leader.records.length > 1) {
+      const kept = leader.records.filter(rc => rc.subItemNo == null || externalRowsByUserAndSub(rc.userId, rc.subItemNo).length > 0)
+      leader.records = kept.length ? kept : [leader.records[0]]
+   }
+   if (leader.unassigned && !workloadForm.value.workloads.some(r => r.billingType === 'external' && !r.userId)) {
+      const i = externalLeaders.value.indexOf(leader)
+      if (i >= 0) externalLeaders.value.splice(i, 1)
+   }
+}
+
+/** 可指定的负责人下拉（未指定卡片里用） */
+function assignableLeaders() {
+   return leaderOptions.value.filter(u => Number(u.userId) !== 0)
+}
+
+/**
+ * 把「未指定负责人」的外部行指定给某位负责人
+ *
+ * <p>换新栏号后再归入目标卡片：沿用原栏号可能与目标人已有栏号撞唯一索引
+ * （project_id + user_id + category + billing_type + billing_category + sub_item_no + dup_no）。
+ * 指定后该行会从「未指定负责人」卡片消失、出现在目标负责人的新栏里。</p>
+ */
+function assignExternalRow(row, userId) {
+   if (!userId) return
+   const target = leaderOptions.value.find(u => Number(u.userId) === Number(userId))
+   if (!target) return
+   row.userId = target.userId
+   row.subItemNo = nextExternalSubItemNo()
+   let leader = externalLeaders.value.find(l => Number(l.userId) === Number(target.userId))
+   if (!leader) {
+      leader = { userId: target.userId, nickName: target.nickName, unassigned: false, records: [] }
+      externalLeaders.value.unshift(leader)
+   }
+   leader.records.push(newExternalRecord(target.userId, row.subItemNo))
+   pruneExternalLanes(0)
+   proxy.$modal.msgSuccess('已指定给 ' + target.nickName)
+}
+
+/** 内部：某负责人删除一栏后，把该负责人后续栏的栏号前移一位（内部栏号按人独立，不影响他人） */
+function renumberInternalLanesAfter(leader, removed) {
+   const uid = Number(leader.userId)
+   workloadForm.value.workloads.forEach(r => {
+      if (r.billingType !== 'internal' || Number(r.userId) !== uid) return
+      const n = Number(r.subItemNo)
+      if (n > removed) r.subItemNo = n - 1
+   })
+   leader.records.forEach(rc => {
+      const n = Number(rc.subItemNo)
+      if (n > removed) rc.subItemNo = n - 1
+   })
 }
 
 /** 清空快速录入栏 */
@@ -675,7 +853,7 @@ function clearQuickBar(rec, isExternal) {
    }
 }
 
-/** 计算下一条新记录的记录号（内外部共用一个记录号空间，取全局最大 + 1） */
+/** 计算下一个内部记录号（内部区手动「添加」时用；外部另有 nextExternalSubItemNo()） */
 function nextSubItemNo() {
    let max = 0
    workloadForm.value.workloads.forEach(r => {
@@ -686,10 +864,10 @@ function nextSubItemNo() {
       const n = Number(rc.subItemNo)
       if (n > max) max = n
    }))
-   externalRecords.value.forEach(rc => {
+   externalLeaders.value.forEach(l => l.records.forEach(rc => {
       const n = Number(rc.subItemNo)
       if (n > max) max = n
-   })
+   }))
    return max + 1
 }
 
@@ -705,21 +883,33 @@ function addInternalRecord(leader) {
    })
 }
 
-/** 外部区：新增一条空白记录 */
-function addExternalRecord() {
-   externalRecords.value.push({
-      subItemNo: nextSubItemNo(),
-      quickExternalCat: null,
-      quickExternalWorkload: null,
-      quickExternalPrice: null,
-      quickExternalUnit: ''
-   })
-}
-
 /** 删除工作量行（按行对象引用） */
 function removeWorkloadRowByIdx(row) {
    const idx = workloadForm.value.workloads.indexOf(row)
-   if (idx >= 0) workloadForm.value.workloads.splice(idx, 1)
+   if (idx < 0) return
+   workloadForm.value.workloads.splice(idx, 1)
+   // 外部：删光某栏最后一行后，该栏自动收起（每人至少留一栏）；未指定卡片空了则整张摘掉
+   // 内部删行不动栏（内部栏是用户手动「添加」出来的，可能是预留的空白录入栏，不能随便清掉）
+   if (row.billingType === 'external') pruneExternalLanes(row.userId)
+}
+
+/** 删除外部某栏（含栏内所有行）；仅该负责人 ≥2 栏时可删（末栏禁止删——删光就没录入入口了），二次确认 */
+function removeExternalLane(leader, rec) {
+   if (leader.records.length <= 1) return
+   const rows = externalRowsByUserAndSub(rec.userId, rec.subItemNo)
+   const tip = rows.length > 0
+      ? '删除该栏将同时删除栏内 ' + rows.length + ' 行工作量，确定删除？'
+      : '删除该空白栏？'
+   proxy.$modal.confirm(tip).then(() => {
+      rows.forEach(r => {
+         const i = workloadForm.value.workloads.indexOf(r)
+         if (i >= 0) workloadForm.value.workloads.splice(i, 1)
+      })
+      const idx = leader.records.indexOf(rec)
+      if (idx >= 0) leader.records.splice(idx, 1)
+      pruneExternalLanes(leader.userId)
+      proxy.$modal.msgSuccess('已删除该栏')
+   }).catch(() => {})
 }
 
 /** 删除整栏（含栏内所有行）；仅 ≥2 栏时可删（末栏禁止删，UI 上栏头此时也已隐藏），二次确认 */
@@ -731,6 +921,7 @@ function removeLane(leader, rec) {
       : '删除该空白栏？'
    proxy.$modal.confirm(tip).then(() => {
       rows.forEach(r => removeWorkloadRowByIdx(r))
+      renumberInternalLanesAfter(leader, Number(rec.subItemNo))
       const idx = leader.records.indexOf(rec)
       if (idx >= 0) leader.records.splice(idx, 1)
       proxy.$modal.msgSuccess('已删除该栏')
@@ -838,6 +1029,7 @@ defineExpose({ workloadForm, externalOutputTotal, internalOutputTotal })
 .lane-subtotal { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 5px 12px; background: var(--el-fill-color-light); border-top: 1px solid var(--el-border-color-lighter); }
 .lane-sub-label { font-size: 12px; color: var(--el-text-color-secondary); }
 .lane-sub-value { font-size: 13px; font-weight: 600; color: var(--el-color-primary); font-variant-numeric: tabular-nums; }
+.lane-sub-value-ext { color: var(--el-color-warning); }
 .quick-add-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--el-fill-color-lighter); border-bottom: 1px solid var(--el-border-color-lighter); flex-wrap: wrap; }
 .qa-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
 .qa-unit { font-size: 12px; color: var(--el-text-color-placeholder); }
