@@ -191,7 +191,7 @@
          <div style="display:flex;gap:6px;flex-wrap:wrap">
             <el-button type="primary" plain icon="Plus" size="small" @click="handleAdd" v-hasPermi="['project:project:add']">新增</el-button>
             <el-button type="info" plain icon="DocumentCopy" size="small" @click="handlePaste" v-hasPermi="['project:project:add']">粘贴</el-button>
-            <el-button type="success" plain icon="Edit" size="small" :disabled="single || editDisabledByClosed" @click="handleUpdate" v-hasPermi="['project:project:edit']">修改</el-button>
+            <el-button type="success" plain icon="Edit" size="small" :disabled="single" @click="handleUpdate" v-hasPermi="['project:project:edit']">修改</el-button>
             <el-button type="danger" plain icon="Delete" size="small" :disabled="multiple || deleteDisabledByClosed || selectAllMode" @click="handleDelete" v-hasPermi="['project:project:remove']">删除</el-button>
             <el-button type="warning" plain icon="Star" size="small" :disabled="multiple && !selectAllMode" @click="handleSetNature('mandate')" v-hasPermi="['project:project:edit']">设为指令性任务</el-button>
             <el-button plain icon="RefreshLeft" size="small" :disabled="multiple && !selectAllMode" @click="handleSetNature('normal')" v-hasPermi="['project:project:edit']">取消指令性任务</el-button>
@@ -229,7 +229,7 @@
                <!-- 字典字段：按列 key 选择对应字典（status 之外还有 dataSource 等） -->
                <dict-tag v-if="col.type === 'dict'" :options="dictOptionsFor(col)" :value="scope.row[col.prop]" />
                <!-- 日期字段：办结时间是 TIMESTAMP，这里按「办结日期」列只展示到日；
-                    完整时分秒在「改办结时间」弹窗里查看与修改 -->
+                    完整时分秒在「项目修改」弹窗的办结时间字段里查看与修改 -->
                <span v-else-if="col.type === 'date' && scope.row[col.prop]">{{ parseTime(scope.row[col.prop], '{y}-{m}-{d}') }}</span>
                <!-- 工期要求：X天 -->
                <span v-else-if="col.type === 'duration'"><span v-if="scope.row[col.prop] != null">{{ scope.row[col.prop] }}天</span></span>
@@ -261,10 +261,10 @@
          <el-table-column label="操作" align="center" min-width="205" class-name="small-padding fixed-width" fixed="right">
             <template #default="scope">
                <el-button link type="primary" size="small" @click="handleView(scope.row)">详情</el-button>
-               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-if="(scope.row.status !== 'closed' && scope.row.status !== 'archived') || checkRole(['admin'])" v-hasPermi="['project:project:edit']">修改</el-button>
+               <!-- 已办结 / 已归档项目同样允许修改项目信息；办结时间在修改弹窗里改 -->
+               <el-button link type="primary" size="small" @click="handleUpdate(scope.row)" v-hasPermi="['project:project:edit']">修改</el-button>
                <!-- 已办结/已归档不可再办结（此前只判 closed，归档项目还能点「办结」，一并修掉） -->
                <el-button link size="small" type="primary" v-if="scope.row.status !== 'closed' && scope.row.status !== 'archived'" v-hasPermi="['project:project:complete']" @click="handleComplete(scope.row)">办结</el-button>
-               <el-button link size="small" type="primary" v-if="canEditCloseTime(scope.row)" @click="openCloseTime(scope.row)">改办结时间</el-button>
             </template>
          </el-table-column>
       </el-table>
@@ -369,7 +369,7 @@
                </el-col>
             </el-row>
             <el-row :gutter="20">
-               <el-col :span="16">
+               <el-col :span="10">
                   <el-form-item label="合同" prop="contractId">
                      <el-select
                         v-model="form.contractId"
@@ -395,9 +395,28 @@
                      </el-select>
                   </el-form-item>
                </el-col>
-               <el-col :span="8">
+               <el-col :span="4">
                   <el-form-item label="状态" v-if="form.id">
                      <dict-tag :options="proj_project_status" :value="form.status" />
+                  </el-form-item>
+               </el-col>
+               <!-- 办结时间：仅已办结 / 已归档项目显示（未办结的项目不存在办结时间）；
+                    带时分秒，保存时会重算该项目冻结的总时长快照 -->
+               <el-col :span="10" v-if="formIsClosed">
+                  <el-form-item label="办结时间" prop="closeTime">
+                     <el-date-picker
+                        v-model="form.closeTime"
+                        type="datetime"
+                        format="YYYY-MM-DD HH:mm:ss"
+                        value-format="YYYY-MM-DD HH:mm:ss"
+                        placeholder="请选择办结日期时间"
+                        :clearable="false"
+                        :disabled-date="disableFutureDate"
+                        style="width: 100%" />
+                     <div class="close-time-tip">
+                        <span v-if="closeTimeDurationHint">保存后总时长将按此日期同步为 {{ closeTimeDurationHint }}</span>
+                        <span v-else>办结时间决定产值归属月份、回款应收账期与欠款逾期预警，跨月修改后已导出的月报数值将不再匹配。</span>
+                     </div>
                   </el-form-item>
                </el-col>
             </el-row>
@@ -482,71 +501,18 @@
          </template>
       </el-dialog>
 
-      <!-- 修改办结时间：受限操作，唯一入口为操作列「改办结时间」按钮 -->
-      <el-dialog title="修改办结时间" :model-value="closeTimeOpen" @update:model-value="closeTimeOpen = $event" width="420px" append-to-body :close-on-click-modal="false">
-         <el-descriptions :column="1" border size="small" class="close-time-readonly">
-            <el-descriptions-item label="工程编号">{{ closeTimeForm.projectCode }}</el-descriptions-item>
-            <el-descriptions-item label="当前办结时间">
-               <span v-if="closeTimeForm.oldCloseTime" class="close-time-old">{{ closeTimeForm.oldCloseTime }}</span>
-               <span v-else class="close-time-old">未办结</span>
-            </el-descriptions-item>
-         </el-descriptions>
+      <!-- 办结时间已并入上面的「项目修改」弹窗，此处不再保留独立弹窗 -->
 
-         <div class="close-time-field">
-            <span class="close-time-label"><b style="color:#f56c6c">*</b> 新办结时间</span>
-            <el-date-picker
-               v-model="closeTimeForm.closeTime"
-               type="datetime"
-               format="YYYY-MM-DD HH:mm:ss"
-               value-format="YYYY-MM-DD HH:mm:ss"
-               placeholder="请选择日期时间"
-               :clearable="false"
-               :disabled-date="disableFutureDate"
-               style="width: 210px" />
-            <span v-if="closeTimeDurationHint" class="close-time-hint">总时长将同步为 {{ closeTimeDurationHint }}</span>
-         </div>
-
-         <div class="close-time-alert">
-            办结时间决定<b>产值归属月份、回款应收账期、欠款逾期预警</b>。跨月修改后，此前导出的月报数据将不再与当前数值匹配。
-         </div>
-
-         <template #footer>
-            <el-button type="primary" :loading="closeTimeSubmitting" @click="submitCloseTime">确 定</el-button>
-            <el-button @click="closeTimeOpen = false">取 消</el-button>
-         </template>
-      </el-dialog>
-
-      <!-- 项目详情对话框 -->
-      <el-dialog :title="'项目详情 — ' + detail.projectCode" :model-value="detailOpen" @update:model-value="detailOpen = $event" width="750px" append-to-body>
-         <el-descriptions :column="2" border>
-            <el-descriptions-item label="工程编号" :span="1">{{ detail.projectCode }}</el-descriptions-item>
-            <el-descriptions-item label="项目名称" :span="1">{{ detail.projectName }}</el-descriptions-item>
-            <el-descriptions-item label="项目类别">{{ detail.categoryName || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="关联定线编号">{{ detail.relatedProjectCode || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="委托单位">{{ detail.clientUnit || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="委托单位性质">
-               <dict-tag v-if="detail.clientUnitNature" :options="clientUnitNatureOptions" :value="detail.clientUnitNature" />
-               <span v-else>-</span>
-            </el-descriptions-item>
-            <el-descriptions-item label="工程地点">{{ detail.projectLocation || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="联系人">{{ detail.contactName || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="联系电话">{{ detail.contactPhone || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="合同">{{ fmtContractDetail(detail) }}</el-descriptions-item>
-            <el-descriptions-item label="状态">
-               <dict-tag :options="proj_project_status" :value="detail.status" />
-            </el-descriptions-item>
-            <el-descriptions-item label="负责人" :span="2">{{ detail.leaderNames || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="创建者">{{ detail.createBy || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ parseTime(detail.createTime) }}</el-descriptions-item>
-            <el-descriptions-item label="修改者">{{ detail.updateBy || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="修改时间">{{ parseTime(detail.updateTime) }}</el-descriptions-item>
-         </el-descriptions>
-         <template #footer>
-            <div class="dialog-footer">
-               <el-button @click="detailOpen = false">关 闭</el-button>
-            </div>
-         </template>
+      <!-- 项目详情弹窗（承载 detail.vue 组件；:key 保证换项目时重新挂载取数） -->
+      <el-dialog :model-value="detailDlgVisible" @update:model-value="detailDlgVisible = $event"
+         width="92%" top="6vh" destroy-on-close append-to-body class="project-detail-dialog"
+         :close-on-click-modal="false">
+         <ProjectDetail
+            v-if="detailDlgVisible"
+            :key="detailDlgId"
+            :project-id="detailDlgId"
+            @close="detailDlgVisible = false"
+            @saved="getList" />
       </el-dialog>
 
       <!-- 作业清单对话框 -->
@@ -824,11 +790,12 @@ import { categoryTreeselectFull } from "@/api/project/category"
 import { listTask } from "@/api/project/task"
 import { listContract } from "@/api/project/contract"
 import { ArrowRight } from '@element-plus/icons-vue'
-import { checkRole, checkPermi } from "@/utils/permission"
+import { checkRole } from "@/utils/permission"
 import { countWorkdays, batchCountWorkdays } from "@/utils/workday"
 import { withTaskStatusAliases } from "@/utils/projStatus"
 import { nextTick, watch } from "vue"
 import { useRoute } from "vue-router"
+import ProjectDetail from "@/views/project/project/detail.vue"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
 import { useNotifyLanding } from "@/utils/useNotifyLanding"
 /** 格式化日期 YYYY-MM-DD */
@@ -856,7 +823,9 @@ const open = ref(false)
 const formLoading = ref(false)
 /** 修改弹窗请求令牌：关闭/重开时自增，使在途请求失效，防止旧响应覆盖新表单 */
 let formSeq = 0
-const detailOpen = ref(false)
+/** 详情弹窗：detailDlgId 变化即重新挂载详情组件（配合 :key 使用） */
+const detailDlgVisible = ref(false)
+const detailDlgId = ref(null)
 const loading = ref(true)
 /** 表单/状态变更/批量粘贴提交中（防重复提交，绑定对应提交按钮 :loading） */
 const submitLoading = ref(false)
@@ -1069,13 +1038,7 @@ function exitSelectAllMode() {
   selectAllMode.value = false
   clearSelection()
 }
-/** 已办结项目非超管不可修改：单选且选中已办结且非超管 → 禁用修改按钮 */
-const editDisabledByClosed = computed(() =>
-  currentSelection.value.length === 1
-  && currentSelection.value[0].status === 'closed'
-  && !checkRole(['admin'])
-)
-/** 已办结项目非超管不可删除：勾选范围含已办结且非超管 → 禁用删除按钮 */
+/** 已办结项目非超管不可删除：勾选范围含已办结且非超管 → 禁用删除按钮（删除会级联清 7 张表，维持限制） */
 const deleteDisabledByClosed = computed(() =>
   currentSelection.value.some(r => r.status === 'closed') && !checkRole(['admin'])
 )
@@ -1185,11 +1148,6 @@ function fmtContractOption(c) {
   return no || name || '-'
 }
 
-/** 合同纯文本展示（详情属性用，与下拉展示格式一致） */
-function fmtContractDetail(c) {
-  return fmtContractOption(c || {})
-}
-const detail = ref({})
 const dateRange = ref([])
 const assignDateRange = ref([])
 const advancedVisible = ref(false)
@@ -1701,6 +1659,8 @@ function reset() {
     projectLocation: undefined,
     contractId: undefined,
     status: "ongoing",
+    // 办结时间：仅已办结 / 已归档项目显示并可改，新增时不存在
+    closeTime: undefined,
     leaderIds: [],
     assignDate: undefined,
     durationRequire: undefined,
@@ -1716,6 +1676,9 @@ function reset() {
   relatedCodeInput.value = ''
   firstPaymentExpanded.value = true
   selectedContractClientUnit.value = ""
+  originCloseTime = ''
+  originFinance = { contractId: undefined, assignDate: undefined, leaderIds: [] }
+  closeTimeDurationHint.value = null
 }
 
 /** 搜索按钮操作 */
@@ -1990,6 +1953,16 @@ function handleUpdate(row) {
     if (!form.value.leaderIds) {
       form.value.leaderIds = []
     }
+    // 办结时间是 TIMESTAMP：回填成 'yyyy-MM-dd HH:mm:ss' 供日期控件解析
+    // （时刻部分不能丢，否则一保存精度就被抹成 00:00:00；历史数据只有日期的补 00:00:00）
+    form.value.closeTime = fmtCloseDateTime(form.value.closeTime) || undefined
+    originCloseTime = form.value.closeTime || ''
+    originFinance = {
+      contractId: form.value.contractId,
+      assignDate: form.value.assignDate,
+      leaderIds: [...(form.value.leaderIds || [])]
+    }
+    closeTimeDurationHint.value = null
     // 预加载合同选项，确保已选合同能回显名称
     if (form.value.contractId) {
       searchContracts("")
@@ -2023,8 +1996,10 @@ function handleUpdate(row) {
 }
 
 /** 查看详情（跳转项目工作台） */
+/** 详情：改为弹窗打开（组件内部可再点「独立页打开」跳原路由页） */
 function handleView(row) {
-  proxy.$router.push('/project/project-detail/index/' + row.id)
+  detailDlgId.value = row.id
+  detailDlgVisible.value = true
 }
 
 /** 查看作业清单 */
@@ -2051,12 +2026,17 @@ function handleComplete(row) {
   })
 }
 
-/* ==================== 修改办结时间（受限操作） ==================== */
+/* ==================== 办结时间（已并入「项目修改」表单） ==================== */
 
-const closeTimeOpen = ref(false)
-const closeTimeSubmitting = ref(false)
-const closeTimeDurationHint = ref(null)
-const closeTimeForm = ref({ id: null, projectCode: '', oldCloseTime: '', closeTime: '', assignDate: '' })
+/** 表单里的项目是否已办结 / 已归档：办结时间仅此时显示并可修改 */
+const formIsClosed = computed(() =>
+  !!form.value.id && (form.value.status === 'closed' || form.value.status === 'archived')
+)
+
+/** 打开修改弹窗时记下的原始办结时间，提交时用于判定是否真的改过 */
+let originCloseTime = ''
+/** 打开修改弹窗时记下的财务口径字段（合同 / 安排日期 / 负责人），保存后据此提示副作用 */
+let originFinance = { contractId: undefined, assignDate: undefined, leaderIds: [] }
 
 /** 归一化成 'yyyy-MM-dd HH:mm:ss'：后端可能返回带时区的 ISO 串 */
 /** 兼容 ISO-8601（2026-09-28T14:30:00.000+08:00）与 'yyyy-MM-dd HH:mm:ss'；
@@ -2076,74 +2056,47 @@ function fmtCloseDateTime(v) {
     ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds())
 }
 
-/** 仅「已办结 / 已归档」且持有 project:project:closeTime 权限时才出现入口 */
-function canEditCloseTime(row) {
-  if (!row) return false
-  if (row.status !== 'closed' && row.status !== 'archived') return false
-  return checkPermi(['project:project:closeTime'])
-}
-
 /** 办结日期不能晚于今天（时刻部分另有校验；后端也会二次校验） */
 const disableFutureDate = (time) => {
   return !!time && time.getTime() > Date.now()
 }
 
-/** 弹窗回填：close_time 是 TIMESTAMP，时刻部分必须带上，否则一保存就把精度抹成 00:00:00 */
-function openCloseTime(row) {
-  const old = fmtCloseDateTime(row.closeTime)
-  closeTimeForm.value = {
-    id: row.id,
-    projectCode: row.projectCode || '',
-    oldCloseTime: old,
-    closeTime: old,
-    assignDate: fmtCloseDateTime(row.assignDate).slice(0, 10)
-  }
-  closeTimeDurationHint.value = null
-  closeTimeOpen.value = true
-}
-
-/** 选了新时间后提示总时长会变成多少（改办结时间会同步重算该快照） */
-watch(() => closeTimeForm.value.closeTime, async (v) => {
-  const s = closeTimeForm.value.assignDate
-  if (!v || !s || v.slice(0, 10) < s) {
+/** 改了办结时间就提示总时长会重算成多少（后端按「安排日期→新办结日期」重算冻结快照） */
+const closeTimeDurationHint = ref(null)
+watch(() => [form.value.closeTime, form.value.assignDate], async ([v, assign]) => {
+  if (!formIsClosed.value || !v || !assign || String(v).slice(0, 10) < String(assign).slice(0, 10)) {
     closeTimeDurationHint.value = null
     return
   }
   try {
-    const n = await countWorkdays(s, v.slice(0, 10))
+    const n = await countWorkdays(assign, String(v).slice(0, 10))
     closeTimeDurationHint.value = n + ' 天'
   } catch (e) {
     closeTimeDurationHint.value = null
   }
 })
 
-function submitCloseTime() {
-  const f = closeTimeForm.value
-  if (!f.closeTime) {
-    proxy.$modal.msgError('请选择新的办结时间')
-    return
-  }
-  if (f.assignDate && f.closeTime.slice(0, 10) < f.assignDate) {
-    proxy.$modal.msgError('办结时间不能早于安排日期（' + f.assignDate + '）')
-    return
-  }
-  // 精确到秒：不允许把办结时刻设在未来
-  if (new Date(f.closeTime.replace(/-/g, '/')).getTime() > Date.now()) {
-    proxy.$modal.msgError('办结时间不能晚于当前时间')
-    return
-  }
-  if (f.closeTime === f.oldCloseTime) {
-    closeTimeOpen.value = false
-    return
-  }
-  closeTimeSubmitting.value = true
-  updateProjectCloseTime(f.id, f.closeTime).then(() => {
-    proxy.$modal.msgSuccess('办结时间已修改')
-    closeTimeOpen.value = false
-    getList()
-  }).catch(() => {}).finally(() => {
-    closeTimeSubmitting.value = false
-  })
+/** 办结时间是否在修改弹窗里被改动过（未办结项目不显示该字段，恒为 false） */
+function closeTimeChanged() {
+  if (!formIsClosed.value) return false
+  const v = form.value.closeTime || ''
+  return v !== '' && v !== originCloseTime
+}
+
+/** 财务口径字段是否被改动（仅在已办结/已归档项目上提示副作用）：
+ *  合同 → 触发外部工作量单价全量重算；安排日期 → 与冻结的总时长快照冲突；负责人 → 移除者的任务被逻辑删除 */
+function financeFieldsChanged() {
+  if (!formIsClosed.value) return false
+  if (!sameId(form.value.contractId, originFinance.contractId)) return true
+  if ((form.value.assignDate || '') !== (originFinance.assignDate || '')) return true
+  const now = (form.value.leaderIds || []).map(String).sort()
+  const old = (originFinance.leaderIds || []).map(String).sort()
+  return now.join(',') !== old.join(',')
+}
+
+/** 宽松 ID 比较（后端返回的 contractId 可能是 String 也可能是 Number） */
+function sameId(a, b) {
+  return String(a ?? '') === String(b ?? '')
 }
 
 /** 状态变更 */
@@ -2304,12 +2257,44 @@ function submitForm() {
       // 手动输入的新负责人（字符串姓名）→ 调后端建档换取 userId
       await resolveNewLeaders()
       const savedId = form.value.id
+      // 办结时间是否改动要在建档之后判定：leaderIds 此时已归一化为 userId
+      const financeChanged = financeFieldsChanged()
+      const newCloseTime = closeTimeChanged() ? form.value.closeTime : ''
+      let closeTimeSavedFailed = false
+      // 精确到秒：办结时刻不能设在未来（日期控件只限制到天）
+      if (newCloseTime && new Date(newCloseTime.replace(/-/g, '/')).getTime() > Date.now()) {
+        proxy.$modal.msgError("办结时间不能晚于当前时间")
+        submitLoading.value = false
+        return
+      }
       if (savedId != undefined) {
-        await updateProject(form.value)
-        proxy.$modal.msgSuccess("修改成功")
+        // ⚠️ updateProject 的 SQL 里没有 close_time 列：普通字段照常保存，
+        //    办结时间单独走 updateProjectCloseTime（复用它的校验 + 总时长快照重算）
+        await updateProject({ ...form.value, closeTime: undefined })
+        if (newCloseTime) {
+          // 办结时间单独提交失败（如早于安排日期）时，其余字段已落库，明确告知用户
+          try {
+            await updateProjectCloseTime(savedId, newCloseTime)
+            originCloseTime = newCloseTime
+          } catch (e2) {
+            closeTimeSavedFailed = true
+          }
+        }
         open.value = false
         loadLeaderList()
         refreshListStayOnRow(savedId)
+        if (closeTimeSavedFailed) {
+          // 失败原因（如早于安排日期）已由请求拦截器提示，这里只交代其余字段的结果
+          proxy.$modal.msgWarning("项目信息已保存，但办结时间未修改成功（原因见上方提示）")
+        } else if (newCloseTime || financeChanged) {
+          let msg = newCloseTime ? "修改成功，办结时间已更新" : "修改成功"
+          if (financeChanged) {
+            msg += "；该项目已办结，费用结算与月报数值可能随之变化"
+          }
+          proxy.$modal.msgWarning(msg)
+        } else {
+          proxy.$modal.msgSuccess("修改成功")
+        }
       } else {
         await addProject(form.value)
         proxy.$modal.msgSuccess("新增成功")
@@ -2555,37 +2540,33 @@ if (drillQuery.id) {
 </script>
 
 <style scoped>
-/* ---- 修改办结时间弹窗 ---- */
-.close-time-readonly {
-   margin-bottom: 14px;
-}
-.close-time-old {
-   color: #f56c6c;
-   font-weight: 600;
-}
-.close-time-field {
-   display: flex;
-   align-items: center;
-   gap: 10px;
-   margin: 6px 0 14px;
-}
-.close-time-label {
-   font-size: 13px;
-   color: #606266;
-   min-width: 84px;
-}
-.close-time-hint {
+/* ---- 办结时间字段下的说明 / 重算提示 ---- */
+.close-time-tip {
+   margin-top: 4px;
    font-size: 12px;
+   line-height: 1.5;
    color: #909399;
 }
-.close-time-alert {
-   padding: 9px 11px;
-   background: #fdf6ec;
-   border: 1px solid #f5dab1;
-   border-radius: 4px;
-   color: #8a6020;
-   font-size: 12px;
-   line-height: 1.6;
+/* ---- 项目详情弹窗：高度固定为视口的 88%（不随 tab / 内容多少伸缩），超高的内容在 body 内滚动 ----
+   注意：el-dialog 是 inheritAttrs:false，class 落在 .el-dialog 根节点自身，
+   所以这里不能用 :deep(.el-dialog)（那会编译成后代选择器，匹配不到）。 */
+.project-detail-dialog {
+   display: flex;
+   flex-direction: column;
+   height: 88vh;
+   max-height: 88vh;
+   margin-bottom: 0;
+}
+.project-detail-dialog :deep(.el-dialog__header) {
+   padding-top: 10px;
+   padding-bottom: 0;
+   margin-right: 0;
+}
+.project-detail-dialog :deep(.el-dialog__body) {
+   flex: 1;
+   min-height: 0;
+   padding: 10px 14px 14px;
+   overflow: auto;
 }
 /* ---- 导出弹窗 ---- */
 .export-tip {

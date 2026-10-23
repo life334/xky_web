@@ -1,17 +1,29 @@
 <template>
-   <div class="app-container" v-loading="projectLoading">
-      <!-- 面包屑 + 标题栏 -->
-      <el-breadcrumb separator="/" style="margin-bottom: 8px">
-         <el-breadcrumb-item>项目列表</el-breadcrumb-item>
-         <el-breadcrumb-item>项目工作台</el-breadcrumb-item>
-      </el-breadcrumb>
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-         <div style="display: flex; align-items: center; gap: 10px;">
-            <span style="font-size: 18px; font-weight: 600;">{{ projectInfo.projectName || projectInfo.projectCode || '' }}</span>
-            <dict-tag v-if="projectInfo.status" :options="proj_project_status" :value="projectInfo.status" />
-            <span v-if="projectInfo.projectName && projectInfo.projectCode" style="font-size: 13px; color: #909399;">工程编号：{{ projectInfo.projectCode }}</span>
+   <div :class="isDialogMode ? 'detail-in-dialog' : 'app-container'" v-loading="projectLoading">
+      <!-- 头部：第一行 工程编号 + 状态 + 办结时间，第二行 项目名称 + 项目类别 -->
+      <div class="detail-head">
+         <div class="detail-head-main">
+            <div class="detail-head-line1">
+               <span class="head-code">{{ projectInfo.projectCode || '-' }}</span>
+               <dict-tag v-if="projectInfo.status" :options="proj_project_status" :value="projectInfo.status" />
+               <!-- 办结时间：只有已办结/已归档的项目才有值，未办结不显示；只显示年月日 -->
+               <span v-if="projectInfo.closeTime" class="head-close-chip">
+                  <el-icon><CircleCheck /></el-icon>
+                  办结 {{ parseTime(projectInfo.closeTime, '{y}-{m}-{d}') }}
+               </span>
+            </div>
+            <div class="detail-head-line2">
+               <span class="head-name" :title="projectInfo.projectName">{{ projectInfo.projectName || '-' }}</span>
+               <span v-if="projectInfo.categoryName" class="head-cat">
+                  <el-icon><Folder /></el-icon>{{ projectInfo.categoryName }}
+               </span>
+            </div>
          </div>
-         <el-button icon="Back" @click="goBack">返回列表</el-button>
+         <!-- 弹窗模式：额外给一个「独立页打开」，保留刷新/分享/深度编辑的退路 -->
+         <div class="detail-head-actions">
+            <el-button v-if="isDialogMode" size="small" icon="Promotion" @click="openStandalone">独立页打开</el-button>
+            <el-button size="small" :icon="isDialogMode ? 'Close' : 'Back'" @click="goBack">{{ isDialogMode ? '关闭' : '返回列表' }}</el-button>
+         </div>
       </div>
 
       <!-- Tab 区 -->
@@ -373,7 +385,18 @@ const { proxy } = getCurrentInstance()
 const { proj_payment_type, proj_project_status, proj_material_result_type, proj_material_status, proj_material_submit_status } = useDict('proj_payment_type', 'proj_project_status', 'proj_material_result_type', 'proj_material_status', 'proj_material_submit_status')
 const route = useRoute()
 
-const projectId = route.params.projectId
+/**
+ * 两种用法：
+ * ① 独立页（路由 /project/project-detail/index/:projectId）→ projectId 来自路由参数，行为不变；
+ * ② 弹窗（父组件传 projectId prop）→ 关闭时 emit('close')，数据变更后 emit('saved') 让列表刷新。
+ */
+const props = defineProps({
+   projectId: { type: [Number, String], default: null }
+})
+const emit = defineEmits(['close', 'saved'])
+const isDialogMode = computed(() => props.projectId !== null && props.projectId !== undefined && props.projectId !== '')
+// 父组件用 :key + destroy-on-close 强制重新挂载，因此这里取一次即可，下游代码无需改动
+const projectId = isDialogMode.value ? props.projectId : route.params.projectId
 const activeTab = ref("info")
 const projectInfo = ref({})
 /** 项目基本信息加载中（整页遮罩，覆盖详情头部与基本信息 Tab） */
@@ -653,9 +676,19 @@ const externalOutputTotal = computed(() => {
    return workloadList.value.reduce((s, r) => r.billingType === 'external' ? s + num(r.externalOutput) : s, 0)
 })
 
-/** 返回列表 */
+/** 返回列表（弹窗模式下为「关闭」，通知父组件收起弹窗） */
 function goBack() {
+   if (isDialogMode.value) {
+      emit('close')
+      return
+   }
    proxy.$router.push("/project/list")
+}
+
+/** 弹窗里在新标签打开独立页 */
+function openStandalone() {
+   const url = proxy.$router.resolve('/project/project-detail/index/' + projectId).href
+   window.open(url, '_blank')
 }
 
 /** Tab 切换 */
@@ -829,6 +862,7 @@ function handleDeleteWorkload(row) {
       return delWorkload(row.id)
    }).then(() => {
       proxy.$modal.msgSuccess("删除成功")
+      emit('saved')
       loadWorkloads()
    }).catch(() => {
       workloadLoading.value = false
@@ -844,6 +878,7 @@ function submitWorkload() {
       const req = workloadForm.value.id ? updateWorkload(workloadForm.value) : addWorkload(workloadForm.value)
       req.then(() => {
          proxy.$modal.msgSuccess(workloadForm.value.id ? "修改成功" : "录入成功")
+         emit('saved')
          workloadOpen.value = false
          loadWorkloads()
       }).catch(() => {
@@ -875,6 +910,7 @@ function handleDeletePayment(row) {
       return delPayment(row.id)
    }).then(() => {
       proxy.$modal.msgSuccess("删除成功")
+      emit('saved')
       loadPayments()
    }).catch(() => {
       paymentLoading.value = false
@@ -890,6 +926,7 @@ function submitPayment() {
       const req = paymentForm.value.id ? updatePayment(paymentForm.value) : addPayment(paymentForm.value)
       req.then(() => {
          proxy.$modal.msgSuccess(paymentForm.value.id ? "修改成功" : "登记成功")
+         emit('saved')
          paymentOpen.value = false
          loadPayments()
       }).catch(() => {
@@ -1006,5 +1043,77 @@ onMounted(() => {
 }
 .mb8 {
    margin-bottom: 8px;
+}
+/* ---- 头部：卡片式两行布局，编号为主、名称为辅；办结时间做成弱化的小标签 ---- */
+.detail-head {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   gap: 16px;
+   margin-bottom: 14px;
+   padding: 10px 14px;
+   background: #f5f7fa;
+   border: 1px solid #ebeef5;
+   border-radius: 6px;
+}
+.detail-head-main {
+   min-width: 0;
+}
+.detail-head-line1 {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   flex-wrap: wrap;
+}
+.head-code {
+   font-size: 17px;
+   font-weight: 600;
+   color: #303133;
+   line-height: 1.3;
+}
+.head-close-chip {
+   display: inline-flex;
+   align-items: center;
+   gap: 4px;
+   font-size: 12px;
+   color: #909399;
+   background: #fff;
+   border: 1px solid #e4e7ed;
+   border-radius: 10px;
+   padding: 2px 8px;
+   line-height: 1;
+}
+.detail-head-line2 {
+   display: flex;
+   align-items: center;
+   gap: 14px;
+   margin-top: 5px;
+   font-size: 13px;
+   color: #909399;
+   overflow: hidden;
+}
+.head-name {
+   color: #606266;
+   font-weight: 500;
+   max-width: 620px;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+.head-cat {
+   display: inline-flex;
+   align-items: center;
+   gap: 4px;
+   white-space: nowrap;
+}
+.detail-head-actions {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   flex-shrink: 0;
+}
+/* 弹窗内嵌模式：外边距由父级 el-dialog 的 body 控制，这里不再套 app-container 的 padding */
+.detail-in-dialog {
+   padding: 0;
 }
 </style>
