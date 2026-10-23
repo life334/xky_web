@@ -94,6 +94,10 @@
                   <div class="filter-item-label">办结日期</div>
                   <el-date-picker v-model="closeDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onCloseDateChange" />
                </div>
+               <div class="filter-item">
+                  <div class="filter-item-label">拟上报时间</div>
+                  <el-date-picker v-model="planReportTimeRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onPlanReportTimeChange" />
+               </div>
             </div>
             <!-- 快捷日期 -->
             <div class="quick-filter-row">
@@ -600,6 +604,14 @@
          draggable
       >
          <el-form ref="paymentRef" v-loading="paymentLoading" element-loading-text="数据加载中..." element-loading-background="rgba(255, 255, 255, 0.7)" :model="paymentForm" label-width="100px">
+            <!-- 拟上报时间：项目级字段（挂在项目上，不是某一笔款），由用户在这里指定 -->
+            <el-row :gutter="20">
+               <el-col :span="8">
+                  <el-form-item label="拟上报时间">
+                     <el-date-picker v-model="paymentForm.planReportTime" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" clearable style="width:100%" />
+                  </el-form-item>
+               </el-col>
+            </el-row>
             <!-- 付款信息（保持原有结构） -->
             <el-divider content-position="left">付款信息</el-divider>
             <div class="settle-panel">
@@ -975,6 +987,7 @@ const FALLBACK_COLUMNS = [
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
   { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
+  { key: 'planReportTime', label: '拟上报时间', type: 'date', group: 'business', prop: 'planReportTime', defaultVisible: true },
   { key: 'userName', label: '负责人', type: 'text', group: 'business', prop: 'userName', defaultVisible: false },
   { key: 'categoryName', label: '项目类别', type: 'text', group: 'business', prop: 'categoryName', defaultVisible: true },
   { key: 'internalWorkload', label: '内部工作量', type: 'number', group: 'business', prop: 'internalWorkload', defaultVisible: true },
@@ -1083,8 +1096,9 @@ const workloadOpen = ref(false)
 const paymentOpen = ref(false)
 const paymentSaving = ref(false)
 const editEngineeringProject = ref('')
-/** 到账信息表单：付款 + 开票字段（到账信息弹窗使用） */
+/** 到账信息表单：拟上报时间（项目级）+ 付款 + 开票字段（到账信息弹窗使用） */
 const paymentForm = ref({
+   planReportTime: null,
    prepayAmount: null,
    prepayDate: null,
    payUnit: null,
@@ -1117,6 +1131,8 @@ const clientUnitOptions = ref([])
 const workloadLoading = ref(false)
 /** 到账信息弹窗内容加载中 */
 const paymentLoading = ref(false)
+/** 到账明细是否加载成功：未成功时不回写「拟上报时间」，防止加载失败把已填的值清空 */
+const paymentDetailLoaded = ref(false)
 /** 基础数据（类别树/计费项/用户）懒加载中（单一 ref，被多入口 await 时由缓存机制保证不会互相提前关掉遮罩） */
 const baseDataLoading = ref(false)
 /** 委托单位去重值（筛选下拉）加载中 */
@@ -1124,6 +1140,8 @@ const distinctLoading = ref(false)
 
 // 新增：智能查询面板
 const closeDateRange = ref([])
+/** 拟上报时间区间（项目级字段，与办结日期同规格） */
+const planReportTimeRange = ref([])
 const contractOptions = ref([])
 const contractLoading = ref(false)
 const advancedVisible = ref(false)
@@ -1140,7 +1158,9 @@ const data = reactive({
     contractId: undefined,
     dataSource: undefined,
     closeDateBegin: undefined,
-    closeDateEnd: undefined
+    closeDateEnd: undefined,
+    planReportTimeBegin: undefined,
+    planReportTimeEnd: undefined
   },
 })
 
@@ -1451,6 +1471,7 @@ function handleQuery() {
 
 function resetQuery() {
   closeDateRange.value = []
+  planReportTimeRange.value = []
   queryParams.value.keyword = undefined
   queryParams.value.projectCode = undefined
   queryParams.value.clientUnit = undefined
@@ -1462,6 +1483,20 @@ function resetQuery() {
   queryParams.value.dataSource = undefined
   queryParams.value.closeDateBegin = undefined
   queryParams.value.closeDateEnd = undefined
+  queryParams.value.planReportTimeBegin = undefined
+  queryParams.value.planReportTimeEnd = undefined
+  handleQuery()
+}
+
+/** 拟上报时间变更 */
+function onPlanReportTimeChange(val) {
+  if (val && val.length === 2) {
+    queryParams.value.planReportTimeBegin = val[0]
+    queryParams.value.planReportTimeEnd = val[1]
+  } else {
+    queryParams.value.planReportTimeBegin = undefined
+    queryParams.value.planReportTimeEnd = undefined
+  }
   handleQuery()
 }
 
@@ -1579,10 +1614,15 @@ function handleEditPayment(row) {
   // 立即打开弹窗 + 内容 loading，明细在后台加载
   paymentOpen.value = true
   paymentLoading.value = true
+  // 明细未加载成功前不写「拟上报时间」：避免加载失败时把已填的值清成空
+  paymentDetailLoaded.value = false
   getSettlementDetail(row.projectId)
     .then(detailRes => {
       const detail = detailRes.data
+      paymentDetailLoaded.value = true
       const payments = detail.payments || []
+      // 拟上报时间（项目级字段，从项目对象上取；后端按 yyyy-MM-dd 序列化）
+      paymentForm.value.planReportTime = (detail.project && detail.project.planReportTime) || null
       // 填充付款信息
       const prepay = payments.find(p => p.paymentType === "advance")
       const tail = payments.find(p => p.paymentType === "final")
@@ -1636,6 +1676,11 @@ function savePaymentData() {
   const payload = {
     projectId: editProjectId.value,
     remark: paymentForm.value.remark
+  }
+  // 拟上报时间（项目级）：明细加载成功才带这个 key，传 null 表示清空（后端用 containsKey 判定）；
+  // 明细加载失败时整个 key 不带，避免误清已有值
+  if (paymentDetailLoaded.value) {
+    payload.planReportTime = paymentForm.value.planReportTime || null
   }
   const invoiceMode = paymentForm.value.invoiceMode
 

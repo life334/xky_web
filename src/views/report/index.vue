@@ -63,7 +63,10 @@
         </div>
         <div class="filter-grid">
           <div v-for="fk in selectedFilterKeys" :key="fk" class="filter-item">
-            <span class="filter-label" :title="fieldPoolMeta(fk)?.label">{{ fieldPoolMeta(fk)?.label || fk }}</span>
+            <span class="filter-label" :title="fieldPoolMeta(fk)?.label">
+              {{ fieldPoolMeta(fk)?.label || fk }}
+              <em v-if="orFilterKeys.includes(fk)" class="or-tag" title="该条件与其它标「或」的条件取并集">或</em>
+            </span>
             <!-- 文本模糊匹配 -->
             <el-input v-if="FILTER_MAP[fk].widget === 'input'" :model-value="fv(FILTER_MAP[fk].mapKey)" placeholder="模糊匹配" clearable size="small" @update:model-value="setFv(FILTER_MAP[fk].mapKey, $event)" @keyup.enter="debouncePreview" @clear="debouncePreview" @change="debouncePreview" />
             <!-- 单选下拉 -->
@@ -233,11 +236,19 @@
           </div>
         </div>
         <div class="config-panel right">
-          <div class="panel-title">已启用（{{ filterDraft.length }}）— 上下调整显示顺序</div>
+          <div class="panel-title">已启用（{{ filterDraft.length }}）— 上下调整顺序；勾「或」的条件之间取并集</div>
           <div class="panel-scroll">
             <div v-if="!filterDraft.length" class="panel-empty">未启用任何筛选条件</div>
             <div v-for="(fk, idx) in filterDraft" :key="fk" class="order-row">
               <span class="order-label">{{ fieldPoolMeta(fk)?.label || fk }}</span>
+              <!-- 「或」标记：勾选的条件之间取并集，其余条件仍是交集 -->
+              <el-checkbox
+                :model-value="orFilterKeys.includes(fk)"
+                size="small"
+                class="or-check"
+                title="勾选后该条件与其它勾选了「或」的条件取并集（满足任一即可）"
+                @change="(v) => toggleOrKey(fk, v)"
+              >或</el-checkbox>
               <el-button-group size="small">
                 <el-button :icon="'Top'" :disabled="idx === 0" @click="moveDraft(idx, -1)" />
                 <el-button :icon="'Bottom'" :disabled="idx === filterDraft.length - 1" @click="moveDraft(idx, 1)" />
@@ -727,6 +738,8 @@ const FILTER_MAP = {
   assignDate: { widget: 'daterange', range: ['assignDateBegin', 'assignDateEnd'] },
   createTime: { widget: 'daterange', range: ['createTimeBegin', 'createTimeEnd'] },
   closeTime: { widget: 'daterange', range: ['closeTimeBegin', 'closeTimeEnd'] },
+  /* 拟上报时间（项目级 proj_project.plan_report_time）：到账信息编辑时由用户填写 */
+  planReportTime: { widget: 'daterange', range: ['planReportTimeBegin', 'planReportTimeEnd'] },
   /* 关联定线项目时间段：系统关联取定线项目创建时间；手工编号按其编号里的年份（见后端 relatedProjStartExpr / EndExpr） */
   relatedProjectCreate: { widget: 'daterange', range: ['relatedProjectCreateBegin', 'relatedProjectCreateEnd'] },
   receivedAmount: { widget: 'numberRange', range: ['receivedAmountMin', 'receivedAmountMax'] },
@@ -755,6 +768,9 @@ const currentFilterId = ref(null)
 const currentFilterSchemeName = ref('')
 const selectedFilterKeys = ref([])     // 启用的筛选字段（有序）
 const filterValues = reactive({})      // 扁平后端键 → 值（与保存的 filterConfig.values 一致）
+/* 标记为「或」的筛选字段 key：这些条件之间取并集，其余条件仍是交集
+   最终语义 = (其余条件 AND ...) AND (这些条件 OR ...)，未标记时与历史行为完全一致 */
+const orFilterKeys = ref([])
 const previewRows = ref([])
 const previewTotal = ref(0)
 const previewLoading = ref(false)
@@ -1249,6 +1265,9 @@ function buildBackendFilter(withName = false) {
     }
   })
   if (withName && currentFilterSchemeName.value) f._filterName = currentFilterSchemeName.value
+  // 「或」条件组：字段名 → 后端键（后端按此把条件放进 OR 段）
+  const orKeys = expandOrKeys()
+  if (orKeys.length) f.orFields = orKeys
   return f
 }
 
@@ -1316,7 +1335,33 @@ function applyFilterConfig(cfg) {
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) cfg = {}
   selectedFilterKeys.value = (cfg.selected || []).filter(k => FILTER_MAP[k])
   Object.keys(filterValues).forEach(k => { filterValues[k] = null })
-  Object.keys(cfg.values || {}).forEach(k => { filterValues[k] = deserializeFilterValue(k, cfg.values[k]) })
+  // orFields 是结构而非筛选项，不回填进 filterValues（旧方案里可能残留在 values 中）
+  Object.keys(cfg.values || {}).forEach(k => {
+    if (k === 'orFields') return
+    filterValues[k] = deserializeFilterValue(k, cfg.values[k])
+  })
+  // 「或」标记：只保留仍在启用列表里的（方案跨模板套用时可能有已失效的字段）
+  orFilterKeys.value = (cfg.orFields || []).filter(k => selectedFilterKeys.value.includes(k))
+}
+
+/* 切换某筛选字段的「或」标记 */
+function toggleOrKey(fk, on) {
+  const i = orFilterKeys.value.indexOf(fk)
+  if (on && i < 0) orFilterKeys.value.push(fk)
+  else if (!on && i >= 0) orFilterKeys.value.splice(i, 1)
+  debouncePreview()
+}
+
+/* 「或」字段 → 后端键数组（daterange/numberRange 展开成 Begin/End、Min/Max） */
+function expandOrKeys() {
+  const out = []
+  orFilterKeys.value.forEach(k => {
+    const meta = FILTER_MAP[k]
+    if (!meta || !selectedFilterKeys.value.includes(k)) return
+    if (meta.range) meta.range.forEach(r => out.push(r))
+    else if (meta.mapKey) out.push(meta.mapKey)
+  })
+  return out
 }
 
 async function onFilterChange(id) {
@@ -1368,7 +1413,13 @@ function applyDefaultFilter(withPreview = true) {
 
 /* 收集当前筛选表单的配置结构（与保存方案一致的 JSON 字符串） */
 function buildFilterConfigJson() {
-  return JSON.stringify({ selected: [...selectedFilterKeys.value], values: buildBackendFilter() })
+  const values = buildBackendFilter()
+  delete values.orFields   // 「或」标记单独存顶层，不混进筛选值
+  return JSON.stringify({
+    selected: [...selectedFilterKeys.value],
+    values,
+    orFields: [...orFilterKeys.value]
+  })
 }
 
 async function saveFilterScheme() {
@@ -1488,6 +1539,7 @@ function toggleDraftField(key, checked) {
     if (!filterDraft.value.includes(key)) filterDraft.value.push(key)
   } else {
     filterDraft.value = filterDraft.value.filter(k => k !== key)
+    orFilterKeys.value = orFilterKeys.value.filter(k => k !== key)
   }
 }
 
@@ -1499,11 +1551,14 @@ function moveDraft(idx, dir) {
 }
 
 function removeDraft(idx) {
-  filterDraft.value.splice(idx, 1)
+  const [k] = filterDraft.value.splice(idx, 1)
+  if (k) orFilterKeys.value = orFilterKeys.value.filter(x => x !== k)
 }
 
 function confirmFilterDialog() {
   selectedFilterKeys.value = [...filterDraft.value]
+  // 「或」标记只保留仍在启用列表里的
+  orFilterKeys.value = orFilterKeys.value.filter(k => selectedFilterKeys.value.includes(k))
   filterDialogVisible.value = false
   doPreview()
 }
@@ -2311,6 +2366,20 @@ function leafWidth(leaf) {
           white-space: nowrap;
           min-width: 60px;
           text-align: right;
+          /* 「或」标记：该条件与其它标「或」的条件取并集 */
+          .or-tag {
+            display: inline-block;
+            margin-left: 3px;
+            padding: 0 4px;
+            font-size: 11px;
+            font-style: normal;
+            line-height: 15px;
+            color: var(--el-color-warning);
+            background: var(--el-color-warning-light-9);
+            border: 1px solid var(--el-color-warning-light-5);
+            border-radius: 3px;
+            vertical-align: middle;
+          }
         }
         .range-pair {
           display: flex;
@@ -2470,6 +2539,11 @@ function leafWidth(leaf) {
             white-space: nowrap;
           }
           .col-label-input { flex: 1; }
+          .or-check {
+            margin-right: 0;
+            height: auto;
+            :deep(.el-checkbox__label) { font-size: 12px; padding-left: 4px; }
+          }
         }
       }
     }

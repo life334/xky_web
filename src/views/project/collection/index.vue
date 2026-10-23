@@ -367,6 +367,8 @@
                <span class="capsule-group-label">统计口径</span>
                <span class="status-capsule" :class="{ active: summaryDimension === 'payTime' }" @click="setSummaryDimension('payTime')">按到账时间</span>
                <span class="status-capsule" :class="{ active: summaryDimension === 'closeTime' }" @click="setSummaryDimension('closeTime')">按办结时间</span>
+               <!-- 按拟上报时间：项目级字段（proj_project.plan_report_time），未填的项目/到账不计入 -->
+               <span class="status-capsule" :class="{ active: summaryDimension === 'planReportTime' }" @click="setSummaryDimension('planReportTime')">按拟上报时间</span>
                <span class="capsule-sep" />
                <span class="capsule-group-label">快捷区间</span>
                <span v-for="q in SUMMARY_QUICKS" :key="q.value" class="status-capsule" :class="{ active: summaryQuick === q.value }" @click="setSummaryQuick(q.value)">{{ q.label }}</span>
@@ -1431,7 +1433,11 @@ function resetSummaryQuery() {
 }
 
 /** 合计里「到账金额」的口径说明 */
-const summaryMetricLabel = computed(() => summaryDimension.value === 'closeTime' ? '到账金额(元)·按办结时间' : '到账金额(元)·按到账时间')
+const summaryMetricLabel = computed(() => {
+   if (summaryDimension.value === 'closeTime') return '到账金额(元)·按办结时间'
+   if (summaryDimension.value === 'planReportTime') return '到账金额(元)·按拟上报时间'
+   return '到账金额(元)·按到账时间'
+})
 
 /** 分组标签显示（付款类型走中文映射） */
 function summaryLabel(row) {
