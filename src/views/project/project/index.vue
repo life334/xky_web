@@ -414,8 +414,11 @@
                         :disabled-date="disableFutureDate"
                         style="width: 100%" />
                      <div class="close-time-tip">
-                        <span v-if="closeTimeDurationHint">保存后总时长将按此日期同步为 {{ closeTimeDurationHint }}</span>
-                        <span v-else>办结时间决定产值归属月份、回款应收账期与欠款逾期预警，跨月修改后已导出的月报数值将不再匹配。</span>
+                        <span v-if="closeTimeBeforeAssign" class="close-time-warn">
+                           ⚠ 办结时间早于安排日期：保存后安排日期将自动前移（总时长保持不变）
+                        </span>
+                        <span v-else-if="closeTimeDurationHint">保存后总时长将按此日期同步为 {{ closeTimeDurationHint }}</span>
+                        <span v-else>办结时间可早于安排日期 / 创建时间，但不能晚于当前时间。跨月修改后已导出的月报数值将不再匹配。</span>
                      </div>
                   </el-form-item>
                </el-col>
@@ -2056,10 +2059,17 @@ function fmtCloseDateTime(v) {
     ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds())
 }
 
-/** 办结日期不能晚于今天（时刻部分另有校验；后端也会二次校验） */
+/** 办结日期不能晚于今天（后端同样校验） */
 const disableFutureDate = (time) => {
   return !!time && time.getTime() > Date.now()
 }
+
+/** 办结时间是否早于安排日期：此时区间反向，后端改为前移安排日期来保住总时长快照 */
+const closeTimeBeforeAssign = computed(() => {
+  if (!formIsClosed.value) return false
+  const v = form.value.closeTime, a = form.value.assignDate
+  return !!v && !!a && String(v).slice(0, 10) < String(a).slice(0, 10)
+})
 
 /** 改了办结时间就提示总时长会重算成多少（后端按「安排日期→新办结日期」重算冻结快照） */
 const closeTimeDurationHint = ref(null)
@@ -2269,10 +2279,10 @@ function submitForm() {
       }
       if (savedId != undefined) {
         // ⚠️ updateProject 的 SQL 里没有 close_time 列：普通字段照常保存，
-        //    办结时间单独走 updateProjectCloseTime（复用它的校验 + 总时长快照重算）
+        //    办结时间单独走 updateProjectCloseTime（复用它的状态校验 + 总时长快照重算）
         await updateProject({ ...form.value, closeTime: undefined })
         if (newCloseTime) {
-          // 办结时间单独提交失败（如早于安排日期）时，其余字段已落库，明确告知用户
+          // 办结时间单独提交失败（如非办结状态）时，其余字段已落库，明确告知用户
           try {
             await updateProjectCloseTime(savedId, newCloseTime)
             originCloseTime = newCloseTime
@@ -2284,7 +2294,7 @@ function submitForm() {
         loadLeaderList()
         refreshListStayOnRow(savedId)
         if (closeTimeSavedFailed) {
-          // 失败原因（如早于安排日期）已由请求拦截器提示，这里只交代其余字段的结果
+          // 失败原因已由请求拦截器提示，这里只交代其余字段的结果
           proxy.$modal.msgWarning("项目信息已保存，但办结时间未修改成功（原因见上方提示）")
         } else if (newCloseTime || financeChanged) {
           let msg = newCloseTime ? "修改成功，办结时间已更新" : "修改成功"
@@ -2546,6 +2556,10 @@ if (drillQuery.id) {
    font-size: 12px;
    line-height: 1.5;
    color: #909399;
+}
+/* 办结时间早于安排日期：不是报错，但要让用户知道安排日期会被改 */
+.close-time-warn {
+   color: #e6a23c;
 }
 /* ---- 项目详情弹窗：高度固定为视口的 88%（不随 tab / 内容多少伸缩），超高的内容在 body 内滚动 ----
    注意：el-dialog 是 inheritAttrs:false，class 落在 .el-dialog 根节点自身，
