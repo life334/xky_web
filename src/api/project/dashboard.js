@@ -48,6 +48,17 @@ export function getDashboardTrend(params) {
   })
 }
 
+// 管线长度统计：符合要求的项目类别（可用 sys_config 调整）内部产值中单位为「千米」的工作量合计。
+// 入参同其它端点（beginDate/endDate），归属时间=项目办结日期。
+// 返回 totalKm / projectCount / workloadRows / categories[] / monthly[] / categoryKeys / categoryExcludes
+export function getDashboardPipelineLength(params) {
+  return request({
+    url: '/project/dashboard/pipelineLength',
+    method: 'get',
+    params
+  })
+}
+
 // 段5 风险与执行：欠款按年（办结年口径）、风险行动清单（欠款/工期超期/未关联合同 三源合并）、计数
 export function getDashboardRisk(params) {
   return request({

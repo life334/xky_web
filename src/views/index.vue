@@ -123,8 +123,11 @@
       <span class="seg-pill">数量/合同额按创建日期 · 产值按办结日期 · 类别口径：定线/验线/管线图/实测/其它</span>
       <span v-if="collapsed.seg2" class="seg-collapse-summary">{{ seg2Summary }}</span>
     </div>
+    <!-- ⚠️ el-collapse-transition 只接受单一子节点：段内多行必须用下面这层 div 包住，
+         否则第二个及以后的兄弟节点会被 Vue Transition 直接丢弃（不报错、不渲染） -->
     <el-collapse-transition>
-    <div v-show="!collapsed.seg2" class="chart-row structure-row">
+    <div v-show="!collapsed.seg2">
+    <div class="chart-row structure-row">
       <div class="chart-card chart-wide" v-loading="structureLoading">
         <div class="chart-header">
           <span class="chart-title">项目类别构成与产值画像</span>
@@ -181,7 +184,8 @@
             <div v-if="externalMissing > 0" class="profile-missing">另有 {{ externalMissing }} 行工作量未填外部产值，未计入产值列</div>
           </div>
       </div>
-      <div class="chart-card chart-narrow biz-close-card" v-loading="structureLoading">
+      <div class="chart-card chart-narrow seg2-right" v-loading="structureLoading || pipelineLoading">
+        <div class="seg2-block">
         <div class="chart-header">
           <span class="chart-title">本期办结占比</span>
           <span class="chart-subtitle">点击条形或图例查看明细</span>
@@ -210,23 +214,58 @@
               :title="seg.bucketName + ' ' + seg.count + ' 个（' + seg.ratio + '%）'"
               @click="closedDrill(seg)"
             >
-              <div class="sl-top">
-                <span class="bucket-dot" :style="{ background: BUCKET_COLORS[seg.bucket] }"></span>
-                <span class="stacked-legend-name">{{ seg.bucketName }}</span>
-                <span class="stacked-legend-num">{{ seg.count }} 个 · {{ seg.ratio }}%</span>
-              </div>
-              <div class="sl-track">
-                <span class="sl-fill" :style="{ width: seg.ratio + '%', background: BUCKET_COLORS[seg.bucket] }"></span>
-              </div>
+              <span class="bucket-dot" :style="{ background: BUCKET_COLORS[seg.bucket] }"></span>
+              <span class="stacked-legend-name">{{ seg.bucketName }}</span>
+              <span class="sl-track"><span class="sl-fill" :style="{ width: seg.ratio + '%', background: BUCKET_COLORS[seg.bucket] }"></span></span>
+              <span class="stacked-legend-num">{{ seg.count }} 个 · {{ seg.ratio }}%</span>
             </div>
           </div>
-          <div class="biz-close-foot">占比 = 该类别办结数 ÷ 本期办结总数（{{ closedTotal }} 个）</div>
         </template>
         <div v-else class="biz-close-empty">
           <el-empty description="本期暂无办结项目" :image-size="70" />
-          <div class="biz-close-empty-sub">可切换到「本年」查看已办结项目的类别占比</div>
+        </div>
+        </div>
+        <div class="seg2-sep"></div>
+        <div class="seg2-block pipe-block">
+          <div class="chart-header">
+            <span class="chart-title">管线长度统计</span>
+            <span class="chart-subtitle">{{ pipelineScopeText }}</span>
+            <el-button class="trend-btn" link type="primary" size="small" @click="openPipelineTrend">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 11.5 L5.5 8 L8 10 L14 4" />
+                <path d="M10.5 4 H14 V7.5" />
+                <path d="M2 2 V14 H14" />
+              </svg>
+              趋势图
+            </el-button>
+          </div>
+          <div class="pipe-hero">
+            <span class="pipe-num">{{ pipelineHasData ? formatKm(pipelineTotalKm) : '—' }}</span>
+            <span class="pipe-unit">千米</span>
+            <span class="pipe-cover">覆盖 {{ pipelineProjectCount }} 个项目</span>
+            <el-tooltip placement="top" :content="'统计周期：' + (pipeline.beginDate || '') + ' ~ ' + (pipeline.endDate || '')">
+              <span class="pipe-hero-hint">统计口径</span>
+            </el-tooltip>
+          </div>
+          <div class="pipe-split">
+            <template v-if="pipelineCategories.length">
+              <div
+                v-for="c in pipelineCategories"
+                :key="c.categoryId"
+                class="pipe-row pipe-clickable"
+                :title="c.categoryName + ' ' + formatKm(c.km) + ' 千米 / ' + c.projectCount + ' 个项目'"
+                @click="pipelineCategoryDrill(c)"
+              >
+                <span class="pipe-row-name">{{ c.categoryName }}</span>
+                <span class="pipe-track"><span class="pipe-fill" :style="{ width: (Number(c.km) / (Number(pipelineCategories[0].km) || 1) * 100) + '%' }"></span></span>
+                <span class="pipe-row-km">{{ formatKm(c.km) }}<span class="pipe-row-unit">km</span></span>
+              </div>
+            </template>
+            <div v-else class="pipe-empty">当前统计周期内无办结项目</div>
+          </div>
         </div>
       </div>
+    </div>
     </div>
     </el-collapse-transition>
 
@@ -421,6 +460,25 @@
 
     <!-- 项目详情抽屉（风险清单项 / 产值排行行 / 明细弹窗行 点击打开） -->
     <ProjectDetailDrawer v-model:visible="detailVisible" :project-id="detailId" />
+
+    <!-- 管线长度月度趋势（右列空间有限，卡片内只保留入口，点开看大图） -->
+    <el-dialog
+      v-model="pipelineTrendOpen"
+      title="管线长度月度趋势"
+      width="760px"
+      top="8vh"
+      @opened="renderPipelineTrendDialog"
+    >
+      <div class="pipe-dlg-meta">
+        <span>统计周期：{{ pipeline.beginDate || "—" }} ~ {{ pipeline.endDate || "—" }}</span>
+        <span>范围：{{ pipelineScopeText }}</span>
+        <span>归属时间按项目办结日期 · 单位 千米</span>
+      </div>
+      <div ref="pipelineTrendRef" class="pipe-dlg-canvas"></div>
+      <template #footer>
+        <el-button size="small" @click="pipelineTrendOpen = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -432,7 +490,8 @@ import {
   getDashboardSummary,
   getDashboardStructure,
   getDashboardTrend,
-  getDashboardRisk
+  getDashboardRisk,
+  getDashboardPipelineLength
 } from "@/api/project/dashboard"
 import { getLeaderOptions, getDistinctValues } from "@/api/project/project"
 import { categoryTreeselectFull } from "@/api/project/category"
@@ -454,7 +513,7 @@ const BUCKET_COLORS = {
 const RISK_TYPE_TEXT = { debt: "欠款逾期", overdue: "工期超期", contractMissing: "未关联合同" }
 
 // ===== 段0：周期与筛选 =====
-const quickPeriod = ref("month")
+const quickPeriod = ref("year")
 const dateRange = ref([])
 const dateShortcuts = [
   { text: "本月", value: () => { const d = new Date(); return [new Date(d.getFullYear(), d.getMonth(), 1), new Date()] } },
@@ -496,7 +555,8 @@ function fmtDate(d) {
 
 function initDateRange() {
   const now = new Date()
-  dateRange.value = [fmtDate(new Date(now.getFullYear(), now.getMonth(), 1)), fmtDate(now)]
+  // 默认「本年」：本月口径下办结项目常为 0，驾驶舱多张卡片会同时空态
+  dateRange.value = [fmtDate(new Date(now.getFullYear(), 0, 1)), fmtDate(now)]
 }
 
 function setRangeByQuick(val) {
@@ -570,10 +630,12 @@ const loading = ref(false)
 const structureLoading = ref(false)
 const trendLoading = ref(false)
 const riskLoading = ref(false)
+const pipelineLoading = ref(false)
 const summary = ref({})
 const structure = ref({})
 const trend = ref({})
 const risk = ref({})
+const pipeline = ref({})
 
 // ===== 图表 refs =====
 const pieCountRef = ref(null)
@@ -583,11 +645,28 @@ const pieExternalRef = ref(null)
 const cumulativeRef = ref(null)
 const dynamicRef = ref(null)
 const debtRef = ref(null)
+const pipelineTrendRef = ref(null)
 let charts = {}
+/** 趋势弹窗的图表实例单独管理：弹窗销毁后容器会消失，不能并入 handleResize 的 charts */
+let pipelineTrendChart = null
 
 // ===== 计算属性 =====
 const kpi = computed(() => summary.value.kpi || {})
 const categoryStats = computed(() => structure.value.categoryStats || [])
+
+// ===== 管线长度统计卡片 =====
+const pipelineTrendOpen = ref(false)
+const pipelineTotalKm = computed(() => Number(pipeline.value.totalKm) || 0)
+const pipelineProjectCount = computed(() => Number(pipeline.value.projectCount) || 0)
+const pipelineCategories = computed(() => pipeline.value.categories || [])
+/** 周期内有办结项目才算有数据；否则大数字显示「—」，避免 0.00 被误读成"算出0" */
+const pipelineHasData = computed(() => pipelineProjectCount.value > 0 || pipelineCategories.value.length > 0)
+/** 当前生效的统计范围（回显后端配置，便于核对某类别为何没算进来） */
+const pipelineScopeText = computed(() => {
+  const keys = pipeline.value.categoryKeys || ""
+  const ex = pipeline.value.categoryExcludes || ""
+  return `类别名含「${keys}」` + (ex ? ` · 排除「${ex}」` : "")
+})
 const externalMissing = computed(() => (structure.value.meta || {}).externalOutputMissingCount || 0)
 const matrixBuckets = computed(() => {
   const b = (structure.value.leaderMatrix || {}).buckets
@@ -829,11 +908,86 @@ async function fetchRisk() {
   }
 }
 
+async function fetchPipelineLength() {
+  pipelineLoading.value = true
+  try {
+    const res = await getDashboardPipelineLength(buildParams())
+    pipeline.value = res.data || {}
+    await nextTick()
+  } catch (e) {
+    console.error("Dashboard pipelineLength error:", e)
+  } finally {
+    pipelineLoading.value = false
+  }
+}
+
+/** 打开管线长度趋势弹窗（弹窗动画结束后容器才有尺寸，必须等 @opened 再 init 图表） */
+function openPipelineTrend() {
+  pipelineTrendOpen.value = true
+}
+
+function renderPipelineTrendDialog() {
+  const el = pipelineTrendRef.value
+  if (!el) return
+  if (!pipelineTrendChart) pipelineTrendChart = echarts.init(el)
+  const monthly = pipeline.value.monthly || []
+  const labels = monthly.map(d => d.label)
+  const kms = monthly.map(d => Number(d.km) || 0)
+
+  pipelineTrendChart.setOption({
+    backgroundColor: "transparent",
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: "#fff",
+      borderColor: "#e8eaed",
+      textStyle: { color: "#303133" },
+      formatter: p => `<b>${p[0].axisValue}</b><br/>${p[0].marker} 管线长度: ${formatKm(p[0].value)} 千米`
+    },
+    grid: { top: 28, left: 6, right: 22, bottom: 6, containLabel: true },
+    xAxis: {
+      type: "category", data: labels,
+      axisLine: { lineStyle: { color: "#e8eaed" } },
+      axisLabel: { color: "#909399", fontSize: 12 },
+      axisTick: { show: false }
+    },
+    yAxis: {
+      type: "value", name: "千米",
+      nameTextStyle: { color: "#909399", fontSize: 11 },
+      splitLine: { lineStyle: { color: "#f0f0f0", type: "dashed" } },
+      axisLabel: { color: "#909399", fontSize: 12, formatter: v => Number(v).toLocaleString("zh-CN") }
+    },
+    series: [{
+      type: "bar", data: kms, barMaxWidth: 38,
+      itemStyle: { color: "#36cfc9", borderRadius: [4, 4, 0, 0] },
+      label: {
+        show: labels.length <= 13,
+        position: "top",
+        color: "#8c8c8c",
+        fontSize: 11,
+        formatter: p => (Number(p.value) > 0 ? Number(p.value).toFixed(0) : "")
+      }
+    }]
+  })
+  pipelineTrendChart.resize()
+}
+
+/** 管线长度千分位展示（保留 2 位小数） */
+function formatKm(v) {
+  const n = Number(v) || 0
+  return n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** 管线长度卡片：类别行 → 项目明细弹窗（办结窗口 + 该类别） */
+function pipelineCategoryDrill(item) {
+  openDrill(`${item.categoryName} · 管线长度明细`, "close", { categoryIds: [item.categoryId] })
+}
+
 function fetchAll() {
   fetchSummary()
   fetchStructure()
   fetchTrend()
   fetchRisk()
+  fetchPipelineLength()
 }
 
 // ===== 图表渲染 =====
@@ -1923,34 +2077,32 @@ $accent-red: #ff4d4f;
 .stacked-bar .stacked-seg.stacked-clickable:hover { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.18); }
 .stacked-legend-item.stacked-clickable:hover { border-color: #d9e2ef; background: #f2f6fc; }
 
+/* 图例：单行紧凑排布（5 类别时约占 130px）。刻意不用 flex:1 + space-between 撑满，
+   避免类别少时在卡片底部留出 300px 的假空白 */
 .stacked-legend {
-  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  margin-top: 14px;
+  gap: 5px;
+  margin-top: 10px;
 
   .stacked-legend-item {
     display: flex;
-    flex-direction: column;
-    gap: 7px;
+    align-items: center;
+    gap: 8px;
     font-size: 12px;
-    padding: 8px 10px;
-    border: 1px solid #f0f2f5;
-    border-radius: 8px;
+    padding: 4px 8px;
+    border-radius: 6px;
     background: #fafbfc;
 
-    .sl-top { display: flex; align-items: center; }
-
     .stacked-legend-name {
+      flex: 0 0 42px;
       color: $text-primary;
       font-weight: 600;
-      width: 64px;
+      white-space: nowrap;
     }
 
-    .stacked-legend-num { color: $text-secondary; margin-left: auto; }
-
     .sl-track {
+      flex: 1 1 auto;
       height: 6px;
       border-radius: 3px;
       background: #eef1f5;
@@ -1963,17 +2115,26 @@ $accent-red: #ff4d4f;
       border-radius: 3px;
       transition: width 0.4s ease;
     }
+
+    .stacked-legend-num {
+      flex: 0 0 auto;
+      min-width: 66px;
+      text-align: right;
+      font-size: 11px;
+      color: $text-secondary;
+    }
   }
 }
 
 /* ===== 段3：效能矩阵 ===== */
 .matrix-card { margin-bottom: 16px; }
 
-/* 限高滚动（约 10 行可见）：项目经理人多时不再撑高整页；表头吸顶、合计行吸底便于对照
-   高度 = 表头 33 + 合计行 33 + 10 行 × 50 ≈ 566px（真实行高实测值，勿凭感觉调） */
+/* 限高滚动（约 8 行可见）：项目经理人多时不再撑高整页；表头吸顶、合计行吸底便于对照
+   高度 = 表头 27 + 合计行 27 + 8 行 × 44 ≈ 406px（真实行高实测值，勿凭感觉调）
+   曾为 566px（10 行 × 50），用户反馈整块太高，行距压紧后收到 8 行 */
 .matrix-scroll {
   overflow: auto;
-  max-height: 566px;
+  max-height: 406px;
 
   thead th {
     position: sticky;
@@ -1996,7 +2157,7 @@ $accent-red: #ff4d4f;
   min-width: 720px;
 
   th, td {
-    padding: 8px 10px;
+    padding: 5px 10px;
     border-bottom: 1px solid #f0f2f5;
     text-align: center;
   }
@@ -2033,9 +2194,10 @@ $accent-red: #ff4d4f;
       overflow: hidden;
       text-overflow: ellipsis;
       max-width: 140px;
+      line-height: 17px;
     }
 
-    .mx-name-sub { color: $text-muted; font-size: 11px; margin-top: 2px; }
+    .mx-name-sub { color: $text-muted; font-size: 11px; margin-top: 1px; line-height: 15px; }
   }
 
   .mx-cell {
@@ -2250,11 +2412,166 @@ $accent-red: #ff4d4f;
   }
 }
 
-.rank-amount {
-  font-size: 13px;
+/* ===== 段2 右列：本期办结占比 + 管线长度，两块共用一张卡（整体高度由左卡约束）===== */
+.seg2-right {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.seg2-block {
+  min-height: 0;
+}
+
+.pipe-block {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.seg2-sep {
+  flex: 0 0 1px;
+  height: 1px;
+  margin: 9px 0;
+  background: #f0f2f5;
+}
+
+.pipe-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: 7px;
+}
+
+.pipe-num {
+  font-size: 28px;
   font-weight: 700;
+  color: #13c2c2;
+  line-height: 1.1;
+  letter-spacing: -0.4px;
+}
+
+.pipe-unit {
+  font-size: 12px;
   color: $text-primary;
-  text-align: right;
+  font-weight: 600;
+}
+
+.pipe-cover {
+  margin-left: auto;
+  margin-right: 4px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.pipe-hero-hint {
+  padding: 1px 6px;
+  border: 1px solid #e8eaed;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #909399;
+  cursor: help;
+}
+
+.pipe-split {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pipe-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 5px;
+  border-radius: 4px;
+  transition: background 0.15s;
+
+  &:hover {
+    background: #f7fbfa;
+  }
+}
+
+.pipe-row-name {
+  flex: 0 0 58px;
+  font-size: 12px;
+  color: $text-primary;
+  font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pipe-track {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: #f2f4f7;
+  overflow: hidden;
+}
+
+.pipe-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #5ad8d0, #13c2c2);
+  transition: width 0.5s ease;
+}
+
+.pipe-row-km {
+  flex: 0 0 auto;
+  min-width: 56px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+  color: #13c2c2;
+  white-space: nowrap;
+}
+
+.pipe-row-unit {
+  font-size: 10px;
+  font-weight: 400;
+  color: #909399;
+  margin-left: 2px;
+}
+
+.pipe-empty {
+  padding: 10px 0;
+  text-align: center;
+  font-size: 12px;
+  color: #909399;
+}
+
+/* 右上「趋势图」入口：卡片内只留按钮，大图走弹窗 */
+.trend-btn {
+  margin-left: auto;
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+
+  &:hover { opacity: 0.8; }
+}
+
+/* 趋势弹窗 */
+.pipe-dlg-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #fafbfc;
+  font-size: 12px;
+  color: #909399;
+}
+
+.pipe-dlg-canvas {
+  width: 100%;
+  height: 340px;
 }
 </style>
