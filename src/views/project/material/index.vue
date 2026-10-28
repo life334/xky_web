@@ -3,7 +3,7 @@
       <!-- Row 1: 全局搜索 -->
       <div class="search-bar-row">
          <div class="search-input-wrapper">
-            <el-input v-model="queryParams.keyword" placeholder="搜索工程编号/项目名称/联系人/存档目录..." clearable @keyup.enter="handleQuery" @clear="handleQuery" class="global-search-input">
+            <el-input v-model="queryParams.keyword" placeholder="搜索工程编号/工程地点/委托单位/项目名称..." clearable @keyup.enter="handleQuery" @clear="handleQuery" class="global-search-input">
                <template #prefix><el-icon><Search /></el-icon></template>
             </el-input>
          </div>
@@ -13,7 +13,7 @@
 
       <!-- Row 2: 状态胶囊 -->
       <div class="status-capsule-row">
-         <span v-for="sc in statusCapsules" :key="sc.value ?? '__all__'" class="status-capsule" :class="{ active: queryParams.status === sc.value }" @click="handleStatusClick(sc.value)">{{ sc.label }}<span class="capsule-count">{{ sc.count }}</span></span>
+         <span v-for="sc in statusCapsules" :key="sc.value ?? '__all__'" class="status-capsule" :class="{ active: queryParams.status === sc.value }" @click="handleStatusClick(sc.value)"><span v-if="sc.icon" class="capsule-icon" v-html="statusIconSvg(sc.icon)"></span>{{ sc.label }}<span class="capsule-count">{{ sc.count }}</span></span>
       </div>
 
       <!-- Row 3: 高级筛选 -->
@@ -25,18 +25,6 @@
       <el-collapse-transition>
          <div v-show="advancedVisible" class="advanced-filter-panel">
             <div class="filter-grid">
-               <div class="filter-item">
-                  <div class="filter-item-label">所属项目</div>
-                  <el-select v-model="queryParams.projectId" filterable clearable placeholder="全部项目" style="width:100%" :loading="optionsLoading" @change="handleQuery">
-                     <el-option v-for="p in projectOptions" :key="p.id" :label="p.projectName" :value="p.id" />
-                  </el-select>
-               </div>
-               <div class="filter-item">
-                  <div class="filter-item-label">成果类型</div>
-                  <el-select v-model="queryParams.resultType" clearable placeholder="全部类型" style="width:100%" @change="handleQuery">
-                     <el-option v-for="dict in proj_material_result_type" :key="dict.value" :label="dict.label" :value="dict.value" />
-                  </el-select>
-               </div>
                <div class="filter-item" v-if="false">
                   <div class="filter-item-label">资料状态</div>
                   <el-select v-model="queryParams.status" clearable placeholder="全部状态" style="width:100%" @change="handleQuery">
@@ -57,20 +45,25 @@
                   </el-select>
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">委托单位性质</div>
-                  <el-select v-model="queryParams.clientUnitNature" clearable placeholder="全部" style="width:100%" @change="handleQuery">
-                     <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
-                  </el-select>
+                  <div class="filter-item-label">委托单位</div>
+                  <el-input v-model="queryParams.clientUnit" placeholder="模糊搜索" clearable style="width:100%" @keyup.enter="handleQuery" @clear="handleQuery" />
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">项目来源</div>
-                  <el-select v-model="queryParams.dataSource" clearable placeholder="全部来源" style="width:100%" @change="handleQuery">
-                     <el-option v-for="dict in sourceOptions" :key="dict.value" :label="dict.label" :value="dict.value" />
+                  <div class="filter-item-label">项目类别</div>
+                  <el-select
+                     v-model="queryParams.projectCategoryIds"
+                     multiple
+                     filterable
+                     clearable
+                     collapse-tags
+                     collapse-tags-tooltip
+                     :max-collapse-tags="2"
+                     placeholder="全部类别（可多选）"
+                     style="width:100%"
+                     @change="handleQuery"
+                  >
+                     <el-option v-for="c in subCategoryOptions" :key="c.id" :label="c.label" :value="c.id" />
                   </el-select>
-               </div>
-               <div class="filter-item">
-                  <div class="filter-item-label">办结日期</div>
-                  <el-date-picker v-model="closeDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onCloseDateChange" />
                </div>
                <div class="filter-item">
                   <div class="filter-item-label">工程编号</div>
@@ -81,14 +74,8 @@
                   <el-input v-model="queryParams.projectLocation" placeholder="工程地点" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
                </div>
             </div>
-            <!-- 快捷日期 -->
+            <!-- 快捷日期（作用于办结日期，已随「办结日期」筛选项一并移除） -->
             <div class="quick-filter-row">
-               <span class="quick-label">快捷：</span>
-               <span class="quick-chip" @click="setQuickDate('today')">今天</span>
-               <span class="quick-chip" @click="setQuickDate('week')">本周</span>
-               <span class="quick-chip" @click="setQuickDate('month')">本月</span>
-               <span class="quick-chip" @click="setQuickDate('7days')">近7天</span>
-               <span class="quick-chip" @click="setQuickDate('30days')">近30天</span>
                <span class="collapse-link" @click="advancedVisible = false">收起 ▲</span>
             </div>
          </div>
@@ -105,7 +92,7 @@
       </el-row>
 
       <el-table v-loading="loading" :data="materialList" row-key="id" stripe border v-hover-h-scroll @selection-change="handleSelectionChange" @expand-change="handleExpandChange">
-         <el-table-column type="expand">
+         <el-table-column type="expand" fixed="left" width="48">
             <template #default="scope">
                <div class="expand-panel" v-loading="expandDetailLoading(scope.row.projectId)">
                   <template v-if="expandDetails[scope.row.projectId] && expandDetails[scope.row.projectId].overview">
@@ -214,10 +201,19 @@
                </div>
             </template>
          </el-table-column>
-         <el-table-column v-for="col in visibleColumns" :key="col.key" :label="col.label" align="center" :prop="col.prop" :show-overflow-tooltip="false" :min-width="colWidth(col)">
+         <el-table-column v-for="col in visibleColumns" :key="col.key" :label="col.label" :align="col.key === 'projectCode' ? 'left' : 'center'" :prop="col.prop" :show-overflow-tooltip="false" :fixed="col.key === 'projectCode' ? 'left' : false" :width="col.key === 'projectCode' ? 190 : undefined" :min-width="col.key === 'projectCode' ? undefined : colWidth(col)">
             <template #default="scope">
+               <!-- 工程编号列：编号左侧显示状态图标（归档优先，与资料状态互斥，每行只显示一个） -->
+               <template v-if="col.key === 'projectCode'">
+                  <span class="cell-with-state">
+                     <el-tooltip :content="stateTooltip(scope.row)" placement="top" :enterable="false">
+                        <span class="mat-state-icon" v-html="statusIconSvg(stateKey(scope.row))"></span>
+                     </el-tooltip>
+                     <span>{{ scope.row[col.prop] }}</span>
+                  </span>
+               </template>
                <!-- 字典标签：按列 key 选择对应字典 -->
-               <template v-if="col.type === 'dict'">
+               <template v-else-if="col.type === 'dict'">
                   <dict-tag v-if="scope.row[col.prop]" :options="dictOptions(col.key)" :value="scope.row[col.prop]" />
                </template>
                <!-- 日期字段 -->
@@ -469,8 +465,9 @@
 <script setup name="Material">
 import { listMaterial, getMaterial, delMaterial, updateMaterial, borrowMaterial, getFlowList, getMaterialStatusCounts, getMaterialColumns, checkPayment, toggleArchive } from "@/api/project/material"
 import { getSettlementDetail, getSettlementOverview } from "@/api/project/settlement"
-import { listProject } from "@/api/project/project"
+import { getProject } from "@/api/project/project"
 import { listContract } from "@/api/project/contract"
+import { categoryTreeselectFull } from "@/api/project/category"
 import useSearchMemoryStore from "@/store/modules/searchMemory"
 import { invoiceStatusText, invoiceStatusTagType } from "@/utils/projStatus"
 import cache from '@/plugins/cache'
@@ -607,12 +604,9 @@ const total = ref(0)
 const single = ref(true)
 const multiple = ref(true)
 const ids = ref([])
-const projectOptions = ref([])
-const optionsLoading = ref(false)    // 下拉选项加载中
 const submitLoading = ref(false)     // 表单提交中（防重复提交）
 
 // 新增：智能查询面板
-const closeDateRange = ref([])
 const contractOptions = ref([])
 const contractLoading = ref(false)
 const statusCounts = ref({})
@@ -635,17 +629,13 @@ const data = reactive({
     pageNum: 1,
     pageSize: 10,
     keyword: undefined,
-    projectId: undefined,
     projectCode: undefined,
     projectLocation: undefined,
-    resultType: undefined,
     status: undefined,
     archiveFlag: undefined,
     contractId: undefined,
-    clientUnitNature: undefined,
-    dataSource: undefined,
-    closeDateBegin: undefined,
-    closeDateEnd: undefined
+    clientUnit: undefined,
+    projectCategoryIds: []
   },
   rules: {}
 })
@@ -658,18 +648,31 @@ const archiveTimeSaved = ref(false)
 const registrationTimeLocked = computed(() => submitTimeSaved.value)
 const archiveTimeLocked = computed(() => archiveTimeSaved.value && form.value.archiveFlag === 'Y')
 
-/** 加载下拉选项 */
-function loadOptions() {
-  optionsLoading.value = true
-  listProject({ pageNum: 1, pageSize: 999 })
-    .then(r => { projectOptions.value = r.rows || [] })
-    .finally(() => { optionsLoading.value = false })
+/** 项目类别（小类）下拉选项：与项目列表页同源同口径（只取类别树第二层，不含大类） */
+const categoryOptions = ref([])
+const subCategoryOptions = computed(() => {
+  const list = []
+  for (const parent of categoryOptions.value) {
+    if (parent.children && parent.children.length) {
+      for (const child of parent.children) {
+        list.push({ id: child.id, label: child.name })
+      }
+    }
+  }
+  return list
+})
+function loadCategoryTree() {
+  categoryTreeselectFull().then(response => { categoryOptions.value = response.data || [] }).catch(() => {})
 }
 
 /** 查询 */
 function getList() {
   loading.value = true
   const params = { ...queryParams.value }
+  // 项目类别多选：数组 → 逗号串（同项目列表页口径，避免 tansParams 拼出 projectCategoryIds[0]=31）
+  params.projectCategoryIds = Array.isArray(params.projectCategoryIds) && params.projectCategoryIds.length
+    ? params.projectCategoryIds.join(',')
+    : undefined
   listMaterial(params).then(response => {
     materialList.value = response.rows
     total.value = response.total
@@ -695,19 +698,14 @@ function reset() {
 
 function handleQuery() { queryParams.value.pageNum = 1; searchMemory.setProjectCode(queryParams.value.projectCode); getList() }
 function resetQuery() {
-  closeDateRange.value = []
   queryParams.value.keyword = undefined
-  queryParams.value.projectId = undefined
   queryParams.value.projectCode = undefined
   queryParams.value.projectLocation = undefined
-  queryParams.value.resultType = undefined
   queryParams.value.status = undefined
   queryParams.value.archiveFlag = undefined
   queryParams.value.contractId = undefined
-  queryParams.value.clientUnitNature = undefined
-  queryParams.value.dataSource = undefined
-  queryParams.value.closeDateBegin = undefined
-  queryParams.value.closeDateEnd = undefined
+  queryParams.value.clientUnit = undefined
+  queryParams.value.projectCategoryIds = []
   handleQuery()
 }
 
@@ -718,10 +716,54 @@ const statusCapsules = computed(() => {
   const total = Object.values(counts).reduce((sum, c) => sum + (Number(c) || 0), 0)
   const items = [{ label: '全部', value: undefined, count: total }]
   dict.forEach(d => {
-    items.push({ label: d.label, value: d.value, count: Number(counts[d.value]) || 0 })
+    items.push({ label: d.label, value: d.value, count: Number(counts[d.value]) || 0, icon: d.value })
   })
   return items
 })
+
+/** 状态图标配色（亮色主题 600 级，白底可读）：资料状态 4 态 + 归档 1 态 */
+const STATE_ICON_COLOR = {
+  pending: '#888780',
+  received_electronic: '#185FA5',
+  received_paper: '#534AB7',
+  received_both: '#3B6D11',
+  archived: '#0F6E56'
+}
+/** 状态图形：形状 + 颜色双编码，不看文字也能分辨；内容为固定常量，无用户输入 */
+function statusIconSvg(key) {
+  const c = STATE_ICON_COLOR[key] || STATE_ICON_COLOR.pending
+  if (key === 'archived') {
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>'
+  }
+  if (key === 'pending') {
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-dasharray="3 3"><circle cx="12" cy="12" r="9"/></svg>'
+  }
+  if (key === 'received_electronic') {
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2.2"><rect x="2" y="4" width="20" height="13" rx="1.5"/><path d="M8 21h8"/></svg>'
+  }
+  if (key === 'received_paper') {
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2.2"><path d="M6 3h8l4 4v14H6z"/><path d="M9 12h6M9 16h6"/></svg>'
+  }
+  if (key === 'received_both') {
+    return '<svg width="26" height="13" viewBox="0 0 50 24" fill="none" stroke="' + c + '" stroke-width="2"><rect x="2" y="5" width="20" height="13" rx="1.5"/><path d="M8 21h8"/><path d="M30 4h8l4 4v13H30z"/><path d="M33 12h6"/></svg>'
+  }
+  return ''
+}
+/** 行状态图标取值：归档优先（终态覆盖领取态），未归档时按资料状态 */
+function stateKey(row) {
+  if (row && row.archiveFlag === 'Y') return 'archived'
+  return (row && row.status) || 'pending'
+}
+const STATE_LABEL = { pending: '未领取', received_electronic: '已领取(电子版)', received_paper: '已领取(纸质版)', received_both: '已领取(电子+纸质)' }
+const STATE_SHORT = { pending: '未领取', received_electronic: '电子版', received_paper: '纸质版', received_both: '电子+纸质' }
+/** 图标悬浮说明：已归档带出领取方式（图标互斥后从这里补全），未归档沿用字典文案（与顶部胶囊同口径） */
+function stateTooltip(row) {
+  const st = (row && row.status) || 'pending'
+  const short = STATE_SHORT[st] || '未领取'
+  if (row && row.archiveFlag === 'Y') return '已归档 · ' + short
+  const d = (proj_material_status.value || []).find(x => x.value === st)
+  return d ? d.label : (STATE_LABEL[st] || short)
+}
 
 /** 是否已完成资料登记（登记后填写了成果类型） */
 const isRegistered = computed(() => !!form.value.resultType)
@@ -806,50 +848,6 @@ function fmtContractOption(c) {
   return no || name || '-'
 }
 
-/** 办结日期变更（按项目办结时间 close_time 过滤，替代已废弃的交付时间） */
-function onCloseDateChange(val) {
-  if (val && val.length === 2) {
-    queryParams.value.closeDateBegin = val[0]
-    queryParams.value.closeDateEnd = val[1]
-  } else {
-    queryParams.value.closeDateBegin = undefined
-    queryParams.value.closeDateEnd = undefined
-  }
-  handleQuery()
-}
-
-/** 快捷日期 */
-function setQuickDate(type) {
-  const now = new Date()
-  const fmt = (d) => {
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${y}-${m}-${day}`
-  }
-  let begin, end
-  switch (type) {
-    case 'today': begin = end = fmt(now); break
-    case 'week': {
-      const d = now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)
-      const mon = new Date(now.getFullYear(), now.getMonth(), d)
-      const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6)
-      begin = fmt(mon); end = fmt(sun)
-      break
-    }
-    case 'month':
-      begin = fmt(new Date(now.getFullYear(), now.getMonth(), 1))
-      end = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))
-      break
-    case '7days': begin = fmt(new Date(now.getTime() - 6 * 86400000)); end = fmt(now); break
-    case '30days': begin = fmt(new Date(now.getTime() - 29 * 86400000)); end = fmt(now); break
-  }
-  if (begin && end) {
-    closeDateRange.value = [begin, end]
-    onCloseDateChange([begin, end])
-  }
-}
-
 function handleSelectionChange(selection) {
   ids.value = selection.map(item => item.id)
   single.value = selection.length !== 1
@@ -868,11 +866,16 @@ function handleUpdate(row) {
     const nowStr = proxy.parseTime(new Date(), '{y}-{m}-{d} {h}:{i}:{s}')
     if (!form.value.submitTime) form.value.submitTime = nowStr
     if (form.value.archiveFlag === 'Y' && !form.value.archiveTime) form.value.archiveTime = nowStr
-    // 联系人/电话：资料有值则保留（保留本次领取修改），为空才从关联项目带出
-    const proj = projectOptions.value.find(p => p.id === form.value.projectId)
-    if (proj) {
-      if (!form.value.contactName) form.value.contactName = proj.contactName
-      if (!form.value.contactPhone) form.value.contactPhone = proj.contactPhone
+    // 联系人/电话：资料有值则保留（保留本次领取修改），为空才从关联项目带出（按需取单个项目，不预加载全量项目列表）
+    if (form.value.projectId) {
+      const openedId = form.value.id
+      getProject(form.value.projectId).then(res => {
+        const proj = res.data
+        // 弹窗已切到另一条资料 ⇒ 丢弃本次回填
+        if (!proj || form.value.id !== openedId) return
+        if (!form.value.contactName) form.value.contactName = proj.contactName
+        if (!form.value.contactPhone) form.value.contactPhone = proj.contactPhone
+      }).catch(() => {})
     }
     // 本次领取备注每次新填（不沿用登记备注）
     form.value.borrowRemark = undefined
@@ -1128,10 +1131,15 @@ function handleDelete(row) {
 }
 
 function handleExport() {
-  proxy.download('/project/material/export', { ...queryParams.value }, `material_${new Date().getTime()}.xlsx`)
+  const params = { ...queryParams.value }
+  // 项目类别多选：数组 → 逗号串（download 走 tansParams 表单编码，与查询同口径）
+  params.projectCategoryIds = Array.isArray(params.projectCategoryIds) && params.projectCategoryIds.length
+    ? params.projectCategoryIds.join(',')
+    : undefined
+  proxy.download('/project/material/export', params, `material_${new Date().getTime()}.xlsx`)
 }
 
-loadOptions()
+loadCategoryTree()
 loadColumns()
 // 通知中心跳转定位：?projectCode=xxx&from=notify → 先设好落地参数，再只查一次
 // （旧写法先发「无筛选查询」再发「带筛选查询」，两请求并发、谁后返回谁覆盖表格 ⇒ 偶发显示全量）
@@ -1198,6 +1206,12 @@ loadStatusCounts()
   text-align: center;
 }
 .status-capsule.active .capsule-count { background: rgba(255,255,255,0.25); }
+/* 状态图标：顶部胶囊（选中态反白）+ 列表首列（编号左侧，固定宽度保证各行对齐） */
+.capsule-icon { display: inline-flex; align-items: center; }
+.status-capsule.active .capsule-icon svg { stroke: #fff; }
+.cell-with-state { display: inline-flex; align-items: center; gap: 6px; }
+.mat-state-icon { display: inline-flex; align-items: center; justify-content: flex-start; width: 26px; flex-shrink: 0; }
+.mat-state-icon svg { display: block; }
 
 .advanced-toggle-row {
   cursor: pointer;

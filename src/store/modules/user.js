@@ -83,6 +83,7 @@ const useUserStore = defineStore(
             this.roles = []
             this.permissions = []
             removeToken()
+            clearNotifySessionMarks()
             resolve()
           }).catch(error => {
             reject(error)
@@ -91,5 +92,23 @@ const useUserStore = defineStore(
       }
     }
   })
+
+/**
+ * 退出登录时清掉通知弹卡的会话级标记。
+ *
+ * <p>弹卡策略是「每次进入系统弹一次」，标记写在 sessionStorage 里按标签页隔离。
+ * 不清理的话：同一标签页退出后重新登录（同一账号或换账号）会被判定为"本次会话已弹过"而不弹，
+ * 与"每次登录弹一次"的预期不符。</p>
+ */
+function clearNotifySessionMarks() {
+  try {
+    const keys = []
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i)
+      if (k && k.indexOf('notify:digestShown:') === 0) keys.push(k)
+    }
+    keys.forEach(k => sessionStorage.removeItem(k))
+  } catch (e) { /* 隐私模式等场景忽略 */ }
+}
 
 export default useUserStore

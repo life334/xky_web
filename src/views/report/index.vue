@@ -713,7 +713,10 @@ const DEFAULT_FILTER_ID = '__default__'
 const FILTER_MAP = {
   projectCode: { widget: 'input', mapKey: 'projectCode' },
   projectName: { widget: 'input', mapKey: 'projectName' },
-  engineeringProject: { widget: 'select', mapKey: 'engineeringProject', source: 'engineering' },
+  /* ⚠️ 原 engineeringProject（类别文本，精确匹配 p.engineering_project）已下线：
+     它与 projectCategoryId 同语义且显示名相同，会造成重复筛选项。
+     项目类别筛选统一走下面 projectCategoryId（按类别 id 匹配），文本列只作报表列。
+     此处不要再加回 —— 旧筛选方案的 selected 里若含它会被 filterableKeys 过滤掉。 */
   clientUnit: { widget: 'input', mapKey: 'clientUnit' },
   contactName: { widget: 'input', mapKey: 'contactName' },
   contactPhone: { widget: 'input', mapKey: 'contactPhone' },
@@ -789,8 +792,6 @@ let suppressSel = false
 const exporting = ref(false)
 const submitting = ref(false)
 const categoryOptions = ref([])
-/* 项目类别下拉选项（类别树小类名称，与项目编辑页数据源一致） */
-const engineeringOptions = ref([])
 /* 下拉选项类加载（字段池/模板/筛选方案/类别）统一遮罩，绑定模板两个 el-select */
 const optionsLoading = ref(false)
 /* 筛选方案保存/另存为按钮遮罩（与上报记录弹窗的 submitLoading 区分开） */
@@ -927,6 +928,14 @@ const canDeleteFilter = computed(() => !!currentScheme.value && currentScheme.va
 
 /* 仅创建者可重命名（与删除同一归属口径） */
 const canRenameFilter = computed(() => !!currentScheme.value && currentScheme.value.createBy === userStore.name)
+
+/* 当前真正可作筛选字段的 key 集合（后端字段池 filterable=true 且前端已配控件），
+   与 filterableGroups 同口径——新增筛选字段只需在后端的 FILTER_MAP 与字段池同步，无需改此处。 */
+const filterableKeys = computed(() => {
+  const s = new Set()
+  fieldPool.value.forEach(f => { if (f.filterable && FILTER_MAP[f.key]) s.add(f.key) })
+  return s
+})
 
 const filterableGroups = computed(() => {
   const groups = new Map()
@@ -1065,21 +1074,17 @@ async function loadCategories() {
     const res = await categoryTreeselect()
     const tree = res?.data || []
     const flat = []
-    const subNames = new Set()
     /* 仅收集小类（depth===1）作为「项目类别」筛选项，与项目编辑页 subCategoryOptions 同源同范围（不含大类） */
     const walk = (nodes, depth) => {
       ;(nodes || []).forEach(n => {
         if (depth === 1) {
           flat.push({ value: n.id, label: n.label })
-          subNames.add(n.label)
         }
         if (n.children && n.children.length) walk(n.children, depth + 1)
       })
     }
     walk(tree, 0)
     categoryOptions.value = flat
-    /* 小类名称 = 项目类别下拉选项（与项目编辑页 subCategoryOptions 同源同口径） */
-    engineeringOptions.value = Array.from(subNames)
   } catch (e) {
     categoryOptions.value = []
   }
@@ -1274,8 +1279,6 @@ function buildBackendFilter(withName = false) {
 function selectOptions(fk) {
   const meta = FILTER_MAP[fk]
   if (meta.source === 'category') return Object.fromEntries(categoryOptions.value.map(o => [o.value, o.label]))
-  /* 项目类别：选项为类别树小类名称（值 = 名称本身，与项目编辑页一致） */
-  if (meta.source === 'engineering') return Object.fromEntries(engineeringOptions.value.map(s => [s, s]))
   const pool = fieldPoolMeta(fk)
   return pool?.options || {}
 }
@@ -1333,7 +1336,14 @@ function deserializeFilterValue(k, v) {
 /* 回填筛选值（自定义方案 / 模板默认方案共用） */
 function applyFilterConfig(cfg) {
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) cfg = {}
-  selectedFilterKeys.value = (cfg.selected || []).filter(k => FILTER_MAP[k])
+  /* ⚠️ 必须同时按 filterableKeys 过滤，不能只判 FILTER_MAP[k]：
+     旧筛选方案（如 2026-10-27 下线 engineeringProject 之前保存的）里可能残留已不是筛选字段的 key，
+     只判 FILTER_MAP 会让它进入 selectedFilterKeys —— 界面上不显示（filterableGroups 不含它），
+     但 buildBackendFilter 会照样提交，等于挂了个用户看不见的查询条件。
+     fieldPool 尚未加载时（size=0）降级为只判 FILTER_MAP，避免误清空。 */
+  const pool = filterableKeys.value
+  selectedFilterKeys.value = (cfg.selected || [])
+    .filter(k => FILTER_MAP[k] && (pool.size === 0 || pool.has(k)))
   Object.keys(filterValues).forEach(k => { filterValues[k] = null })
   // orFields 是结构而非筛选项，不回填进 filterValues（旧方案里可能残留在 values 中）
   Object.keys(cfg.values || {}).forEach(k => {

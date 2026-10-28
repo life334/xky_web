@@ -44,12 +44,33 @@ export function notifyReadAll(type) {
   })
 }
 
-// 忽略待办（必须带原因）
-export function notifyIgnore(id, reason) {
+// 忽略待办/预警（一键忽略，不要求填写原因）
+export function notifyIgnore(id) {
   return request({
     url: '/project/notify/ignore/' + id,
+    method: 'put'
+  })
+}
+
+/**
+ * 批量忽略。三选一：
+ * - { ids: [1,2,3] }                     勾选若干条
+ * - { bizType: 'alert_overdue', notifyType: 'alert' }   整类忽略某条预警规则
+ * - { all: true, notifyType: 'alert' }   忽略该页签下全部未完成项
+ */
+export function notifyIgnoreBatch(data) {
+  return request({
+    url: '/project/notify/ignoreBatch',
     method: 'put',
-    data: { reason }
+    data: data
+  })
+}
+
+// 未处理预警按规则分组计数（「忽略此规则」入口数据源）
+export function notifyAlertGroups() {
+  return request({
+    url: '/project/notify/alertGroups',
+    method: 'get'
   })
 }
 

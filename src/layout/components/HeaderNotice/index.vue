@@ -38,6 +38,32 @@
             >{{ f.label }}</span>
           </div>
 
+          <!-- 批量操作条：预警一次能堆上百条，逐条点「忽略」不现实。
+               仅「未完成/未处理」筛选下出现（已完成/已忽略没有批量忽略的意义）。 -->
+          <div v-if="todoFilter === 'open' && activeList.length" class="nh-bulk">
+            <el-checkbox
+              :model-value="allSelected"
+              :indeterminate="someSelected"
+              @change="toggleSelectAll"
+            >全选</el-checkbox>
+            <span v-if="selectedIds.length" class="nh-bulk-count">已选 {{ selectedIds.length }}</span>
+            <span class="nh-bulk-gap"></span>
+            <span
+              class="nh-bulk-btn"
+              :class="{ disabled: !selectedIds.length }"
+              @click="ignoreSelected"
+            >忽略选中</span>
+            <span class="nh-bulk-btn danger" @click="ignoreAllOpen">忽略全部 {{ openTotal }} 条</span>
+          </div>
+
+          <!-- 预警按规则整类忽略：多条规则同时存在时才出现（只有一条规则时上面的「忽略全部」已覆盖） -->
+          <div v-if="activeTab === 'alert' && todoFilter === 'open' && ruleGroups.length > 1" class="nh-rulebar">
+            <span v-for="g in ruleGroups" :key="g.bizType" class="nh-rule">
+              {{ ruleLabel(g.bizType) }} {{ g.count }}
+              <em @click.stop="ignoreWholeRule(g)">忽略此规则</em>
+            </span>
+          </div>
+
           <div v-if="activeList.length === 0 && !tabLoading" class="nh-empty">
             <el-icon v-if="activeTab === 'alert'"><WarningFilled /></el-icon>
             <el-icon v-else><CircleCheck /></el-icon>
@@ -56,6 +82,14 @@
             @click="goItem(item)"
           >
             <div class="nh-card-top">
+              <!-- 勾选框：仅未完成项可选（已完成/已忽略没有"再忽略"的语义） -->
+              <el-checkbox
+                v-if="canSelect(item)"
+                class="nh-check"
+                :model-value="selectedIds.includes(item.id)"
+                @click.stop
+                @change="(v) => toggleSelect(item.id, v)"
+              />
               <span class="nh-kind" :class="'kind-' + kindClass(item)">{{ kindLabel(item) }}</span>
               <span class="nh-card-title">{{ item.title }}</span>
               <!-- 紧急度双编码：图标 + 文字，不只靠红色（色盲用户同样可辨） -->
@@ -72,12 +106,13 @@
               </span>
               <!-- 相对时间扫读，绝对时刻放 title（hover 查看） -->
               <span class="nh-time" :title="fmtDateTime(item.createTime)">{{ fromNow(item.createTime) }}</span>
-              <!-- 忽略：卡片内容之后的文字链接（沿用原有 UI 设计，不占一整行按钮区） -->
+              <!-- 忽略：卡片内容之后的文字链接（沿用原有 UI 设计，不占一整行按钮区）。
+                   点一下即生效，不再要求填原因、也不再展开输入框 —— 忽略是"先不管"的轻量动作。 -->
               <span class="nh-meta-gap"></span>
               <span
-                v-if="isOpen(item) && ignoringId !== item.id"
+                v-if="isOpen(item)"
                 class="nh-link"
-                @click.stop="startIgnore(item)"
+                @click.stop="doIgnore(item)"
               >忽略</span>
               <span
                 v-else-if="item.status === 'ignored'"
@@ -98,21 +133,6 @@
             </div>
             <div v-else-if="item.claimedBy" class="nh-reason claim">
               已由 {{ item.claimedBy == myId ? '我' : (item.claimedByName || '他人') }} 认领
-            </div>
-
-            <!-- 行内忽略（替代 $prompt 模态：点卡片是静默跳转，忽略不该打断式弹窗） -->
-            <div v-if="ignoringId === item.id" class="nh-ignore-box" @click.stop>
-              <el-input
-                v-model="ignoreReason"
-                size="small"
-                maxlength="60"
-                placeholder="请填写忽略原因（必填）"
-                @keyup.enter="submitIgnore(item)"
-              />
-              <div class="nh-ignore-act">
-                <el-button size="small" type="primary" @click="submitIgnore(item)">确定忽略</el-button>
-                <el-button size="small" @click="cancelIgnore">取消</el-button>
-              </div>
             </div>
           </div>
         </template>
@@ -156,6 +176,7 @@
       :on-view="openPanelFromPopup"
       :on-go-item="goItem"
       :on-ignore="ignoreFromPopup"
+      :on-ignore-all="ignoreAllFromPopup"
       :on-mute-today="handleMuteToday"
     />
   </div>
@@ -166,7 +187,7 @@ import NoticeDetailView from './DetailView'
 import AutoPopup from './AutoPopup'
 import { useNotifyPolling } from './useNotifyPolling'
 import { listNoticeTop, markNoticeRead, markNoticeReadAll } from '@/api/system/notice'
-import { notifyList, notifyRead, notifyReadAll, notifyIgnore, notifyUnignore } from '@/api/project/notify'
+import { notifyList, notifyRead, notifyReadAll, notifyIgnore, notifyUnignore, notifyIgnoreBatch, notifyAlertGroups } from '@/api/project/notify'
 import { fromNow, dueMeta, fmtDateTime, timeValue } from '@/utils/timeAgo'
 import useUserStore from '@/store/modules/user'
 
@@ -228,9 +249,33 @@ const currentEmptyText = computed(() => {
   return m[todoFilter.value] || (activeTab.value === 'alert' ? '暂无风险预警' : '没有待办事项')
 })
 
-// 行内忽略状态
-const ignoringId = ref(null)
-const ignoreReason = ref('')
+// 批量忽略：勾选集合 + 当前页签未完成项的真实总数（分页 total，不是当前页条数）
+const selectedIds = ref([])
+const openTotal = ref(0)
+/** 预警规则分布 [{ bizType, count }]，仅预警页签「未处理」下加载 */
+const ruleGroups = ref([])
+
+/** 只有未完成项可勾选（已完成/已忽略不需要"再忽略"） */
+function canSelect(item) {
+  return !!item && isOpen(item)
+}
+const selectableIds = computed(() => activeList.value.filter(canSelect).map(i => i.id))
+const allSelected = computed(() => selectableIds.value.length > 0 && selectedIds.value.length >= selectableIds.value.length)
+const someSelected = computed(() => selectedIds.value.length > 0 && !allSelected.value)
+
+function toggleSelect(id, checked) {
+  if (checked) {
+    if (!selectedIds.value.includes(id)) selectedIds.value = [...selectedIds.value, id]
+  } else {
+    selectedIds.value = selectedIds.value.filter(x => x !== id)
+  }
+}
+function toggleSelectAll(checked) {
+  selectedIds.value = checked ? [...selectableIds.value] : []
+}
+function clearSelection() {
+  selectedIds.value = []
+}
 
 const myId = computed(() => {
   try { return String(useUserStore().id || '') } catch (e) { return '' }
@@ -260,20 +305,62 @@ function openPanelFromPopup(items) {
   noticeVisible.value = true
 }
 function handleMuteToday() { setNoPopupToday() }
-/** 弹出卡上点「忽略」→ 打开面板并展开该条的原因输入框（复用同一套行内交互） */
+/**
+ * 弹出卡上点「忽略」→ 直接忽略，不再打开面板让人填原因。
+ *
+ * 旧实现要「打开面板 + 展开输入框 + 填原因 + 点确定」四步才忽略一条，
+ * 卡片弹出时用户本来就想快速清掉，这个链路等于用交互设计劝退忽略。
+ */
 function ignoreFromPopup(item) {
-  openPanelFromPopup([item])
-  startIgnore(item)
+  if (!item) return
+  notifyIgnore(item.id).then(() => {
+    refreshSummary()
+    // 面板若开着（弹卡可与之共存），同步把该条从列表里摘掉
+    if (noticeVisible.value) loadTab(true)
+    // 弹出卡里同步移除该条；全忽略完 AutoPopup 会自行关闭
+    autoPopupRef.value && autoPopupRef.value.removeItem(item.id)
+    proxy.$modal.msgSuccess('已忽略')
+  }).catch(() => {})
+}
+
+/**
+ * 弹卡底部「忽略全部」：一次清掉整类（或本批）条目。
+ *
+ * 确认只弹一次：单条忽略点错还能撤销，这里一次动的是几十上百条，
+ * 且整类忽略会影响卡里没显示出来的条目，必须让用户看清范围。
+ *
+ * @param {object} payload AutoPopup 按内容算好的参数：{notifyType, all} 或 {ids}
+ */
+function ignoreAllFromPopup(payload) {
+  if (!payload) return
+  const isAll = payload.all === true
+  const typeText = payload.notifyType === 'alert' ? '预警' : payload.notifyType === 'todo' ? '待办' : '条目'
+  const tip = isAll
+    ? `将忽略当前全部未处理${typeText}（含未显示在卡里的），确定吗？`
+    : `将忽略这 ${(payload.ids || []).length} 条，确定吗？`
+  proxy.$modal.confirm(tip).then(() => {
+    notifyIgnoreBatch(payload).then(res => {
+      const rows = Number((res && res.rows) || 0)
+      refreshSummary()
+      if (noticeVisible.value) loadTab(true)
+      autoPopupRef.value && autoPopupRef.value.close()
+      proxy.$modal.msgSuccess(rows > 0 ? `已忽略 ${rows} 条` : '没有可忽略的内容')
+    }).catch(() => {})
+  }).catch(() => {})
 }
 
 // ==================== 状态判定 ====================
 function isOpen(item) {
-  return item.status === 'unread' || item.status === 'read'
+  return !!item && (item.status === 'unread' || item.status === 'read')
 }
 function kindLabel(item) {
   if (!item) return ''
   if (item.notifyType === 'alert') return ALERT_KIND_TEXT[item.bizType] || '预警'
   return TODO_KIND_TEXT[item.todoKind] || '待办'
+}
+/** 预警规则中文名（按规则忽略、规则分布条用） */
+function ruleLabel(bizType) {
+  return ALERT_KIND_TEXT[bizType] || bizType || '预警'
 }
 /** CSS 类名：预警统一用 kind-alert，靠文字标签区分具体规则 */
 function kindClass(item) {
@@ -285,35 +372,48 @@ function kindClass(item) {
 function switchTab(t) {
   if (activeTab.value === t) return
   activeTab.value = t
+  clearSelection()
   loadTab()
 }
 function setTodoFilter(k) {
   if (todoFilter.value === k) return
   todoFilter.value = k
-  cancelIgnore()
+  clearSelection()
   loadTab()
 }
 
 /**
+ * 加载当前页签数据。
+ *
  * @param {boolean} silent 静默刷新（面板打开期间的定时刷新用，不显示 loading 遮罩，避免闪烁）
+ * @return {Promise<number>} 未完成项总数（openTotal），供「已忽略，剩余 N 条」提示使用
  */
 function loadTab(silent) {
   if (activeTab.value === 'todo' || activeTab.value === 'alert') {
     if (!silent) tabLoading.value = true
     const tab = activeTab.value
-    notifyList({ type: tab, status: todoFilter.value, pageNum: 1, pageSize: 50 }).then(res => {
+    const filter = todoFilter.value
+    if (filter === 'open' && tab === 'alert') loadRuleGroups()
+    return notifyList({ type: tab, status: filter, pageNum: 1, pageSize: 50 }).then(res => {
       // ⚠️ 响应体解包铁律：rows 判空兜底
       const rows = Array.isArray(res && res.rows) ? res.rows : []
       if (tab === 'alert') alertList.value = rows
       else todoList.value = rows
+      // 未完成项总数取分页 total：当前页只有 50 条，但用户可能在 300 条里忽略了一条，
+      // 用 rows.length 算"剩余 N 条"会给出一个明显错误的数字。
+      const total = Number(res && res.total)
+      openTotal.value = filter === 'open' ? (Number.isFinite(total) ? total : rows.length) : rows.length
+      // 翻页/刷新后勾选集合只保留仍存在的项，避免"全选→刷新→忽略"打到已消失的 id
+      const alive = new Set(rows.map(r => r.id))
+      selectedIds.value = selectedIds.value.filter(id => alive.has(id))
       // list 接口内部会先跑一次 sweep（把业务已完成的待办置 done），之后同步刷新角标，
       // 避免出现「列表里已经看不到待办、铃铛还挂着数字」的错位（silent 刷新交给 30s 轮询，不重复请求）
       if (!silent) refreshSummary()
+      return openTotal.value
     }).finally(() => { if (!silent) tabLoading.value = false })
-    return
   }
   if (!silent) tabLoading.value = true
-  Promise.all([
+  return Promise.all([
     notifyList({ type: 'message', status: 'all', pageNum: 1, pageSize: 50 }),
     listNoticeTop()
   ]).then(([msgRes, noticeRes]) => {
@@ -329,7 +429,19 @@ function loadTab(silent) {
     // 站内消息与公告按时间统一倒序（旧实现是"消息全在前、公告全在后"，
     // 今天发的公告会躺在三个月前的消息下面）
     messageList.value = [...msgs, ...notices].sort((a, b) => timeValue(b.time) - timeValue(a.time))
+    return 0
   }).finally(() => { if (!silent) tabLoading.value = false })
+}
+
+/** 预警规则分布（只有预警页签「未处理」需要） */
+function loadRuleGroups() {
+  notifyAlertGroups().then(res => {
+    const rows = Array.isArray(res && res.data) ? res.data : []
+    ruleGroups.value = rows.map(r => ({
+      bizType: r.bizType || r.biztype,
+      count: Number(r.count || 0)
+    })).filter(r => r.bizType && r.count > 0)
+  }).catch(() => { ruleGroups.value = [] })
 }
 
 // ==================== 交互 ====================
@@ -364,27 +476,83 @@ function goItem(item) {
   }
 }
 
-// ---- 行内忽略 ----
-function startIgnore(item) {
-  ignoringId.value = item.id
-  ignoreReason.value = ''
+// ---- 忽略（一键，不填原因） ----
+/**
+ * 单条忽略：点一下直接生效。
+ *
+ * 之所以不在本地删行后就完事：列表按 status=open 过滤，忽略后该项本就不再返回，
+ * 但角标是另一个接口的数据，必须一起刷新，否则会出现"列表空了、铃铛还挂数字"。
+ */
+function doIgnore(item) {
+  if (!item) return
+  notifyIgnore(item.id).then(() => afterIgnore([item.id], 1)).catch(() => {})
 }
-function cancelIgnore() {
-  ignoringId.value = null
-  ignoreReason.value = ''
-}
-function submitIgnore(item) {
-  const reason = (ignoreReason.value || '').trim()
-  if (!reason) {
-    proxy.$modal.msgWarning('请填写忽略原因')
+
+/** 忽略勾选的若干条 */
+function ignoreSelected() {
+  const ids = [...selectedIds.value]
+  if (!ids.length) {
+    proxy.$modal.msgWarning('请先勾选要忽略的记录')
     return
   }
-  notifyIgnore(item.id, reason).then(() => {
-    proxy.$modal.msgSuccess('已忽略该待办')
-    cancelIgnore()
-    // loadTab 内部会在拉完列表后统一刷新角标，这里不再重复请求
-    loadTab()
+  ignoreBatchWith({ ids, notifyType: activeTab.value }, ids.length)
+}
+
+/** 忽略当前页签下全部未完成项（上百条预警的兜底出口） */
+function ignoreAllOpen() {
+  const n = openTotal.value || activeList.value.length
+  if (!n) return
+  proxy.$modal.confirm(`将忽略当前「${activeTab.value === 'alert' ? '预警' : '待办'}」下全部 ${n} 条，确定吗？`)
+    .then(() => ignoreBatchWith({ all: true, notifyType: activeTab.value }, n))
+    .catch(() => {})
+}
+
+/** 按规则整类忽略某条预警规则 */
+function ignoreWholeRule(g) {
+  const n = g && g.count
+  if (!n) return
+  proxy.$modal.confirm(`将忽略「${ruleLabel(g.bizType)}」规则下的全部 ${n} 条预警，确定吗？`)
+    .then(() => ignoreBatchWith({ bizType: g.bizType, notifyType: 'alert' }, n))
+    .catch(() => {})
+}
+
+/**
+ * 批量忽略。
+ *
+ * 批量（尤其按规则/忽略全部）加了一次确认：单条忽略可以点错再撤销，
+ * 一次清掉几百条没法靠肉眼核对，这是唯一值得留确认的地方。
+ *
+ * @param {object} payload 后端参数（ids / bizType / all + notifyType）
+ * @param {number} expect  预期条数（仅用于提示，实际以返回 rows 为准）
+ */
+function ignoreBatchWith(payload, expect) {
+  notifyIgnoreBatch(payload).then(res => {
+    const rows = Number((res && res.rows) || 0) || expect
+    afterIgnore([], rows)
   }).catch(() => {})
+}
+
+/**
+ * 忽略后的收尾：清空勾选 → 重载列表 → 刷新角标 → 提示「已忽略，剩余 N 条」。
+ *
+ * @param {Array<number>} ids 本地已知被忽略的 id（先本地摘除，交互上"立即消失"）
+ * @param {number} count 忽略条数
+ */
+function afterIgnore(ids, count) {
+  if (ids && ids.length) {
+    const drop = new Set(ids)
+    if (activeTab.value === 'alert') alertList.value = alertList.value.filter(i => !drop.has(i.id))
+    else todoList.value = todoList.value.filter(i => !drop.has(i.id))
+    openTotal.value = Math.max(0, openTotal.value - ids.length)
+  }
+  clearSelection()
+  refreshSummary()
+  loadTab(true).then(() => {
+    const left = openTotal.value
+    proxy.$modal.msgSuccess(left > 0 ? `已忽略 ${count} 条，剩余 ${left} 条` : `已忽略 ${count} 条，当前没有待处理内容了`)
+  }).catch(() => {
+    proxy.$modal.msgSuccess(`已忽略 ${count} 条`)
+  })
 }
 /** 撤销忽略：解决"忽略不可恢复" */
 function onUnignore(item) {
@@ -441,7 +609,7 @@ watch(noticeVisible, (v) => {
   } else {
     clearInterval(tabTimer)
     tabTimer = null
-    cancelIgnore()
+    clearSelection()
   }
 })
 </script>
@@ -546,6 +714,59 @@ watch(noticeVisible, (v) => {
   user-select: none;
   &:hover { color: #606266; }
   &.on { background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-weight: 600; }
+}
+
+/* ---- 批量操作条：全选 / 忽略选中 / 忽略全部 ---- */
+.notify-popover-v2 .nh-bulk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #fafbfc;
+  border-bottom: 1px solid #f2f4f7;
+  font-size: 11.5px;
+  color: #909399;
+  .el-checkbox { height: auto; margin-right: 0; }
+  .el-checkbox__label { font-size: 11.5px; color: #606266; }
+}
+.notify-popover-v2 .nh-bulk-count { color: #606266; }
+.notify-popover-v2 .nh-bulk-gap { flex: 1; }
+.notify-popover-v2 .nh-bulk-btn {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--el-color-primary);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  user-select: none;
+  &:hover { background: var(--el-color-primary-light-9); }
+  &.danger { color: #e6a23c; &:hover { background: #fdf6ec; } }
+  &.disabled { color: #c0c4cc; cursor: not-allowed; pointer-events: none; }
+}
+
+/* ---- 预警规则分布条：按规则整类忽略 ---- */
+.notify-popover-v2 .nh-rulebar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px 8px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.notify-popover-v2 .nh-rule {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #5b6b7f;
+  background: #f5f7fa;
+  border-radius: 10px;
+  padding: 2px 8px;
+  em {
+    font-style: normal;
+    color: var(--el-color-primary);
+    cursor: pointer;
+    &:hover { text-decoration: underline; }
+  }
 }
 
 .notify-popover-v2 .nh-empty {
@@ -668,12 +889,13 @@ watch(noticeVisible, (v) => {
   &:hover { color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
 }
 
-/* ---- 行内忽略输入框 ---- */
-.notify-popover-v2 .nh-ignore-box {
-  margin-top: 8px;
-  padding: 8px;
-  background: #f7f8fa;
-  border-radius: 5px;
-  .nh-ignore-act { display: flex; justify-content: flex-end; gap: 6px; margin-top: 7px; }
+/* ---- 卡片/预警前的勾选框：紧凑，不抢标题的视觉位置 ---- */
+.notify-popover-v2 .nh-check {
+  flex-shrink: 0;
+  margin-right: -2px;
+  height: auto;
+  .el-checkbox__inner { width: 13px; height: 13px; }
 }
+
+/* ---- 行内忽略输入框（已下线：忽略改为点击即生效，不再要求填原因） ---- */
 </style>

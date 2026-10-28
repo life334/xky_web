@@ -78,18 +78,8 @@
                   </el-select>
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">委托单位性质</div>
-                  <el-select v-model="queryParams.clientUnitNature" clearable placeholder="全部" style="width: 100%" @change="handleQuery">
-                     <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
-                  </el-select>
-               </div>
-               <div class="filter-item">
                   <div class="filter-item-label">工程地点</div>
                   <el-input v-model="queryParams.projectLocation" placeholder="模糊搜索" clearable style="width: 100%" @keyup.enter="handleQuery" @clear="handleQuery" />
-               </div>
-               <div class="filter-item">
-                  <div class="filter-item-label">联系人</div>
-                  <el-input v-model="queryParams.contactName" placeholder="模糊搜索" clearable style="width: 100%" @keyup.enter="handleQuery" @clear="handleQuery" />
                </div>
                <div class="filter-item">
                   <div class="filter-item-label">安排日期</div>
@@ -118,21 +108,19 @@
                   />
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">录入日期</div>
-                  <el-date-picker
-                     v-model="newDateRange"
-                     value-format="YYYY-MM-DD"
-                     type="daterange"
-                     range-separator="-"
-                     start-placeholder="开始"
-                     end-placeholder="结束"
-                     style="width: 100%"
-                     @change="onNewDateChange"
-                  />
-               </div>
-               <div class="filter-item">
                   <div class="filter-item-label">项目类别</div>
-                  <el-select v-model="queryParams.projectCategoryId" filterable clearable placeholder="全部类别" style="width: 100%" @change="onCategoryFilterChange">
+                  <el-select
+                     v-model="queryParams.projectCategoryIds"
+                     multiple
+                     filterable
+                     clearable
+                     collapse-tags
+                     collapse-tags-tooltip
+                     :max-collapse-tags="2"
+                     placeholder="全部类别（可多选）"
+                     style="width: 100%"
+                     @change="onCategoryFilterChange"
+                  >
                      <el-option v-for="c in subCategoryOptions" :key="c.id" :label="c.label" :value="c.id" />
                   </el-select>
                </div>
@@ -153,12 +141,6 @@
                   <div class="filter-item-label">项目性质</div>
                   <el-select v-model="queryParams.projectNature" clearable placeholder="全部" style="width: 100%" @change="handleQuery">
                      <el-option v-for="d in natureOptions" :key="d.value" :label="d.label" :value="d.value" />
-                  </el-select>
-               </div>
-               <div class="filter-item">
-                  <div class="filter-item-label">项目来源</div>
-                  <el-select v-model="queryParams.dataSource" clearable placeholder="全部来源" style="width: 100%" @change="handleQuery">
-                     <el-option v-for="dict in sourceOptions" :key="dict.value" :label="dict.label" :value="dict.value" />
                   </el-select>
                </div>
             </div>
@@ -1282,9 +1264,7 @@ const data = reactive({
     dataSource: undefined,
     closeDateBegin: undefined,
     closeDateEnd: undefined,
-    newDateBegin: undefined,
-    newDateEnd: undefined,
-    projectCategoryIds: undefined,
+    projectCategoryIds: [],
     categoryIncludeNull: undefined
   },
   rules: {
@@ -1393,7 +1373,14 @@ function onContractVisibleChange(visible) {
 function getList() {
   loading.value = true
   proxy.addDateRange(queryParams.value, dateRange.value)
-  listProject(queryParams.value).then(response => {
+  const params = { ...queryParams.value }
+  // 项目类别多选：数组 → 逗号串。
+  // tansParams 会把数组拼成 projectCategoryIds[0]=31 这种索引形式，后端 Long[] 绑定不稳；
+  // 改为逗号串，与「类别画像下钻」现有口径一致（index.vue 里也是 join(',')）。
+  params.projectCategoryIds = Array.isArray(params.projectCategoryIds) && params.projectCategoryIds.length
+    ? params.projectCategoryIds.join(',')
+    : undefined
+  listProject(params).then(response => {
     // 越界保护：修改/删除后当前查询结果变少，若当前页码超出总页数，
     // 主动回到第 1 页（element-plus 分页组件默认会自动跳到最后一页，造成"保存后跳到最后页"的错觉）
     const maxPage = Math.max(1, Math.ceil((response.total || 0) / queryParams.value.pageSize))
@@ -1479,24 +1466,26 @@ function onCloseDateChange(val) {
   }
 }
 
-/** 项目类别单选变化：清掉下钻带入的多选类别（projectCategoryIds），避免隐式叠加 */
+/**
+ * 项目类别多选变化（2026-10-27 由单选改为多选）。
+ * 只清「单选值」与下钻带入的 categoryIncludeNull，不动 v-model 自身的 projectCategoryIds ——
+ * 它会由 el-select 先写好再触发本回调，在这里清等于把用户刚选的清空。
+ */
 function onCategoryFilterChange() {
-  queryParams.value.projectCategoryIds = undefined
+  queryParams.value.projectCategoryId = undefined
   queryParams.value.categoryIncludeNull = undefined
   handleQuery()
 }
 
-/** 录入日期（新增口）变化：后端按来源分流（手动取录入日/导入取安排日） */
-const newDateRange = ref([])
-function onNewDateChange(val) {
-  if (val && val.length === 2) {
-    queryParams.value.newDateBegin = val[0]
-    queryParams.value.newDateEnd = val[1]
-  } else {
-    queryParams.value.newDateBegin = undefined
-    queryParams.value.newDateEnd = undefined
-  }
-}
+/**
+ * 已从高级筛选面板下线的字段（2026-10-27 移除：委托单位性质 / 联系人 / 项目来源 / 录入日期）。
+ *
+ * <p>⚠️ 旧筛选方案存在 localStorage（proj_filter_schemes），里面可能仍带这些值。
+ * 加载时若不过滤，界面上已经没有入口、用户看不到，查询却照样带上条件 ——
+ * 结果对不上界面。与报表筛选处理旧方案的口径一致：直接丢弃。</p>
+ */
+const RETIRED_FILTER_KEYS = ['clientUnitNature', 'contactName', 'dataSource',
+  'newDateBegin', 'newDateEnd', '_newDateRange']
 
 /** 快捷时间按钮 */
 function setQuickDate(rangeFn) {
@@ -1528,9 +1517,6 @@ function saveScheme() {
   if (closeDateRange.value && closeDateRange.value.length === 2) {
     scheme._closeDateRange = [...closeDateRange.value]
   }
-  if (newDateRange.value && newDateRange.value.length === 2) {
-    scheme._newDateRange = [...newDateRange.value]
-  }
   const schemes = [...savedSchemes.value]
   const idx = schemes.findIndex(s => s.name === name)
   if (idx >= 0) { schemes[idx] = { name, params: scheme } }
@@ -1554,6 +1540,8 @@ function loadSavedScheme(name) {
   })
   Object.entries(p).forEach(([k, v]) => {
     if (k.startsWith('_')) return
+    // 已下线字段（界面无入口）直接丢弃，避免"看不见却生效"
+    if (RETIRED_FILTER_KEYS.includes(k)) return
     queryParams.value[k] = v
   })
   if (p._dateRange) dateRange.value = [...p._dateRange]
@@ -1573,14 +1561,6 @@ function loadSavedScheme(name) {
     closeDateRange.value = []
     queryParams.value.closeDateBegin = undefined
     queryParams.value.closeDateEnd = undefined
-  }
-  if (p._newDateRange) {
-    newDateRange.value = [...p._newDateRange]
-    onNewDateChange(newDateRange.value)
-  } else {
-    newDateRange.value = []
-    queryParams.value.newDateBegin = undefined
-    queryParams.value.newDateEnd = undefined
   }
   handleQuery()
   currentSchemeName.value = name
@@ -1718,10 +1698,7 @@ function resetQuery() {
   queryParams.value.closeDateBegin = undefined
   queryParams.value.closeDateEnd = undefined
   closeDateRange.value = []
-  queryParams.value.newDateBegin = undefined
-  queryParams.value.newDateEnd = undefined
-  newDateRange.value = []
-  queryParams.value.projectCategoryIds = undefined
+  queryParams.value.projectCategoryIds = []
   queryParams.value.categoryIncludeNull = undefined
   currentSchemeName.value = ''
   handleQuery()
@@ -2471,6 +2448,10 @@ function submitExport() {
   const params = { ...queryParams.value }
   delete params.pageNum
   delete params.pageSize
+  // 项目类别多选：数组 → 逗号串（导出走 tansParams 表单编码，与查询同口径）
+  params.projectCategoryIds = Array.isArray(params.projectCategoryIds) && params.projectCategoryIds.length
+    ? params.projectCategoryIds.join(',')
+    : undefined
   proxy.addDateRange(params, dateRange.value)
   params.fields = exportFields.value.join(',')
   params.scope = exportScope.value

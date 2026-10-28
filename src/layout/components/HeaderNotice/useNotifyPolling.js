@@ -6,9 +6,11 @@ import { notifySummary, notifyIncrement, notifyOpen } from '@/api/project/notify
  * 通知轮询 composable
  *
  * 弹出策略（三条通道，互不重叠）：
- * 1. 登录首屏「今日待处理摘要」：进入系统 2s 后弹一次**当前全部**未完成待办 + 未处理预警。
+ * 1. 进入系统首屏「待处理摘要」：进入系统 2s 后弹一次**当前全部**未完成待办 + 未处理预警。
  *    这是"上班先知道今天要办什么"的提醒，不依赖用户去点铃铛。
- *    节流：每天最多一次 + 每个会话最多一次（F5 刷新不会重复弹，换个标签页也不会）。
+ *    节流：**每次进入系统弹一次**（会话级）。关掉标签页/重开浏览器 = 新会话 = 再弹一次；
+ *    同一标签页内 F5 刷新不再重复弹（否则每刷新一次弹一次，属于打扰）。
+ *    ⚠️ 触发点是主界面挂载，与"是否走了登录页"无关 —— 免登录（记住登录态）直接进系统同样会触发。
  * 2. 增量弹出：轮询发现水位线之后**新到达**的待办/预警，按 notify.popup.throttle.minutes 节流。
  * 3. 非工作时段挂起：登录时不在窗口期（如 07:50）不弹，但**不推进任何标记**，
  *    等进入窗口期后的第一次轮询补弹 —— 旧实现会把水位线推掉，导致"早上登录全天不弹"。
@@ -28,6 +30,10 @@ export function useNotifyPolling(popup) {
   /** 本次会话（标签页）是否已处理过首屏摘要：处理后不再尝试 */
   let digestHandled = false
   let digestInFlight = false
+  /** 上次问过 /open 的时间戳：空结果不写标记，靠它自己节流（避免 30s 轮询把带写操作的接口打爆） */
+  let lastDigestTryAt = 0
+  /** 空结果后的重试间隔：10 分钟。够快（9 点扫出的预警 10 分钟内能补弹），又不至于高频写库 */
+  const DIGEST_RETRY_MS = 10 * 60 * 1000
 
   const userKey = () => {
     try {
@@ -37,7 +43,9 @@ export function useNotifyPolling(popup) {
   }
   const LS_LAST_ID = () => `notify:lastId:${userKey()}`
   const LS_NO_POPUP_TODAY = () => `notify:noPopup:${userKey()}`
-  const LS_DIGEST_DATE = () => `notify:digestDate:${userKey()}`
+  // ⚠️ 摘要标记只有会话级（sessionStorage），没有天级（localStorage）。
+  // 旧实现在 localStorage 里记"今天弹过了"，导致一天只弹一次：早上有数据弹过、下午再登录就不弹，
+  // 用户会以为功能坏了。现改为"每次进入系统弹一次"。
   const SS_DIGEST_DATE = () => `notify:digestShown:${userKey()}`
 
   const getStoredId = () => Number(localStorage.getItem(LS_LAST_ID()) || 0)
@@ -57,18 +65,20 @@ export function useNotifyPolling(popup) {
   const noPopupToday = () => localStorage.getItem(LS_NO_POPUP_TODAY()) === todayStr()
   const setNoPopupToday = () => localStorage.setItem(LS_NO_POPUP_TODAY(), todayStr())
 
-  /** 今日摘要是否已弹过（会话级 + 天级双重标记） */
-  function digestDoneToday() {
+  /**
+   * 本次「进入系统」是否已弹过摘要（仅会话级）
+   *
+   * <p>存 todayStr 而非 true：页面开着跨过零点时，标记自动失效，新的一天会再弹一次。</p>
+   */
+  function digestDone() {
     try {
-      if (sessionStorage.getItem(SS_DIGEST_DATE()) === todayStr()) return true
-      return localStorage.getItem(LS_DIGEST_DATE()) === todayStr()
+      return sessionStorage.getItem(SS_DIGEST_DATE()) === todayStr()
     } catch (e) { return false }
   }
   function markDigestDone() {
     digestHandled = true
     try {
       sessionStorage.setItem(SS_DIGEST_DATE(), todayStr())
-      localStorage.setItem(LS_DIGEST_DATE(), todayStr())
     } catch (e) { /* 隐私模式等场景忽略 */ }
   }
 
@@ -79,35 +89,44 @@ export function useNotifyPolling(popup) {
   }
 
   /**
-   * 登录首屏「今日待处理摘要」
-   * 触发条件：未处理过 && 开关开启 && 今日未点"不再弹" && 当前在窗口期。
-   * 非窗口期直接 return（不标记），留给后续轮询补弹。
+   * 进入系统首屏「待处理摘要」
+   *
+   * <p>触发条件：本次会话未弹过 && 开关开启 && 今日未点"不再弹" && 当前在窗口期。
+   * 非窗口期直接 return（不标记），留给后续轮询补弹。</p>
+   *
+   * <p>⚠️ 关键修正：<b>只有真的弹出内容才写标记</b>。旧实现是"调用成功就写当天标记"，
+   * 于是早上 7:50 登录（那时一条待办都没有）会把当天标记写死，9 点扫描出的预警再也弹不出来。
+   * 空结果改为由 lastDigestTryAt 自行节流（10 分钟一问），既保证补弹，又不至于被 30s 轮询打爆
+   * —— /open 内部带 sweep 写操作，不能当只读接口高频调用。</p>
    */
   async function tryDigest() {
     if (digestHandled || digestInFlight) return
-    if (digestDoneToday()) { digestHandled = true; return }
+    if (digestDone()) { digestHandled = true; return }
     if (!summary.popupEnabled) { digestHandled = true; return }
-    if (noPopupToday()) { markDigestDone(); return }
+    if (noPopupToday()) return
     if (!summary.allowPopup) return
+    if (Date.now() - lastDigestTryAt < DIGEST_RETRY_MS) return
 
     digestInFlight = true
     try {
       const res = await notifyOpen()
       // ⚠️ 响应体解包铁律：Array 判空兜底
       const items = Array.isArray(res && res.data) ? res.data : []
-      // 无论有没有内容，今天都只问一次（避免每次轮询都为"空"打一次接口）
-      markDigestDone()
-      if (items.length > 0) {
-        lastPopupAt.value = Date.now()
-        popup && popup(items, {
-          mode: 'digest',
-          duration: popupDurationFor(items),
-          noPopupToday,
-          setNoPopupToday
-        })
-        // open 接口内部跑过 sweep（业务已完成的待办会转 done），角标需要跟着更新
-        refreshSummary()
+      lastDigestTryAt = Date.now()
+      if (items.length === 0) {
+        // 进入系统时还没有待办/预警：不写标记，10 分钟后再问一次（等扫描出预警时能补上）
+        return
       }
+      markDigestDone()
+      lastPopupAt.value = Date.now()
+      popup && popup(items, {
+        mode: 'digest',
+        duration: popupDurationFor(items),
+        noPopupToday,
+        setNoPopupToday
+      })
+      // open 接口内部跑过 sweep（业务已完成的待办会转 done），角标需要跟着更新
+      refreshSummary()
     } catch (e) {
       // 静默：失败不标记，下次轮询还能再试
     } finally {
