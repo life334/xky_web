@@ -273,7 +273,7 @@
                </span>
             </template>
          </el-table-column>
-         <el-table-column v-for="col in visibleColumns" :key="col.key" :label="col.label" align="center" :prop="col.prop" :show-overflow-tooltip="false" :min-width="colWidth(col)">
+         <el-table-column v-for="col in visibleColumns" :key="col.key" :label="col.label" align="center" :prop="col.prop" :show-overflow-tooltip="col.key === 'payRemark'" :min-width="colWidth(col)">
             <template #default="scope">
                <!-- 工程编号：加粗 -->
                <span v-if="col.key === 'projectCode' && scope.row.projectCode">{{ scope.row.projectCode }}</span>
@@ -1035,6 +1035,8 @@ async function loadColumns() {
 
 /** 列宽自适应：日期/金额窄列，其余文本宽列 */
 function colWidth(col) {
+  // 备注（到账备注）：内容普遍较长（如「xxx公司转账68000元」），给宽一点并开浮层显示全文
+  if (col.key === 'payRemark') return 180
   if (col.type === 'date') return 120
   if (col.type === 'money' || col.type === 'number') return 110
   return 130
@@ -1692,7 +1694,10 @@ function handleEditPayment(row) {
       // 每笔回填各自的拟上报月份（plan_report_month，YYYY-MM）。
       paymentForm.value.payments = buildPaymentRows(payments.filter(p => p.paymentType !== 'refund'))
       paymentForm.value.payUnit = (payments.find(p => p.payUnit) || {}).payUnit || null
-      paymentForm.value.remark = (payments.find(p => p.remark) || {}).remark || null
+      // 备注回显：项目级 pay_remark 优先（sql/39，用户只填备注、无付款行时也存在这里），
+      // 为空再回退到付款行上的备注（历史数据没有项目级字段）。
+      paymentForm.value.remark = (detailRes.data.project && detailRes.data.project.payRemark)
+        || (payments.find(p => p.remark) || {}).remark || null
 
       // 退款回填
       const refunds = detail.refunds || payments.filter(p => p.paymentType === 'refund')

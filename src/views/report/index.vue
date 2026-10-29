@@ -729,6 +729,10 @@ const FILTER_MAP = {
   /* 项目类别（小类）：支持多选（后端按逗号拆分 → project_category_id in (...)） */
   projectCategoryId: { widget: 'multiSelect', mapKey: 'categoryId', source: 'category' },
   projectStatus: { widget: 'multiSelect', mapKey: 'projectStatus' },
+  /* 项目性质（proj_project.project_nature）：市场性任务 normal / 指令性任务 mandate
+     —— 与「委托单位性质」是两个不同字段。控件单值下拉，选项取自后端字段池 options。
+     SQL 侧写成 in(...) 拆分，将来要改多选只需把 widget 换成 multiSelect。 */
+  projectNature: { widget: 'select', mapKey: 'projectNature' },
   /* 上报状态（已上报/未上报）：与「上报时间」列同源，后端 SQL 判定的服务端筛选，导出同样生效 */
   submitStatus: { widget: 'select', mapKey: 'submitStatus', source: 'field' },
   contractNo: { widget: 'input', mapKey: 'contractNo' },
