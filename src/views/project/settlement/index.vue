@@ -47,19 +47,9 @@
          <div v-show="advancedVisible" class="advanced-filter-panel">
             <div class="filter-grid">
                <div class="filter-item">
-                  <div class="filter-item-label">工程编号</div>
-                  <el-input v-model="queryParams.projectCode" placeholder="工程编号" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
-               </div>
-               <div class="filter-item">
                   <div class="filter-item-label">委托单位</div>
                   <el-select v-model="queryParams.clientUnit" filterable clearable placeholder="全部单位" style="width:100%" :loading="distinctLoading" @change="handleQuery">
                      <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
-                  </el-select>
-               </div>
-               <div class="filter-item">
-                  <div class="filter-item-label">委托单位性质</div>
-                  <el-select v-model="queryParams.clientUnitNature" clearable placeholder="全部" style="width:100%" @change="handleQuery">
-                     <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
                   </el-select>
                </div>
                <div class="filter-item">
@@ -85,18 +75,13 @@
                   </el-select>
                </div>
                <div class="filter-item">
-                  <div class="filter-item-label">项目来源</div>
-                  <el-select v-model="queryParams.dataSource" clearable placeholder="全部来源" style="width:100%" @change="handleQuery">
-                     <el-option v-for="dict in sourceOptions" :key="dict.value" :label="dict.label" :value="dict.value" />
-                  </el-select>
-               </div>
-               <div class="filter-item">
                   <div class="filter-item-label">办结日期</div>
                   <el-date-picker v-model="closeDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onCloseDateChange" />
                </div>
                <div class="filter-item">
                   <div class="filter-item-label">拟上报时间</div>
-                  <el-date-picker v-model="planReportTimeRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onPlanReportTimeChange" />
+                  <!-- 拟上报时间是付款笔级年月（proj_payment.plan_report_month，YYYY-MM）⇒ 年月区间，不选到日 -->
+                  <el-date-picker v-model="planReportTimeRange" value-format="YYYY-MM" type="monthrange" range-separator="-" start-placeholder="开始年月" end-placeholder="结束年月" style="width:100%" @change="onPlanReportTimeChange" />
                </div>
             </div>
             <!-- 快捷日期 -->
@@ -232,7 +217,7 @@
                      <el-table v-if="(expandDetails[scope.row.projectId].payments || []).length" :data="expandDetails[scope.row.projectId].payments" border size="small" :span-method="(args) => paymentSpanMethod(args, scope.row.projectId)">
                         <el-table-column label="付款类型" align="center"  width="120">
                            <template #default="s">
-                              <el-tag :type="s.row.paymentType === 'advance' ? 'primary' : (s.row.paymentType === 'refund' ? 'danger' : 'success')" size="small">{{ s.row.paymentType === 'advance' ? '预付款' : (s.row.paymentType === 'refund' ? '退款' : '尾款') }}</el-tag>
+                              <el-tag :type="s.row.paymentType === 'advance' ? 'primary' : (s.row.paymentType === 'refund' ? 'danger' : (s.row.paymentType === 'final' ? 'success' : 'warning'))" size="small">{{ paymentTypeText(s.row.paymentType) }}</el-tag>
                            </template>
                         </el-table-column>
                         <el-table-column label="金额" align="center"  width="150">
@@ -243,6 +228,12 @@
                         </el-table-column>
                         <el-table-column label="付款时间" align="center" prop="payTime" width="150">
                            <template #default="s">{{ s.row.paymentType === 'refund' ? (s.row.payTime || '-') : s.row.payTime }}</template>
+                        </el-table-column>
+                        <el-table-column label="拟上报时间" align="center" width="130">
+                           <template #default="s">
+                              <span v-if="s.row.paymentType === 'refund'">-</span>
+                              <span v-else>{{ s.row.planReportMonth || monthOfPayTime(s.row.payTime) || '-' }}</span>
+                           </template>
                         </el-table-column>
                         <el-table-column label="付款方式" align="center" prop="payMethod" width="120">
                            <template #default="s">{{ s.row.payMethod }}</template>
@@ -604,15 +595,8 @@
          draggable
       >
          <el-form ref="paymentRef" v-loading="paymentLoading" element-loading-text="数据加载中..." element-loading-background="rgba(255, 255, 255, 0.7)" :model="paymentForm" label-width="100px">
-            <!-- 拟上报时间：项目级字段（挂在项目上，不是某一笔款），由用户在这里指定 -->
-            <el-row :gutter="20">
-               <el-col :span="8">
-                  <el-form-item label="拟上报时间">
-                     <el-date-picker v-model="paymentForm.planReportTime" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" clearable style="width:100%" />
-                  </el-form-item>
-               </el-col>
-            </el-row>
-            <!-- 付款信息（保持原有结构） -->
+            <!-- 付款信息：动态行。前两笔固定预付款 / 尾款（列表列与导出列名不变），可继续添加付款。
+                 每笔各自一个「拟上报时间」（年月），留空时后端按口径兜底为该笔到账时间的年月。 -->
             <el-divider content-position="left">付款信息</el-divider>
             <div class="settle-panel">
                <!-- 付款单位 -->
@@ -625,51 +609,45 @@
                      </el-form-item>
                   </el-col>
                </el-row>
-               <!-- 预付款（①） -->
-               <div class="pay-row">
+               <!-- 付款行（动态）：前两笔固定预付款 / 尾款，可继续「添加付款」；
+                    每笔各自一个「拟上报时间」（年月），留空时后端兜底为该笔付款时间的年月 -->
+               <div v-for="(pm, idx) in paymentForm.payments" :key="pm._key" class="pay-row">
                   <el-row :gutter="20">
-                     <el-col :span="8">
+                     <el-col :span="6">
                         <el-form-item>
-                           <template #label><span class="pay-label pay-label-advance">① 预付款</span></template>
-                           <el-input-number v-model="paymentForm.prepayAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="金额" />
+                           <template #label>
+                              <span class="pay-label" :class="pm.paymentType === 'advance' ? 'pay-label-advance' : (pm.paymentType === 'final' ? 'pay-label-tail' : 'pay-label-other')">{{ pm.label }}</span>
+                           </template>
+                           <el-input-number v-model="pm.amount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="金额" />
                         </el-form-item>
                      </el-col>
-                     <el-col :span="8">
+                     <el-col :span="6">
                         <el-form-item label="付款时间">
-                           <el-date-picker v-model="paymentForm.prepayDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
+                           <el-date-picker v-model="pm.payTime" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" @change="(v) => onPayTimeChange(pm, v)" />
                         </el-form-item>
                      </el-col>
-                     <el-col :span="8">
+                     <el-col :span="5">
                         <el-form-item label="付款方式">
-                           <el-select v-model="paymentForm.prepayMethod" clearable placeholder="选择" style="width:100%">
+                           <el-select v-model="pm.payMethod" clearable placeholder="选择" style="width:100%">
                               <el-option v-for="m in payMethodOptions" :key="m" :label="m" :value="m" />
                            </el-select>
                         </el-form-item>
+                     </el-col>
+                     <!-- 拟上报时间放行末（业务上它是每笔付款的最后一步决定） -->
+                     <el-col :span="5">
+                        <el-form-item label="拟上报时间">
+                           <el-date-picker v-model="pm.planReportMonth" type="month" value-format="YYYY-MM" placeholder="默认=到账月份" clearable style="width:100%" />
+                        </el-form-item>
+                     </el-col>
+                     <!-- 预付款/尾款是必备笔，不允许删除 ⇒ 仅手动新增的付款行显示删除按钮 -->
+                     <el-col v-if="!isFixedPaymentRow(pm)" :span="2">
+                        <el-button type="danger" link icon="Delete" class="refund-del" @click="removePaymentRow(idx)">删除</el-button>
                      </el-col>
                   </el-row>
                </div>
-               <!-- 尾款（②） -->
-               <div class="pay-row">
-                  <el-row :gutter="20">
-                     <el-col :span="8">
-                        <el-form-item>
-                           <template #label><span class="pay-label pay-label-tail">② 尾款</span></template>
-                           <el-input-number v-model="paymentForm.tailAmount" :min="0" :precision="2" controls-position="right" style="width:100%" placeholder="金额" />
-                        </el-form-item>
-                     </el-col>
-                     <el-col :span="8">
-                        <el-form-item label="尾款时间">
-                           <el-date-picker v-model="paymentForm.tailDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:100%" />
-                        </el-form-item>
-                     </el-col>
-                     <el-col :span="8">
-                        <el-form-item label="付款方式">
-                           <el-select v-model="paymentForm.tailMethod" clearable placeholder="选择" style="width:100%">
-                              <el-option v-for="m in payMethodOptions" :key="m" :label="m" :value="m" />
-                           </el-select>
-                        </el-form-item>
-                     </el-col>
-                  </el-row>
+               <div class="pay-add-row">
+                  <el-button type="primary" link icon="Plus" @click="addPaymentRow">添加付款</el-button>
+                  <span class="pay-add-tip">拟上报时间留空时，默认取该笔付款时间的年月</span>
                </div>
                <!-- 退款信息（③，多笔动态列表） -->
                <div class="refund-section">
@@ -987,7 +965,8 @@ const FALLBACK_COLUMNS = [
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
   { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
-  { key: 'planReportTime', label: '拟上报时间', type: 'date', group: 'business', prop: 'planReportTime', defaultVisible: true },
+  // 付款笔级多值文本（如「2025-11、2026-03」），不是单个日期
+  { key: 'planReportTime', label: '拟上报时间', type: 'text', group: 'business', prop: 'planReportTime', defaultVisible: true },
   { key: 'userName', label: '负责人', type: 'text', group: 'business', prop: 'userName', defaultVisible: false },
   { key: 'categoryName', label: '项目类别', type: 'text', group: 'business', prop: 'categoryName', defaultVisible: true },
   { key: 'internalWorkload', label: '内部工作量', type: 'number', group: 'business', prop: 'internalWorkload', defaultVisible: true },
@@ -1096,16 +1075,16 @@ const workloadOpen = ref(false)
 const paymentOpen = ref(false)
 const paymentSaving = ref(false)
 const editEngineeringProject = ref('')
-/** 到账信息表单：拟上报时间（项目级）+ 付款 + 开票字段（到账信息弹窗使用） */
+/**
+ * 到账信息表单：付款行列表（每笔各自一个拟上报月份）+ 开票字段（到账信息弹窗使用）
+ *
+ * ⚠️ 拟上报时间已从「项目级」下沉为「付款笔级」（需求 2026-10-29）：
+ *    proj_payment.plan_report_month（YYYY-MM），一笔一个值；未填时按口径兜底为「该笔到账时间的年月」。
+ *    payments 数组前两行固定为预付款 / 尾款（保持既有导出列名与列表列不变），手动新增的行依次叫「第3笔付款…」。
+ */
 const paymentForm = ref({
-   planReportTime: null,
-   prepayAmount: null,
-   prepayDate: null,
+   payments: [],
    payUnit: null,
-   prepayMethod: null,
-   tailMethod: null,
-   tailAmount: null,
-   tailDate: null,
    refunds: [],
    remark: null,
    invoiceMode: 'unified',
@@ -1420,8 +1399,9 @@ function paymentSpanMethod({ rowIndex, columnIndex }, projectId) {
   // 检测是否分笔开票：尾款有独立发票信息 → split
   const hasSplit = payments.slice(1).some(p => p.invoiceUnit || p.invoiceStatus || p.invoiceAmount != null)
   if (hasSplit) return
-  // 统一开票：合并开票金额(5)、开票状态(6)、开票单位(7)
-  if (columnIndex === 5 || columnIndex === 6 || columnIndex === 7) {
+  // 统一开票：合并开票金额(6)、开票状态(7)、开票单位(8)
+  // ⚠️ 列序：付款类型(0) 金额(1) 付款时间(2) 拟上报时间(3) 付款方式(4) 付款单位(5) 开票金额(6) 开票状态(7) 开票单位(8)
+  if (columnIndex === 6 || columnIndex === 7 || columnIndex === 8) {
     if (rowIndex === 0) {
       return { rowspan: payments.length, colspan: 1 }
     }
@@ -1603,6 +1583,93 @@ function handleEditWorkload(row) {
   workloadOpen.value = true
 }
 
+/* ==================== 付款行（动态，每笔各自一个拟上报月份） ==================== */
+
+/**
+ * 付款行序号：用于生成不重复的 v-for key。
+ * 用自增序号而不是数组下标做 key —— 下标会因为删中间一行而错位，导致输入框内容串位。
+ */
+let payRowSeq = 0
+
+/** 由 yyyy-MM-dd 取年月(yyyy-MM) */
+function monthOfPayTime(payTime) {
+  if (!payTime) return null
+  const m = /^(\d{4})-(\d{2})/.exec(String(payTime))
+  return m ? `${m[1]}-${m[2]}` : null
+}
+
+/** 构造一个空付款行 */
+function newPaymentRow(paymentType, label) {
+  return {
+    _key: 'pr' + (++payRowSeq),
+    id: null,
+    paymentType,
+    label,
+    amount: null,
+    payTime: null,
+    planReportMonth: null,
+    payMethod: null
+  }
+}
+
+/**
+ * 由明细返回的非退款付款列表构造表单行：
+ * ① 预付款、② 尾款始终占前两位（没有则空行占位，保证列表列与导出列名不变）；
+ * 手动新增的付款行排在后面，按到账时间升序。
+ */
+function buildPaymentRows(pays) {
+  const rows = []
+  const advance = pays.find(p => p.paymentType === 'advance')
+  const final = pays.find(p => p.paymentType === 'final')
+  const others = pays.filter(p => p.paymentType !== 'advance' && p.paymentType !== 'final')
+    .sort((a, b) => String(a.payTime || '').localeCompare(String(b.payTime || '')))
+
+  const toRow = (src, type, label) => {
+    const r = newPaymentRow(type, label)
+    if (!src) return r
+    r.id = src.id
+    r.amount = src.amount != null ? Number(src.amount) : null
+    r.payTime = src.payTime || null
+    r.payMethod = src.payMethod || null
+    // 拟上报月份：优先回填已存值，为空时按口径兜底为「该笔付款时间的年月」
+    r.planReportMonth = src.planReportMonth || monthOfPayTime(src.payTime)
+    return r
+  }
+
+  rows.push(toRow(advance, 'advance', '① 预付款'))
+  rows.push(toRow(final, 'final', '② 尾款'))
+  others.forEach(p => rows.push(toRow(p, p.paymentType || 'other', `第${rows.length + 1}笔付款`)))
+  return rows
+}
+
+/** 添加一笔付款 */
+function addPaymentRow() {
+  paymentForm.value.payments.push(newPaymentRow('other', `第${paymentForm.value.payments.length + 1}笔付款`))
+}
+
+/** 是否为固定笔（预付款 ① / 尾款 ②）：这两笔业务上必备，不允许删除 */
+function isFixedPaymentRow(pm) {
+  return pm && (pm.paymentType === 'advance' || pm.paymentType === 'final')
+}
+
+/** 删除一笔付款（仅手动新增的付款行可删；预付款/尾款隐藏删除按钮） */
+function removePaymentRow(index) {
+  paymentForm.value.payments.splice(index, 1)
+}
+
+/** 付款时间变化时：若该笔还没指定拟上报月份，自动带出付款时间的年月（用户手工改过的不覆盖） */
+function onPayTimeChange(pm, val) {
+  if (!pm.planReportMonth) pm.planReportMonth = monthOfPayTime(val)
+}
+
+/** 付款类型显示名（other = 用户在弹窗里手动新增的付款笔） */
+function paymentTypeText(type) {
+  if (type === 'advance') return '预付款'
+  if (type === 'refund') return '退款'
+  if (type === 'final') return '尾款'
+  return '新增付款'
+}
+
 /** 打开到账信息弹窗（先立即开窗显示 loading，明细就绪后填充） */
 function handleEditPayment(row) {
   editProjectId.value = row.projectId
@@ -1621,19 +1688,11 @@ function handleEditPayment(row) {
       const detail = detailRes.data
       paymentDetailLoaded.value = true
       const payments = detail.payments || []
-      // 拟上报时间（项目级字段，从项目对象上取；后端按 yyyy-MM-dd 序列化）
-      paymentForm.value.planReportTime = (detail.project && detail.project.planReportTime) || null
-      // 填充付款信息
-      const prepay = payments.find(p => p.paymentType === "advance")
-      const tail = payments.find(p => p.paymentType === "final")
-      paymentForm.value.prepayAmount = prepay ? prepay.amount : null
-      paymentForm.value.prepayDate = prepay ? prepay.payTime : null
-      paymentForm.value.payUnit = prepay ? prepay.payUnit : (tail ? tail.payUnit : null)
-      paymentForm.value.prepayMethod = prepay ? prepay.payMethod : null
-      paymentForm.value.tailMethod = tail ? tail.payMethod : null
-      paymentForm.value.tailAmount = tail ? tail.amount : null
-      paymentForm.value.tailDate = tail ? tail.payTime : null
-      paymentForm.value.remark = prepay ? prepay.remark : (tail ? tail.remark : null)
+      // 付款行（不含退款）：预付款 / 尾款兜底占位在前，手动新增的付款行按到账时间排在其后。
+      // 每笔回填各自的拟上报月份（plan_report_month，YYYY-MM）。
+      paymentForm.value.payments = buildPaymentRows(payments.filter(p => p.paymentType !== 'refund'))
+      paymentForm.value.payUnit = (payments.find(p => p.payUnit) || {}).payUnit || null
+      paymentForm.value.remark = (payments.find(p => p.remark) || {}).remark || null
 
       // 退款回填
       const refunds = detail.refunds || payments.filter(p => p.paymentType === 'refund')
@@ -1647,6 +1706,8 @@ function handleEditPayment(row) {
       // 开票信息：尾款存在发票数据 → 分笔开票；否则统一开票
       // 分笔开票判定：仅「有发票实质数据」（开票单位 / 开票日期 / 开票金额>0，或已开/已作废）才算分笔；
       // 「未开 / pending」只是状态占位，不算——否则导入数据的编辑弹窗会默认切到分笔模式
+      const tail = payments.find(p => p.paymentType === "final")
+      const prepay = payments.find(p => p.paymentType === "advance")
       const tailInvText = invoiceStatusText(tail && tail.invoiceStatus)
       const tailHasInvoice = !!tail && (
         !!tail.invoiceUnit || !!tail.invoiceDate || (tail.invoiceAmount != null && tail.invoiceAmount > 0)
@@ -1677,46 +1738,43 @@ function savePaymentData() {
     projectId: editProjectId.value,
     remark: paymentForm.value.remark
   }
-  // 拟上报时间（项目级）：明细加载成功才带这个 key，传 null 表示清空（后端用 containsKey 判定）；
-  // 明细加载失败时整个 key 不带，避免误清已有值
+  // 付款行（每行各自的拟上报月份；后端按 id 更新 / 无 id 新增 / 未提交的行逻辑删除）。
+  // 明细未加载成功时不带 payments，避免加载失败把已有付款整组删掉。
   if (paymentDetailLoaded.value) {
-    payload.planReportTime = paymentForm.value.planReportTime || null
-  }
-  const invoiceMode = paymentForm.value.invoiceMode
-
-  const hasPrepayInvoice = paymentForm.value.invoiceUnit || paymentForm.value.invoiceDate
-    || (paymentForm.value.invoiceAmount != null && paymentForm.value.invoiceAmount > 0)
-    || isVoidedInvoice(paymentForm.value.invoiceStatus)
-  if (paymentForm.value.prepayAmount != null || paymentForm.value.prepayDate || hasPrepayInvoice) {
-    payload.prepay = {
-      amount: paymentForm.value.prepayAmount,
-      payTime: paymentForm.value.prepayDate,
-      payUnit: paymentForm.value.payUnit,
-      payMethod: paymentForm.value.prepayMethod,
-      invoiceStatus: paymentForm.value.invoiceStatus,
-      invoiceUnit: paymentForm.value.invoiceUnit,
-      invoiceDate: paymentForm.value.invoiceDate,
-      invoiceAmount: paymentForm.value.invoiceAmount
-    }
-  }
-
-  const hasTailInvoice = invoiceMode === 'split' && (paymentForm.value.tailInvoiceUnit || paymentForm.value.tailInvoiceDate
-    || (paymentForm.value.tailInvoiceAmount != null && paymentForm.value.tailInvoiceAmount > 0)
-    || isVoidedInvoice(paymentForm.value.tailInvoiceStatus))
-  if (paymentForm.value.tailAmount != null || paymentForm.value.tailDate || hasTailInvoice) {
-    const tail = {
-      amount: paymentForm.value.tailAmount,
-      payTime: paymentForm.value.tailDate,
-      payUnit: paymentForm.value.payUnit,
-      payMethod: paymentForm.value.tailMethod
-    }
-    if (invoiceMode === 'split') {
-      tail.invoiceStatus = paymentForm.value.tailInvoiceStatus
-      tail.invoiceUnit = paymentForm.value.tailInvoiceUnit
-      tail.invoiceDate = paymentForm.value.tailInvoiceDate
-      tail.invoiceAmount = paymentForm.value.tailInvoiceAmount
-    }
-    payload.tail = tail
+    const invoiceMode = paymentForm.value.invoiceMode
+    payload.payments = paymentForm.value.payments.map(pm => {
+      const row = {
+        id: pm.id || null,
+        paymentType: pm.paymentType,
+        amount: pm.amount != null ? Number(pm.amount) : null,
+        payTime: pm.payTime || null,
+        payUnit: paymentForm.value.payUnit || null,
+        payMethod: pm.payMethod || null,
+        // 拟上报月份：前端已按「付款时间年月」带出默认值，这里原样提交；空值由后端再兜底一次
+        planReportMonth: pm.planReportMonth || null
+      }
+      // 开票信息仍挂在付款行上（proj_payment.invoice_*）：
+      // 统一开票 → 所有付款行同一组；分笔开票 → 预付款用统一那一组、尾款用尾款那一组；手动新增的行不挂票
+      if (invoiceMode === 'split') {
+        if (pm.paymentType === 'advance') {
+          row.invoiceStatus = paymentForm.value.invoiceStatus || null
+          row.invoiceUnit = paymentForm.value.invoiceUnit || null
+          row.invoiceDate = paymentForm.value.invoiceDate || null
+          row.invoiceAmount = paymentForm.value.invoiceAmount != null ? Number(paymentForm.value.invoiceAmount) : null
+        } else if (pm.paymentType === 'final') {
+          row.invoiceStatus = paymentForm.value.tailInvoiceStatus || null
+          row.invoiceUnit = paymentForm.value.tailInvoiceUnit || null
+          row.invoiceDate = paymentForm.value.tailInvoiceDate || null
+          row.invoiceAmount = paymentForm.value.tailInvoiceAmount != null ? Number(paymentForm.value.tailInvoiceAmount) : null
+        }
+      } else {
+        row.invoiceStatus = paymentForm.value.invoiceStatus || null
+        row.invoiceUnit = paymentForm.value.invoiceUnit || null
+        row.invoiceDate = paymentForm.value.invoiceDate || null
+        row.invoiceAmount = paymentForm.value.invoiceAmount != null ? Number(paymentForm.value.invoiceAmount) : null
+      }
+      return row
+    })
   }
 
   payload.refunds = paymentForm.value.refunds
@@ -2471,6 +2529,15 @@ onActivated(() => {
 .pay-label-advance { color: #409eff; }
 .pay-label-tail { color: #67c23a; }
 .pay-label-refund { color: #f56c6c; }
+.pay-label-other { color: #e6a23c; }
+/* 「添加付款」行 + 拟上报时间口径说明 */
+.pay-add-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0 8px;
+}
+.pay-add-tip { font-size: 12px; color: #909399; }
 /* ===== 退款信息小节（多笔动态列表） ===== */
 .refund-section {
   margin-bottom: 4px;

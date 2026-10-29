@@ -106,17 +106,25 @@
                <div v-show="advancedVisible" class="advanced-filter-panel">
                   <div class="filter-grid">
                      <div class="filter-item">
-                        <div class="filter-item-label">项目名称</div>
-                        <el-input v-model="queryParams.projectName" placeholder="项目名称" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
+                        <div class="filter-item-label">委托单位</div>
+                        <el-input v-model="queryParams.clientUnit" placeholder="委托单位" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
                      </div>
                      <div class="filter-item">
-                        <div class="filter-item-label">客户全称</div>
-                        <el-input v-model="queryParams.clientUnit" placeholder="客户全称" clearable @keyup.enter="handleQuery" @clear="handleQuery" />
-                     </div>
-                     <div class="filter-item">
-                        <div class="filter-item-label">委托单位性质</div>
-                        <el-select v-model="queryParams.clientUnitNature" clearable placeholder="全部" style="width:100%" @change="handleQuery">
-                           <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
+                        <div class="filter-item-label">项目类别</div>
+                        <el-select
+                           v-model="queryParams.projectCategoryIds"
+                           multiple
+                           filterable
+                           clearable
+                           collapse-tags
+                           collapse-tags-tooltip
+                           :max-collapse-tags="2"
+                           placeholder="全部类别（可多选）"
+                           style="width: 100%"
+                           :loading="categoryLoading"
+                           @change="handleQuery"
+                        >
+                           <el-option v-for="c in categoryOptions" :key="c.id" :label="c.name" :value="c.id" />
                         </el-select>
                      </div>
                      <div class="filter-item">
@@ -129,12 +137,8 @@
                         </div>
                      </div>
                      <div class="filter-item">
-                        <div class="filter-item-label">完成时间（办结）</div>
+                        <div class="filter-item-label">办结时间</div>
                         <el-date-picker v-model="closeTimeRange" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD" style="width:100%" @change="handleQuery" />
-                     </div>
-                     <div class="filter-item">
-                        <div class="filter-item-label">到账时间</div>
-                        <el-date-picker v-model="payTimeRange" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD" style="width:100%" @change="handleQuery" />
                      </div>
                      <div class="filter-item">
                         <div class="filter-item-label">负责人</div>
@@ -307,21 +311,11 @@
                         <el-input v-model="unsettledQuery.projectCode" placeholder="工程编号" clearable @keyup.enter="handleUnsettledQuery" @clear="handleUnsettledQuery" />
                      </div>
                      <div class="filter-item">
-                        <div class="filter-item-label">项目名称</div>
-                        <el-input v-model="unsettledQuery.projectName" placeholder="项目名称" clearable @keyup.enter="handleUnsettledQuery" @clear="handleUnsettledQuery" />
+                        <div class="filter-item-label">委托单位</div>
+                        <el-input v-model="unsettledQuery.clientUnit" placeholder="委托单位" clearable @keyup.enter="handleUnsettledQuery" @clear="handleUnsettledQuery" />
                      </div>
                      <div class="filter-item">
-                        <div class="filter-item-label">客户全称</div>
-                        <el-input v-model="unsettledQuery.clientUnit" placeholder="客户全称" clearable @keyup.enter="handleUnsettledQuery" @clear="handleUnsettledQuery" />
-                     </div>
-                     <div class="filter-item">
-                        <div class="filter-item-label">委托单位性质</div>
-                        <el-select v-model="unsettledQuery.clientUnitNature" clearable placeholder="全部" style="width:100%" @change="handleUnsettledQuery">
-                           <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
-                        </el-select>
-                     </div>
-                     <div class="filter-item">
-                        <div class="filter-item-label">完成时间（办结）</div>
+                        <div class="filter-item-label">办结时间</div>
                         <el-date-picker v-model="unsettledCloseRange" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD" style="width:100%" @change="handleUnsettledQuery" />
                      </div>
                      <div class="filter-item">
@@ -395,18 +389,12 @@
                <div v-show="summaryAdvancedVisible" class="advanced-filter-panel">
                   <div class="filter-grid">
                      <div class="filter-item">
-                        <div class="filter-item-label">工程编号/项目名称</div>
+                        <div class="filter-item-label">工程编号</div>
                         <el-input v-model="summaryQuery.keyword" placeholder="编号或名称关键词" clearable @keyup.enter="handleSummaryQuery" @clear="handleSummaryQuery" />
                      </div>
                      <div class="filter-item">
-                        <div class="filter-item-label">客户全称</div>
-                        <el-input v-model="summaryQuery.clientUnit" placeholder="客户全称" clearable @keyup.enter="handleSummaryQuery" @clear="handleSummaryQuery" />
-                     </div>
-                     <div class="filter-item">
-                        <div class="filter-item-label">委托单位性质</div>
-                        <el-select v-model="summaryQuery.clientUnitNature" clearable placeholder="全部" style="width:100%" @change="handleSummaryQuery">
-                           <el-option v-for="d in clientUnitNatureOptions" :key="d.value" :label="d.label" :value="d.value" />
-                        </el-select>
+                        <div class="filter-item-label">委托单位</div>
+                        <el-input v-model="summaryQuery.clientUnit" placeholder="委托单位" clearable @keyup.enter="handleSummaryQuery" @clear="handleSummaryQuery" />
                      </div>
                      <div class="filter-item">
                         <div class="filter-item-label">负责人</div>
@@ -425,10 +413,6 @@
                         <el-select v-model="summaryQuery.paymentType" clearable placeholder="全部类型" style="width:100%" @change="handleSummaryQuery">
                            <el-option v-for="d in proj_payment_type" :key="d.value" :label="d.label" :value="d.value" />
                         </el-select>
-                     </div>
-                     <div class="filter-item">
-                        <div class="filter-item-label">付款单位</div>
-                        <el-input v-model="summaryQuery.payUnit" placeholder="付款单位" clearable @keyup.enter="handleSummaryQuery" @clear="handleSummaryQuery" />
                      </div>
                   </div>
                   <div class="quick-filter-row">
@@ -804,6 +788,7 @@ const data = reactive({
       projectName: undefined,
       clientUnit: undefined,
       clientUnitNature: undefined,
+      projectCategoryIds: [],
       leaderId: undefined
    },
    payRules: {
@@ -933,9 +918,13 @@ function getList() {
    }
 }
 
-/** 组装查询参数（完成时间 → closeTimeBegin/End；到账时间 → payTimeBegin/End） */
+/** 组装查询参数（办结时间 → closeTimeBegin/End；到账时间 → payTimeBegin/End；项目类别多选 → 逗号串） */
 function buildParams() {
    const params = { ...queryParams.value }
+   // 项目类别多选：数组 → 逗号串（后端用 string_to_array(...)::bigint[] 匹配）
+   params.projectCategoryIds = Array.isArray(params.projectCategoryIds) && params.projectCategoryIds.length
+      ? params.projectCategoryIds.join(',')
+      : undefined
    if (closeTimeRange.value && closeTimeRange.value.length === 2) {
       params.closeTimeBegin = closeTimeRange.value[0]
       params.closeTimeEnd = closeTimeRange.value[1]
@@ -1009,6 +998,7 @@ function resetQuery() {
    q.projectName = undefined
    q.clientUnit = undefined
    q.clientUnitNature = undefined
+   q.projectCategoryIds = []
    q.collectStatus = undefined
    q.ageBegin = undefined
    q.ageEnd = undefined
@@ -1386,6 +1376,7 @@ function getSummary() {
 
 /** 加载项目类别下拉（仅首次） */
 function loadCategoryOptions() {
+   if (categoryOptions.value.length > 0) return
    categoryLoading.value = true
    ensureCategoryBaseData().then(base => {
       // 只取叶子节点（小类）：项目只能挂小类，列出大类会选不到任何数据
@@ -1535,12 +1526,14 @@ getList()
 getStats()
 getUnsettledList()
 loadUserOptions()
+loadCategoryOptions()   // 待回款页签的「项目类别（多选）」需要，首屏即加载
 
 // keep-alive 缓存下切回本页时刷新列表（避免项目删除后仍显示旧数据）
 onActivated(() => {
   getList()
   getStats()
   getUnsettledList()
+  loadCategoryOptions()
   if (activeTab.value === 'summary') getSummary()
 })
 </script>

@@ -77,12 +77,16 @@
             <el-select v-else-if="FILTER_MAP[fk].widget === 'multiSelect'" :model-value="fv(FILTER_MAP[fk].mapKey)" multiple collapse-tags clearable placeholder="全部" size="small" style="width: 100%" @update:model-value="setFv(FILTER_MAP[fk].mapKey, $event)" @change="debouncePreview">
               <el-option v-for="(label, val) in selectOptions(fk)" :key="val" :label="label" :value="val" />
             </el-select>
-            <!-- 日期区间 -->
+            <!-- 日期区间（meta.month = true 时渲染为年月区间 monthrange，值格式 YYYY-MM） -->
             <el-date-picker
               v-else-if="FILTER_MAP[fk].widget === 'daterange'"
               :model-value="dateRangeValue(fk)"
-              type="daterange" range-separator="~" start-placeholder="开始日期" end-placeholder="结束日期"
-              value-format="YYYY-MM-DD" size="small" style="width: 100%"
+              :type="FILTER_MAP[fk].month ? 'monthrange' : 'daterange'"
+              range-separator="~"
+              :start-placeholder="FILTER_MAP[fk].month ? '开始年月' : '开始日期'"
+              :end-placeholder="FILTER_MAP[fk].month ? '结束年月' : '结束日期'"
+              :value-format="FILTER_MAP[fk].month ? 'YYYY-MM' : 'YYYY-MM-DD'"
+              size="small" style="width: 100%"
               @update:model-value="onDateRangeChange(fk, $event)"
             />
             <!-- 数值区间 -->
@@ -742,7 +746,8 @@ const FILTER_MAP = {
   createTime: { widget: 'daterange', range: ['createTimeBegin', 'createTimeEnd'] },
   closeTime: { widget: 'daterange', range: ['closeTimeBegin', 'closeTimeEnd'] },
   /* 拟上报时间（项目级 proj_project.plan_report_time）：到账信息编辑时由用户填写 */
-  planReportTime: { widget: 'daterange', range: ['planReportTimeBegin', 'planReportTimeEnd'] },
+  // 拟上报时间是「付款笔级年月」（proj_payment.plan_report_month，YYYY-MM）⇒ 控件用年月区间，不选到日
+  planReportTime: { widget: 'daterange', month: true, range: ['planReportTimeBegin', 'planReportTimeEnd'] },
   /* 关联定线项目时间段：系统关联取定线项目创建时间；手工编号按其编号里的年份（见后端 relatedProjStartExpr / EndExpr） */
   relatedProjectCreate: { widget: 'daterange', range: ['relatedProjectCreateBegin', 'relatedProjectCreateEnd'] },
   receivedAmount: { widget: 'numberRange', range: ['receivedAmountMin', 'receivedAmountMax'] },
@@ -1285,8 +1290,10 @@ function selectOptions(fk) {
 
 function dateRangeValue(fk) {
   const meta = FILTER_MAP[fk]
-  const b = filterValues[meta.range[0]]
-  const e = filterValues[meta.range[1]]
+  // 年月区间控件只认 YYYY-MM：历史筛选方案里若存的是 YYYY-MM-DD，回显时截断到月，避免控件显示空白
+  const norm = v => (v === undefined || v === null || v === '') ? null : (meta.month ? String(v).slice(0, 7) : String(v))
+  const b = norm(filterValues[meta.range[0]])
+  const e = norm(filterValues[meta.range[1]])
   return b && e ? [b, e] : null
 }
 
