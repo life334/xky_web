@@ -39,7 +39,11 @@
                <el-descriptions-item label="工程地点">{{ projectInfo.projectLocation || '-' }}</el-descriptions-item>
                <el-descriptions-item label="联系人">{{ projectInfo.contactName || '-' }}</el-descriptions-item>
                <el-descriptions-item label="联系电话">{{ projectInfo.contactPhone || '-' }}</el-descriptions-item>
-               <el-descriptions-item label="合同">{{ fmtContract(projectInfo) }}</el-descriptions-item>
+               <el-descriptions-item label="合同">
+                  <!-- 有关联合同 ⇒ 可点击就地打开合同详情（与合同管理列表同一套弹窗组件） -->
+                  <el-button v-if="projectInfo.contractId" link type="primary" @click="openContractDetail">{{ fmtContract(projectInfo) }}</el-button>
+                  <span v-else>{{ fmtContract(projectInfo) }}</span>
+               </el-descriptions-item>
                <el-descriptions-item label="安排日期">{{ projectInfo.assignDate ? parseTime(projectInfo.assignDate, '{y}-{m}-{d}') : '-' }}</el-descriptions-item>
                <el-descriptions-item label="工期要求">{{ projectInfo.durationRequire != null ? projectInfo.durationRequire + ' 天' : '-' }}</el-descriptions-item>
                <el-descriptions-item label="总时长">
@@ -365,6 +369,9 @@
             <el-button @click="paymentOpen = false">取 消</el-button>
          </template>
       </el-dialog>
+
+      <!-- 合同详情弹窗（公共组件：与合同管理列表「详情」是同一个，只读展示三个 Tab） -->
+      <ContractDetailDialog v-model="contractDetailOpen" :contract-id="contractDetailId" />
    </div>
 </template>
 
@@ -380,6 +387,7 @@ import { listCategory, categoryTreeselect } from "@/api/project/category"
 import { listUserOptions } from "@/api/system/user"
 import { countWorkdays, batchCountWorkdays } from "@/utils/workday"
 import { invoiceStatusText, invoiceStatusTagType } from "@/utils/projStatus"
+import ContractDetailDialog from "@/views/project/contract/components/ContractDetailDialog.vue"
 
 const { proxy } = getCurrentInstance()
 const { proj_payment_type, proj_project_status, proj_material_result_type, proj_material_status, proj_material_submit_status } = useDict('proj_payment_type', 'proj_project_status', 'proj_material_result_type', 'proj_material_status', 'proj_material_submit_status')
@@ -575,9 +583,19 @@ function fmtContract(row) {
    return no || name || '-'
 }
 
+/* ===== 合同详情弹窗：点击「基本信息 → 合同」就地查看（组件内部自己拉 getContract + Tab 懒加载） ===== */
+const contractDetailOpen = ref(false)
+const contractDetailId = ref(null)
+
+function openContractDetail() {
+   const id = projectInfo.value.contractId
+   if (!id) return
+   contractDetailId.value = id
+   contractDetailOpen.value = true
+}
+
 /** 数值兜底 */
 function num(v) { return Number(v) || 0 }
-
 /** 采用单价：优先 unitPrice，回退内部/外部单价 */
 function pickPrice(row) {
    if (row.unitPrice != null) return row.unitPrice

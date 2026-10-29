@@ -635,115 +635,8 @@
          </template>
       </el-dialog>
 
-      <!-- 合同详情对话框 -->
-      <el-dialog :title="'合同详情 — ' + detail.contractNo" :model-value="detailOpen" @update:model-value="detailOpen = $event" width="80%" append-to-body class="contract-detail-dialog">
-         <el-tabs v-model="detailActiveTab" @tab-change="ensureDetailTabData">
-            <el-tab-pane label="基本信息" name="info">
-               <el-descriptions :column="2" border>
-                  <el-descriptions-item label="合同编号" :span="1">{{ detail.contractNo }}</el-descriptions-item>
-                  <el-descriptions-item label="合同名称" :span="1">{{ detail.contractName }}</el-descriptions-item>
-                  <el-descriptions-item label="合同类型"><dict-tag :options="proj_contract_type" :value="detail.contractType" /></el-descriptions-item>
-                  <el-descriptions-item label="合同状态">
-                     <dict-tag v-if="detail.status" :options="d('proj_contract_status')" :value="detail.status" />
-                     <span v-else>进行中</span>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="合同金额">{{ detail.contractAmount != null ? formatAmount(detail.contractAmount, amountUnit) : '' }}</el-descriptions-item>
-                  <el-descriptions-item label="委托单位">{{ detail.clientUnit }}</el-descriptions-item>
-                  <el-descriptions-item label="项目类型">{{ detail.extraData ? projectTypeText(detail.extraData.projectType) : '' }}</el-descriptions-item>
-                  <el-descriptions-item label="测绘地址">{{ detail.extraData ? detail.extraData.surveyAddress : '' }}</el-descriptions-item>
-                  <el-descriptions-item label="合同期限">{{ detail.contractPeriod }}</el-descriptions-item>
-                  <el-descriptions-item label="联系人">{{ detail.contactName }}</el-descriptions-item>
-                  <el-descriptions-item label="联系电话">{{ detail.contactPhone }}</el-descriptions-item>
-                  <el-descriptions-item label="签署日期">{{ parseDate(detail.signDate) }}</el-descriptions-item>
-                  <el-descriptions-item label="登记时间">{{ parseDate(detail.entrustDate) }}</el-descriptions-item>
-                  <el-descriptions-item label="归档日期">{{ parseDate(detail.archiveDate) }}</el-descriptions-item>
-                  <el-descriptions-item label="存储目录" :span="2">{{ detail.archivePath }}</el-descriptions-item>
-                  <el-descriptions-item label="支付条件" :span="2">{{ detail.paymentTerms }}</el-descriptions-item>
-                  <el-descriptions-item label="备注" :span="2">{{ detail.remark }}</el-descriptions-item>
-                  <el-descriptions-item label="创建者">{{ detail.createBy }}</el-descriptions-item>
-                  <el-descriptions-item label="创建时间">{{ parseTime(detail.createTime) }}</el-descriptions-item>
-                  <el-descriptions-item label="修改者">{{ detail.updateBy }}</el-descriptions-item>
-                  <el-descriptions-item label="修改时间">{{ parseTime(detail.updateTime) }}</el-descriptions-item>
-               </el-descriptions>
-            </el-tab-pane>
-            <el-tab-pane label="合同单价" name="price">
-               <div v-if="detailPriceLoading || detailPriceList.length > 0">
-                  <el-table v-loading="detailPriceLoading" :data="detailPriceList" border size="small" max-height="400">
-                     <el-table-column label="大类" align="center" prop="parentName" min-width="120" :show-overflow-tooltip="true" />
-                     <el-table-column label="项目类别" align="center" prop="categoryName" min-width="140" :show-overflow-tooltip="true" />
-                     <el-table-column label="计费类别" align="center" prop="billingCategory" min-width="120" :show-overflow-tooltip="true" />
-                     <el-table-column label="字典单价" align="right" prop="dictUnitPrice" min-width="100">
-                        <template #default="scope">
-                           <span v-if="scope.row.dictUnitPrice">¥{{ Number(scope.row.dictUnitPrice).toFixed(2) }}</span>
-                        </template>
-                     </el-table-column>
-                     <el-table-column label="计价单位" align="center" prop="priceUnit" min-width="100" />
-                     <el-table-column label="字典起步量" align="right" prop="minQuantity" min-width="100">
-                        <template #default="scope">
-                           <span v-if="scope.row.minQuantity != null">{{ scope.row.minQuantity }}</span>
-                           <span v-else style="color:#c0c4cc">—</span>
-                        </template>
-                     </el-table-column>
-                     <el-table-column label="合同起步量" align="right" min-width="100">
-                        <template #default="scope">
-                           <span v-if="scope.row.contractMinQuantity != null">{{ scope.row.contractMinQuantity }}</span>
-                           <span v-else style="color:#c0c4cc">—</span>
-                        </template>
-                     </el-table-column>
-                     <el-table-column label="合同单价" align="center" min-width="120">
-                        <template #default="scope">
-                           <span style="font-weight: 600; color: #409eff;">¥{{ Number(scope.row.price).toFixed(2) }}</span>
-                        </template>
-                     </el-table-column>
-                  </el-table>
-               </div>
-               <el-empty v-else description="暂无合同单价数据" />
-            </el-tab-pane>
-
-            <el-tab-pane label="附件资料" name="attachment">
-               <div v-if="detailAttachmentLoading || detailAttachmentList.length > 0">
-                  <el-table v-loading="detailAttachmentLoading" :data="detailAttachmentList" border size="small" max-height="400">
-                     <el-table-column label="文件" align="left" min-width="200">
-                        <template #default="scope">
-                           <div style="display:flex;align-items:center;gap:8px">
-                              <el-icon :size="20" :color="getFileIconColor(scope.row.fileType)"><Document /></el-icon>
-                              <span>{{ scope.row.fileName }}</span>
-                           </div>
-                        </template>
-                     </el-table-column>
-                     <el-table-column label="分类" align="center" prop="fileCategory" min-width="100">
-                        <template #default="scope">
-                           {{ getCategoryLabel(scope.row.fileCategory) }}
-                        </template>
-                     </el-table-column>
-                     <el-table-column label="标记" align="center" min-width="80">
-                        <template #default="scope">
-                           <el-tag v-if="scope.row.isFinal === '1'" size="small" type="success">盖章版</el-tag>
-                        </template>
-                     </el-table-column>
-                     <el-table-column label="版本" align="center" min-width="60" prop="version">
-                        <template #default="scope">v{{ scope.row.version }}</template>
-                     </el-table-column>
-                     <el-table-column label="大小" align="right" min-width="80">
-                        <template #default="scope">{{ formatFileSize(scope.row.fileSize) }}</template>
-                     </el-table-column>
-                     <el-table-column label="操作" align="center" min-width="120">
-                        <template #default="scope">
-                           <el-button link type="primary" size="small" @click="previewAttachment(scope.row)">预览</el-button>
-                           <el-button link type="primary" size="small" @click="downloadAttachment(scope.row)">下载</el-button>
-                        </template>
-                     </el-table-column>
-                  </el-table>
-               </div>
-               <el-empty v-else description="暂无附件" />
-            </el-tab-pane>
-         </el-tabs>
-         <template #footer>
-            <div class="dialog-footer">
-               <el-button @click="detailOpen = false">关 闭</el-button>
-            </div>
-         </template>
-      </el-dialog>
+      <!-- 合同详情对话框（公共组件：合同管理列表「详情」与项目详情「基本信息 → 合同」共用同一套 UI） -->
+      <ContractDetailDialog v-model="detailOpen" :contract-id="detailContractId" :amount-unit="amountUnit" />
 
       <!-- 状态变更弹窗 -->
       <el-dialog title="状态变更" :model-value="statusOpen" @update:model-value="statusOpen = $event" width="500px" append-to-body>
@@ -918,6 +811,7 @@ import { paymentTypeText, attachmentCategoryText, settledFlagText } from '@/util
 import { saveAs } from 'file-saver'
 import { useRoute } from "vue-router"
 import { useNotifyLanding } from "@/utils/useNotifyLanding"
+import ContractDetailDialog from "./components/ContractDetailDialog.vue"
 
 const { proxy } = getCurrentInstance()
 
@@ -1154,9 +1048,6 @@ const title = ref("")
 const total = ref(0)
 const single = ref(true)
 const multiple = ref(true)
-const detail = ref({})
-const detailActiveTab = ref("info")
-const detailPriceList = ref([])  // 合同单价明细
 const ids = ref([])
 const statusSubmitting = ref(false)
 const submitLoading = ref(false)    // 合同表单提交中（防重复提交）
@@ -1192,11 +1083,7 @@ const priceLoading = ref(false)
 // 打开弹窗时只请求「基本信息」，单价 / 附件在用户点开对应 Tab 时才请求，避免无谓的并发请求
 const priceTabLoaded = ref(false)            // 修改弹窗·合同单价 Tab 已加载
 const attachmentTabLoaded = ref(false)       // 修改弹窗·附件资料 Tab 已加载
-const detailPriceTabLoaded = ref(false)      // 详情弹窗·合同单价 Tab 已加载
-const detailAttachmentTabLoaded = ref(false) // 详情弹窗·附件资料 Tab 已加载
 const detailContractId = ref(null)           // 详情弹窗当前合同ID（懒加载用）
-const detailPriceLoading = ref(false)        // 详情弹窗·合同单价加载中
-const detailAttachmentLoading = ref(false)   // 详情弹窗·附件加载中
 
 // ===== 附件管理相关 =====
 const attachmentList = ref([])           // 当前活跃附件
@@ -1216,7 +1103,6 @@ const fileCategoryDict = computed(() => proj_attachment_category.value || [])
 const dragOver = ref(false)
 const uploadCategory = ref('contract')
 const uploadIsFinal = ref(false)
-const detailAttachmentList = ref([])    // 详情弹窗附件列表
 const sideHistoryMap = ref({})          // 侧滑面板历史版本
 const replaceTarget = ref(null)         // 替换版本时的目标附件
 
@@ -1776,71 +1662,10 @@ function handleUpdate(row) {
 }
 
 /** 查看详情 */
+/** 打开合同详情弹窗：数据与 Tab 懒加载都在组件内部完成 */
 function handleView(row) {
-  loading.value = true
-  getContract(row.id).then(response => {
-    detail.value = response.data
-    detail.value.extraData = parseExtraData(detail.value.extraData)
-    detailContractId.value = row.id
-    detailActiveTab.value = "info"
-    // Tab 懒加载：只取基本信息，单价 / 附件等用户点开对应 Tab 时再请求
-    detailPriceTabLoaded.value = false
-    detailAttachmentTabLoaded.value = false
-    detailPriceList.value = []
-    detailAttachmentList.value = []
-    detailOpen.value = true
-  }).finally(() => {
-    loading.value = false
-  })
-}
-
-/** 详情弹窗：按需加载当前 Tab 的数据 */
-function ensureDetailTabData(tab) {
-  const id = detailContractId.value
-  if (!id) return
-  if (tab === "price") {
-    if (detailPriceTabLoaded.value) return
-    detailPriceTabLoaded.value = true
-    loadDetailPrice(id)
-  } else if (tab === "attachment") {
-    if (detailAttachmentTabLoaded.value) return
-    detailAttachmentTabLoaded.value = true
-    loadDetailAttachments(id)
-  }
-}
-
-/** 详情弹窗：加载合同单价明细（仅用户点开「合同单价」Tab 时调用） */
-function loadDetailPrice(contractId) {
-  detailPriceLoading.value = true
-  listContractPrice(contractId).then(res => {
-    const all = res.data || []
-    // 按 categoryId 建索引，方便查大类名
-    const catMap = {}
-    all.forEach(item => { catMap[item.categoryId] = item })
-    // 只保留有合同单价的计费方式明细行（billingId不为空），并附上大类名
-    detailPriceList.value = all
-      .filter(item => item.price != null && item.billingId)
-      .map(item => ({
-        ...item,
-        parentName: catMap[item.parentId]?.categoryName || ''
-      }))
-  }).catch(() => {
-    detailPriceList.value = []
-  }).finally(() => {
-    detailPriceLoading.value = false
-  })
-}
-
-/** 详情弹窗：加载附件（仅用户点开「附件资料」Tab 时调用） */
-function loadDetailAttachments(contractId) {
-  detailAttachmentLoading.value = true
-  listAttachments(contractId).then(res => {
-    detailAttachmentList.value = res.data || []
-  }).catch(() => {
-    detailAttachmentList.value = []
-  }).finally(() => {
-    detailAttachmentLoading.value = false
-  })
+  detailContractId.value = row.id
+  detailOpen.value = true
 }
 
 /** 提交（先保存合同基本信息，拿到ID后再保存合同单价） */
@@ -2192,10 +2017,10 @@ function handleRestore(att, logRow) {
     sideLoading.value = true             // 侧滑面板遮罩
     restoreVersion(att.id, logRow.id).then(() => {
       proxy.$modal.msgSuccess('版本恢复成功')
-      loadAttachments(form.value.id || detail.value?.id || 0)   // 内部复位 attachmentListLoading
+      loadAttachments(form.value.id || detailContractId.value || 0)   // 内部复位 attachmentListLoading
       // 同时刷新侧滑面板
       if (attachmentPreviewVisible.value) {
-        const contractId = form.value.id || detail.value?.id
+        const contractId = form.value.id || detailContractId.value
         if (contractId) {
           listAttachments(contractId).then(res => {
             attachmentPreviewList.value = res.data || []
@@ -2751,35 +2576,4 @@ getList().then(() => {
   text-align: center;
 }
 
-/* ===== 合同详情弹窗（非 scoped：append-to-body 会渲染到 body 层级）=====
-   它是全站内容最高的一个弹窗：「基本信息」共 14 行 el-descriptions
-   （有边框单元格 padding 8px+8px + line-height 23px + 边框 ≈ 40px/行 → ≈560px）
-   加 el-tabs 导航 ≈55px，内容区 ≈615px；再加弹窗内边距 32 + 标题栏 40 + 按钮栏 48
-   = 120px，弹窗自然高度 ≈735px。
-
-   叠加全局顶部间距 6vh（src/assets/styles/land.scss 的
-   .el-dialog:not(.is-fullscreen)）与 EP 默认 50px 底距后，总占用
-   「6vh + 735 + 50」在视口高度约 835px 以下就会超过视口，于是
-   .el-overlay-dialog 出现整页纵向滚动条 —— 连标题栏都会被一起滚走。
-
-   处理：弹窗上移一点、底部留白收紧（合计让出约 60px），并把弹窗高度限制在视口内。
-   - display:flex + max-height ⇒ 弹窗永远不超过视口，整页滚动条确定性消失；
-   - 正常屏幕（视口高 ≥ 约 790px）内容装得下，内容区也不需要滚动；
-   - 更矮的屏幕上才由内容区自身滚动，标题栏/按钮栏始终可见。 */
-.el-dialog.contract-detail-dialog:not(.is-fullscreen) {
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100vh - 4vh - 24px);   /* 4vh 顶距 + 16px 底距 + 8px 余量 */
-  margin-top: 4vh !important;             /* 全局 6vh → 4vh，再上移一点 */
-  margin-bottom: 16px !important;         /* EP 默认 50px → 16px */
-}
-.contract-detail-dialog .el-dialog__header,
-.contract-detail-dialog .el-dialog__footer {
-  flex: 0 0 auto;                         /* 标题栏 / 按钮栏固定，不被压缩 */
-}
-.contract-detail-dialog .el-dialog__body {
-  flex: 1 1 auto;
-  min-height: 0;                          /* 允许收缩，否则内容会把弹窗重新顶高 */
-  overflow-y: auto;
-}
 </style>
