@@ -604,7 +604,7 @@
                   <el-col :span="8">
                      <el-form-item label="付款单位">
                         <el-select v-model="paymentForm.payUnit" filterable clearable allow-create placeholder="请选择或输入付款单位" style="width: 100%">
-                           <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                           <el-option v-for="u in paymentUnitOptions" :key="u" :label="u" :value="u" />
                         </el-select>
                      </el-form-item>
                   </el-col>
@@ -718,7 +718,7 @@
                   <el-col :span="6">
                      <el-form-item label="开票单位">
                         <el-select v-model="paymentForm.invoiceUnit" filterable clearable placeholder="选择开票单位" style="width:100%">
-                           <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                           <el-option v-for="u in paymentUnitOptions" :key="u" :label="u" :value="u" />
                         </el-select>
                      </el-form-item>
                   </el-col>
@@ -750,7 +750,7 @@
                         <el-col :span="6">
                            <el-form-item label="开票单位">
                               <el-select v-model="paymentForm.invoiceUnit" filterable clearable placeholder="选择开票单位" style="width:100%">
-                                 <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                                 <el-option v-for="u in paymentUnitOptions" :key="u" :label="u" :value="u" />
                               </el-select>
                            </el-form-item>
                         </el-col>
@@ -781,7 +781,7 @@
                         <el-col :span="6">
                            <el-form-item label="开票单位">
                               <el-select v-model="paymentForm.tailInvoiceUnit" filterable clearable placeholder="选择开票单位" style="width:100%">
-                                 <el-option v-for="u in clientUnitOptions" :key="u" :label="u" :value="u" />
+                                 <el-option v-for="u in paymentUnitOptions" :key="u" :label="u" :value="u" />
                               </el-select>
                            </el-form-item>
                         </el-col>
@@ -1099,6 +1099,42 @@ const paymentForm = ref({
    tailInvoiceDate: null,
    tailInvoiceAmount: null
 })
+/**
+ * 到账信息弹窗「付款单位 / 开票单位」下拉：全库委托单位去重值 + 当前项目委托单位兜底。
+ * 兜底项置顶，保证默认值不在去重列表里时也能正常回显（而不是显示成空）。
+ */
+const paymentUnitOptions = computed(() => {
+   const cur = String(editClientUnit.value || '').trim()
+   const list = (clientUnitOptions.value || []).filter(Boolean)
+   if (!cur) return list
+   return list.indexOf(cur) >= 0 ? list : [cur].concat(list)
+})
+
+/**
+ * 重置到账信息表单：付款单位 / 开票单位（统一 + 分笔尾款）默认取当前项目的委托单位。
+ * ⚠️ 明细回来后若项目已有历史值，会覆盖这里的默认值（见 handleEditPayment 回显）。
+ */
+function resetPaymentForm(defaultUnit) {
+   const d = defaultUnit || null
+   invoicePrefilled.value = { unified: false, tail: false }
+   paymentForm.value = {
+      payments: [],
+      payUnit: d,
+      refunds: [],
+      remark: null,
+      invoiceMode: 'unified',
+      invoiceStatus: null,
+      invoiceUnit: d,
+      invoiceDate: null,
+      invoiceAmount: null,
+      tailInvoiceStatus: null,
+      tailInvoiceUnit: d,
+      tailInvoiceDate: null,
+      tailInvoiceAmount: null
+   }
+}
+/** 开票单位是否为「后端回显的历史值」（true = 历史值；false = 本次默认值 / 未填），保存时据此判定是否真的有发票数据 */
+const invoicePrefilled = ref({ unified: false, tail: false })
 const paymentRef = ref(null)
 const userOptions = ref([])
 /**
@@ -1680,6 +1716,9 @@ function handleEditPayment(row) {
   editProjectLocation.value = row.projectLocation || ""
   editEngineeringProject.value = row.engineeringProject || ""
 
+  // 付款单位 / 开票单位默认 = 该项目委托单位（需求 2026-10-30）；明细回来后若有历史值会覆盖
+  resetPaymentForm(editClientUnit.value)
+
   // 立即打开弹窗 + 内容 loading，明细在后台加载
   paymentOpen.value = true
   paymentLoading.value = true
@@ -1693,7 +1732,7 @@ function handleEditPayment(row) {
       // 付款行（不含退款）：预付款 / 尾款兜底占位在前，手动新增的付款行按到账时间排在其后。
       // 每笔回填各自的拟上报月份（plan_report_month，YYYY-MM）。
       paymentForm.value.payments = buildPaymentRows(payments.filter(p => p.paymentType !== 'refund'))
-      paymentForm.value.payUnit = (payments.find(p => p.payUnit) || {}).payUnit || null
+      paymentForm.value.payUnit = (payments.find(p => p.payUnit) || {}).payUnit || paymentForm.value.payUnit
       // 备注回显：项目级 pay_remark 优先（sql/39，用户只填备注、无付款行时也存在这里），
       // 为空再回退到付款行上的备注（历史数据没有项目级字段）。
       paymentForm.value.remark = (detailRes.data.project && detailRes.data.project.payRemark)
@@ -1721,11 +1760,15 @@ function handleEditPayment(row) {
       paymentForm.value.invoiceMode = tailHasInvoice ? 'split' : 'unified'
       const invSrc = prepay || tail
       paymentForm.value.invoiceStatus = invSrc ? invSrc.invoiceStatus : null
-      paymentForm.value.invoiceUnit = (invSrc && invSrc.invoiceUnit) ? invSrc.invoiceUnit : null
+      // ⚠️ 同时记录「开票单位是历史回显值」：历史值可能恰好等于委托单位（与默认值同字面），
+      //    保存时靠这个标记区分「用户已开过票」和「本次只是默认值」，避免把已存发票单位清掉
+      invoicePrefilled.value.unified = !!(invSrc && invSrc.invoiceUnit)
+      paymentForm.value.invoiceUnit = (invSrc && invSrc.invoiceUnit) ? invSrc.invoiceUnit : paymentForm.value.invoiceUnit
       paymentForm.value.invoiceDate = invSrc ? invSrc.invoiceDate : null
       paymentForm.value.invoiceAmount = invSrc ? invSrc.invoiceAmount : null
       paymentForm.value.tailInvoiceStatus = tail ? tail.invoiceStatus : null
-      paymentForm.value.tailInvoiceUnit = (tail && tail.invoiceUnit) ? tail.invoiceUnit : null
+      invoicePrefilled.value.tail = !!(tail && tail.invoiceUnit)
+      paymentForm.value.tailInvoiceUnit = (tail && tail.invoiceUnit) ? tail.invoiceUnit : paymentForm.value.tailInvoiceUnit
       paymentForm.value.tailInvoiceDate = tail ? tail.invoiceDate : null
       paymentForm.value.tailInvoiceAmount = tail ? tail.invoiceAmount : null
     })
@@ -1747,38 +1790,57 @@ function savePaymentData() {
   // 明细未加载成功时不带 payments，避免加载失败把已有付款整组删掉。
   if (paymentDetailLoaded.value) {
     const invoiceMode = paymentForm.value.invoiceMode
+    // ⚠️「开票单位」默认值 = 项目委托单位，判定「是否真的有发票数据」时必须排除它：
+    //    后端 savePaymentRows 的 hasInvoice 只看 invoiceUnit 是否非空，若把默认值原样提交，
+    //    ① 一行都没填的空付款行会被落库；② 只填金额未开票的付款行会被标成 invoiced（报表虚高）。
+    const defaultUnit = editClientUnit.value || null
+    const prefilled = invoicePrefilled.value
+    const hasInvoiceData = (u, d, a, s, wasPrefilled) =>
+      !!d || (a != null && Number(a) > 0) || s === 'voided' || (!!u && (u !== defaultUnit || !!wasPrefilled))
     payload.payments = paymentForm.value.payments.map(pm => {
-      const row = {
+      // 开票信息仍挂在付款行上（proj_payment.invoice_*）：
+      // 统一开票 → 所有付款行同一组；分笔开票 → 预付款用统一那一组、尾款用尾款那一组；手动新增的行不挂票
+      let invStatus = null, invUnit = null, invDate = null, invAmount = null, wasPrefilled = false
+      if (invoiceMode === 'split') {
+        if (pm.paymentType === 'advance') {
+          invStatus = paymentForm.value.invoiceStatus || null
+          invUnit = paymentForm.value.invoiceUnit || null
+          invDate = paymentForm.value.invoiceDate || null
+          invAmount = paymentForm.value.invoiceAmount != null ? Number(paymentForm.value.invoiceAmount) : null
+          wasPrefilled = !!prefilled.unified
+        } else if (pm.paymentType === 'final') {
+          invStatus = paymentForm.value.tailInvoiceStatus || null
+          invUnit = paymentForm.value.tailInvoiceUnit || null
+          invDate = paymentForm.value.tailInvoiceDate || null
+          invAmount = paymentForm.value.tailInvoiceAmount != null ? Number(paymentForm.value.tailInvoiceAmount) : null
+          wasPrefilled = !!prefilled.tail
+        }
+      } else {
+        invStatus = paymentForm.value.invoiceStatus || null
+        invUnit = paymentForm.value.invoiceUnit || null
+        invDate = paymentForm.value.invoiceDate || null
+        invAmount = paymentForm.value.invoiceAmount != null ? Number(paymentForm.value.invoiceAmount) : null
+        wasPrefilled = !!prefilled.unified
+      }
+      const hasInv = hasInvoiceData(invUnit, invDate, invAmount, invStatus, wasPrefilled)
+      // 整行空（无金额 / 无到账时间 / 无实质发票数据）：连付款单位一起清空，
+      // 让后端「空行防御」照旧跳过该行（有 id 的历史行则被逻辑删除）。
+      const skipRow = pm.amount == null && !pm.payTime && !hasInv
+      return {
         id: pm.id || null,
         paymentType: pm.paymentType,
         amount: pm.amount != null ? Number(pm.amount) : null,
         payTime: pm.payTime || null,
-        payUnit: paymentForm.value.payUnit || null,
+        payUnit: skipRow ? null : (paymentForm.value.payUnit || null),
         payMethod: pm.payMethod || null,
         // 拟上报月份：前端已按「付款时间年月」带出默认值，这里原样提交；空值由后端再兜底一次
-        planReportMonth: pm.planReportMonth || null
+        planReportMonth: pm.planReportMonth || null,
+        // 只有真的有发票数据时才提交 invoice*，否则后端会把它判成「已开票」
+        invoiceStatus: hasInv ? invStatus : null,
+        invoiceUnit: hasInv ? invUnit : null,
+        invoiceDate: hasInv ? invDate : null,
+        invoiceAmount: hasInv ? invAmount : null
       }
-      // 开票信息仍挂在付款行上（proj_payment.invoice_*）：
-      // 统一开票 → 所有付款行同一组；分笔开票 → 预付款用统一那一组、尾款用尾款那一组；手动新增的行不挂票
-      if (invoiceMode === 'split') {
-        if (pm.paymentType === 'advance') {
-          row.invoiceStatus = paymentForm.value.invoiceStatus || null
-          row.invoiceUnit = paymentForm.value.invoiceUnit || null
-          row.invoiceDate = paymentForm.value.invoiceDate || null
-          row.invoiceAmount = paymentForm.value.invoiceAmount != null ? Number(paymentForm.value.invoiceAmount) : null
-        } else if (pm.paymentType === 'final') {
-          row.invoiceStatus = paymentForm.value.tailInvoiceStatus || null
-          row.invoiceUnit = paymentForm.value.tailInvoiceUnit || null
-          row.invoiceDate = paymentForm.value.tailInvoiceDate || null
-          row.invoiceAmount = paymentForm.value.tailInvoiceAmount != null ? Number(paymentForm.value.tailInvoiceAmount) : null
-        }
-      } else {
-        row.invoiceStatus = paymentForm.value.invoiceStatus || null
-        row.invoiceUnit = paymentForm.value.invoiceUnit || null
-        row.invoiceDate = paymentForm.value.invoiceDate || null
-        row.invoiceAmount = paymentForm.value.invoiceAmount != null ? Number(paymentForm.value.invoiceAmount) : null
-      }
-      return row
     })
   }
 
