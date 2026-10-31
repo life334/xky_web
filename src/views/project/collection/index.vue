@@ -279,6 +279,86 @@
             </el-table>
 
             <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
+            <!-- 导出催款清单：可选字段（与费用结算导出同款：左侧勾选、右侧拖拽排序） -->
+            <el-dialog
+               :model-value="exportOpen"
+               @update:model-value="exportOpen = $event"
+               title="导出催款清单"
+               append-to-body
+               :close-on-click-modal="false"
+               class="scrollbar"
+               width="760px"
+            >
+               <el-form v-loading="exportColumnLoading" element-loading-text="字段加载中..." label-width="76px" size="small">
+                  <el-form-item label="导出范围">
+                     <span class="export-scope-text">当前筛选条件下的全部 <b>{{ total || 0 }}</b> 条（一行一个项目，按客户分组、账龄降序）</span>
+                  </el-form-item>
+               </el-form>
+
+               <div class="export-tip">
+                  左侧勾选要导出的字段，右侧可拖拽调整列顺序（选择会记住，下次打开沿用）。
+                  默认勾选的是改造前固定的 11 列；<b>联系人 / 联系电话</b>取项目信息，项目没填时回退合同；
+                  <b>最近催收联系人 / 方式 / 结果</b>取最近一次催收记录。
+                  本次共 <b>{{ exportTotalCols }}</b> 列，单次最多导出 {{ EXPORT_MAX_ROWS }} 行。
+               </div>
+
+               <div class="export-panes">
+                  <div class="export-pane">
+                     <div class="export-pane-head">
+                        <el-checkbox
+                           :model-value="exportAllChecked"
+                           :indeterminate="exportSomeChecked"
+                           @change="toggleExportAll"
+                        >全部字段（{{ exportFieldOptions.length }}）</el-checkbox>
+                     </div>
+                     <div class="export-pane-body">
+                        <div v-for="c in exportFieldOptions" :key="c.key" class="export-field" @click="toggleExportField(c)">
+                           <el-checkbox :model-value="!!exportFieldSet[c.key]" @click.stop @change="toggleExportField(c)" />
+                           <span class="export-field-label">{{ c.label }}</span>
+                        </div>
+                     </div>
+                  </div>
+
+                  <div class="export-pane">
+                     <div class="export-pane-head">
+                        <span>已选字段（{{ exportFields.length }}）· 拖拽排序</span>
+                        <el-button link type="primary" size="small" @click="resetExportFields">恢复默认</el-button>
+                     </div>
+                     <div class="export-pane-body">
+                        <div
+                           v-for="(key, idx) in exportFields"
+                           :key="key"
+                           :class="['export-sel', { 'is-dragging': exportDragIdx === idx, 'is-over': exportOverIdx === idx && exportDragIdx !== idx }]"
+                           @dragover.prevent="exportOverIdx = idx"
+                           @dragleave="exportOverIdx = -1"
+                           @drop.prevent="exportDrop(idx)"
+                           @dragend="exportDragIdx = -1; exportOverIdx = -1"
+                        >
+                           <span class="drag-handle" title="拖拽调整顺序" draggable="true" @dragstart="exportDragStart(idx)"></span>
+                           <span class="export-sel-idx">{{ idx + 1 }}</span>
+                           <span class="export-sel-label">{{ exportLabelOf(key) }}</span>
+                           <span class="export-sel-ops">
+                              <el-button link size="small" :disabled="idx === 0" @click="moveExportField(idx, -1)" title="上移">↑</el-button>
+                              <el-button link size="small" :disabled="idx === exportFields.length - 1" @click="moveExportField(idx, 1)" title="下移">↓</el-button>
+                              <el-button link type="danger" size="small" @click="removeExportField(key)" title="移除">✕</el-button>
+                           </span>
+                        </div>
+                        <div v-if="!exportFields.length" class="export-empty">请至少选择一个字段</div>
+                     </div>
+                  </div>
+               </div>
+
+               <template #footer>
+                  <el-button size="small" @click="exportOpen = false">取 消</el-button>
+                  <el-button
+                     type="primary"
+                     size="small"
+                     :loading="exportLoading"
+                     :disabled="!exportFields.length"
+                     @click="submitExport"
+                  >确定导出</el-button>
+               </template>
+            </el-dialog>
          </el-tab-pane>
 
          <!-- ========== 页签二：待结算 ========== -->
@@ -646,7 +726,8 @@
 </template>
 
 <script setup name="Collection">
-import { collectionList, collectionClientList, collectionStats, collectionUnsettledList, collectionReceivedDetail, collectionPaymentSummary, collectionLog, addCollectionLog, delCollectionLog } from "@/api/project/collection"
+import { collectionList, collectionClientList, collectionStats, collectionUnsettledList, collectionReceivedDetail, collectionPaymentSummary, collectionLog, addCollectionLog, delCollectionLog, collectionExportColumns, exportCollection } from "@/api/project/collection"
+import { saveAs } from 'file-saver'
 import { addPayment } from "@/api/project/payment"
 import { listUserOptions } from "@/api/system/user"
 import { paymentTypeText } from "@/utils/projStatus"
@@ -1275,12 +1356,155 @@ function handleDeleteLog(log) {
    })
 }
 
-/** 导出催款清单 */
+/** 导出催款清单：改为「可选字段」弹窗（与费用结算导出同款） */
 function handleExport() {
+   openExportDialog()
+}
+
+/* ==================== 导出催款清单（可选字段） ==================== */
+
+/** 单次导出条数上限（与后端 EXPORT_MAX_ROWS 一致，仅用于提示文案） */
+const EXPORT_MAX_ROWS = 50000
+/** 上次选择的字段（localStorage） */
+const EXPORT_STORE_KEY = 'collection:exportFields'
+
+const exportOpen = ref(false)
+const exportLoading = ref(false)
+/** 后端字段池（唯一出处：弹窗选项 / 表头 / 取值口径都来自它） */
+const exportColumns = ref([])
+const exportColumnLoading = ref(false)
+const exportFields = ref([])
+const exportDragIdx = ref(-1)
+const exportOverIdx = ref(-1)
+
+const exportFieldOptions = computed(() => (exportColumns.value || []).filter(Boolean))
+const exportTotalCols = computed(() => exportFields.value.length)
+const exportFieldSet = computed(() => {
+   const s = {}
+   exportFields.value.forEach(k => { s[k] = true })
+   return s
+})
+const exportAllChecked = computed(() =>
+   exportFieldOptions.value.length > 0 && exportFields.value.length === exportFieldOptions.value.length)
+const exportSomeChecked = computed(() => exportFields.value.length > 0 && !exportAllChecked.value)
+
+function exportLabelOf(key) {
+   const c = exportFieldOptions.value.find(x => x.key === key)
+   return c ? c.label : key
+}
+
+/** 默认字段 = 后端 defaultVisible（改造前固定的 11 列） */
+function defaultExportFields() {
+   const visible = exportFieldOptions.value.filter(c => c.defaultVisible).map(c => c.key)
+   return visible.length ? visible : exportFieldOptions.value.map(c => c.key)
+}
+
+/** 加载字段池（接口已剥一层响应体 ⇒ 见铁律 #8 的解包写法） */
+function loadExportColumns() {
+   exportColumnLoading.value = true
+   return collectionExportColumns().then(res => {
+      const list = Array.isArray(res) ? res : (res && res.data) || []
+      exportColumns.value = Array.isArray(list) ? list : []
+   }).catch(() => {
+      exportColumns.value = []
+      proxy.$modal.msgError('导出字段加载失败')
+   }).finally(() => { exportColumnLoading.value = false })
+}
+
+/** 打开导出弹窗：字段池首次加载；已选字段优先用上次的选择 */
+function openExportDialog() {
+   exportOpen.value = true
+   exportDragIdx.value = -1
+   exportOverIdx.value = -1
+   const applyDefault = () => {
+      let saved = []
+      try { saved = JSON.parse(localStorage.getItem(EXPORT_STORE_KEY) || '[]') } catch (e) { saved = [] }
+      const valid = exportFieldOptions.value.map(c => c.key)
+      const keep = (Array.isArray(saved) ? saved : []).filter(k => valid.indexOf(k) >= 0)
+      exportFields.value = keep.length ? keep : defaultExportFields()
+   }
+   if (exportFieldOptions.value.length) applyDefault()
+   else loadExportColumns().then(applyDefault)
+}
+
+function toggleExportField(col) {
+   const i = exportFields.value.indexOf(col.key)
+   if (i >= 0) exportFields.value.splice(i, 1)
+   else exportFields.value.push(col.key)
+}
+function toggleExportAll(val) {
+   exportFields.value = val ? exportFieldOptions.value.map(c => c.key) : []
+}
+function removeExportField(key) {
+   const i = exportFields.value.indexOf(key)
+   if (i >= 0) exportFields.value.splice(i, 1)
+}
+function moveExportField(idx, delta) {
+   const to = idx + delta
+   if (to < 0 || to >= exportFields.value.length) return
+   const arr = exportFields.value.slice()
+   const item = arr.splice(idx, 1)[0]
+   arr.splice(to, 0, item)
+   exportFields.value = arr
+}
+function exportDragStart(idx) { exportDragIdx.value = idx }
+function exportDrop(idx) {
+   const from = exportDragIdx.value
+   exportDragIdx.value = -1
+   exportOverIdx.value = -1
+   if (from < 0 || from === idx) return
+   const arr = exportFields.value.slice()
+   const item = arr.splice(from, 1)[0]
+   arr.splice(idx, 0, item)
+   exportFields.value = arr
+}
+function resetExportFields() {
+   exportFields.value = defaultExportFields()
+}
+
+/** 提交导出：与列表共用同一套筛选条件（不含分页） */
+function submitExport() {
+   if (!exportFields.value.length) {
+      proxy.$modal.msgWarning('请至少选择一个导出字段')
+      return
+   }
    const params = buildParams()
    delete params.pageNum
    delete params.pageSize
-   proxy.download('/project/collection/export', params, `催款清单_${new Date().getTime()}.xlsx`)
+   params.fields = exportFields.value.join(',')
+   exportLoading.value = true
+   exportCollection(params).then(res => {
+      const blob = res.data
+      if (blob && blob.type && blob.type.includes('application/json')) {
+         return blob.text().then(t => {
+            try {
+               const o = JSON.parse(t)
+               proxy.$modal.msgError(o.msg || '导出失败')
+            } catch (e) { proxy.$modal.msgError('导出失败') }
+         })
+      }
+      saveAs(new Blob([blob]), parseExportFileName(res, '催款清单_' + exportFileStamp() + '.xlsx'))
+      try { localStorage.setItem(EXPORT_STORE_KEY, JSON.stringify(exportFields.value)) } catch (e) { /* 隐私模式下忽略 */ }
+      exportOpen.value = false
+   }).catch(() => {}).finally(() => { exportLoading.value = false })
+}
+
+/** 导出文件名时间戳：yyyyMMddHHmmss（与后端命名格式一致） */
+function exportFileStamp() {
+   const d = new Date()
+   const p = n => String(n).padStart(2, '0')
+   return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds())
+}
+
+/** 优先用后端 Content-Disposition 里的文件名，解析失败回退 */
+function parseExportFileName(res, fallback) {
+   const cd = (res && res.headers && (res.headers['content-disposition'] || res.headers['Content-Disposition'])) || ''
+   const m = cd.match(/filename\*=UTF-8''([^;]+)/i)
+   if (m) {
+      try { return decodeURIComponent(m[1].replace(/\+/g, '%20')) } catch (e) { /* ignore */ }
+   }
+   const m2 = cd.match(/filename="?([^";]+)"?/i)
+   return m2 ? m2[1] : fallback
 }
 
 /** 账龄色阶：<3月绿 / 3~6月黄 / 6~12月橙 / ≥12月红 */
@@ -1728,4 +1952,54 @@ onActivated(() => {
    min-width: 240px;
 }
 
+/* ---- 导出催款清单弹窗（与费用结算导出一致） ---- */
+.export-scope-text { font-size: 13px; color: #606266; }
+.export-tip {
+   font-size: 12px;
+   color: #909399;
+   line-height: 1.6;
+   margin-bottom: 10px;
+}
+.export-panes { display: flex; gap: 12px; }
+.export-pane {
+   flex: 1;
+   border: 1px solid #ebeef5;
+   border-radius: 6px;
+   overflow: hidden;
+}
+.export-pane-head {
+   padding: 6px 10px;
+   background: #f5f7fa;
+   border-bottom: 1px solid #ebeef5;
+   font-size: 13px;
+   color: #303133;
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+}
+.export-pane-body { height: 320px; overflow-y: auto; padding: 4px 0; }
+.export-field { display: flex; align-items: center; gap: 2px; padding: 2px 10px; cursor: pointer; }
+.export-field:hover { background: #f5f7fa; }
+.export-field-label { font-size: 13px; color: #606266; }
+.export-sel {
+   display: flex;
+   align-items: center;
+   gap: 4px;
+   padding: 3px 8px;
+   border: 1px dashed transparent;
+}
+.export-sel.is-dragging { opacity: 0.4; }
+.export-sel.is-over { border-top: 2px solid #409eff; }
+.export-sel-idx { width: 18px; text-align: right; font-size: 12px; color: #c0c4cc; }
+.export-sel-label {
+   flex: 1;
+   font-size: 13px;
+   color: #303133;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+.export-sel-ops { display: flex; align-items: center; flex-shrink: 0; }
+.export-empty { padding: 20px; text-align: center; font-size: 13px; color: #c0c4cc; }
+.drag-handle { cursor: move; color: #c0c4cc; letter-spacing: -2px; user-select: none; }
 </style>

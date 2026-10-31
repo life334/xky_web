@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { tansParams } from '@/utils/land'
 
 // 回款台账列表（项目维度）
 export function collectionList(query) {
@@ -77,5 +78,28 @@ export function delCollectionLog(ids) {
   return request({
     url: '/project/collection/log/' + ids,
     method: 'delete'
+  })
+}
+
+// 催款清单导出字段池（导出弹窗「可选字段」的唯一出处）
+export function collectionExportColumns() {
+  return request({
+    url: '/project/collection/exportColumns',
+    method: 'get'
+  })
+}
+
+// 导出催款清单（可选字段）
+// ⚠️ 接口直接写文件流 ⇒ 必须 responseType:'blob'，否则响应拦截器会按 JSON 解析
+// ⚠️ 走 form-urlencoded（与项目 / 合同导出一致），不用 query string
+export function exportCollection(query) {
+  return request({
+    url: '/project/collection/export',
+    method: 'post',
+    data: query,
+    transformRequest: [(params) => tansParams(params)],
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    responseType: 'blob',
+    timeout: 180000
   })
 }
