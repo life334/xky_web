@@ -79,6 +79,11 @@
                   <el-date-picker v-model="closeDateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onCloseDateChange" />
                </div>
                <div class="filter-item">
+                  <div class="filter-item-label">到账时间</div>
+                  <!-- 到账时间是付款笔级日期（proj_payment.pay_time，只认预付款 / 尾款）⇒ 日期区间，任一一笔命中即命中 -->
+                  <el-date-picker v-model="payTimeRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" style="width:100%" @change="onPayTimeRangeChange" />
+               </div>
+               <div class="filter-item">
                   <div class="filter-item-label">拟上报时间</div>
                   <!-- 拟上报时间是付款笔级年月（proj_payment.plan_report_month，YYYY-MM）⇒ 年月区间，不选到日 -->
                   <el-date-picker v-model="planReportTimeRange" value-format="YYYY-MM" type="monthrange" range-separator="-" start-placeholder="开始年月" end-placeholder="结束年月" style="width:100%" @change="onPlanReportTimeChange" />
@@ -390,8 +395,20 @@
          <!-- Row 1: 统计口径 + 快捷区间 -->
          <div class="status-capsule-row">
             <span class="capsule-group-label">统计口径</span>
-            <span class="status-capsule active">按办结时间</span>
+            <span v-for="d in OUTPUT_DATE_FIELDS" :key="d.value" class="status-capsule" :class="{ active: outputDateField === d.value }" @click="setOutputDateField(d.value)">{{ d.label }}</span>
             <span class="capsule-sep" />
+            <el-tooltip placement="top" effect="light" :show-after="120">
+               <template #content>
+                  <div class="output-hint-pop">{{ OUTPUT_DATE_FIELD_HINT[outputDateField] }}</div>
+               </template>
+               <span class="output-hint-icon">
+                  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                     <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.2" />
+                     <rect x="7.1" y="6.7" width="1.8" height="4.8" fill="currentColor" />
+                     <circle cx="8" cy="4.4" r="1" fill="currentColor" />
+                  </svg>
+               </span>
+            </el-tooltip>
             <span class="capsule-group-label">快捷区间</span>
             <span v-for="q in OUTPUT_QUICKS" :key="q.value" class="status-capsule" :class="{ active: outputQuick === q.value }" @click="setOutputQuick(q.value)">{{ q.label }}</span>
          </div>
@@ -401,13 +418,24 @@
             <span class="capsule-group-label">视图</span>
             <span v-for="v in OUTPUT_VIEWS" :key="v.value" class="status-capsule" :class="{ active: outputView === v.value }" @click="setOutputView(v.value)">{{ v.label }}</span>
             <span class="capsule-sep" />
-            <span class="output-view-hint">{{ OUTPUT_VIEW_HINT[outputView] }}</span>
+            <el-tooltip placement="top" effect="light" :show-after="120">
+               <template #content>
+                  <div class="output-hint-pop">{{ OUTPUT_VIEW_HINT[outputView] }}</div>
+               </template>
+               <span class="output-hint-icon">
+                  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                     <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.2" />
+                     <rect x="7.1" y="6.7" width="1.8" height="4.8" fill="currentColor" />
+                     <circle cx="8" cy="4.4" r="1" fill="currentColor" />
+                  </svg>
+               </span>
+            </el-tooltip>
          </div>
 
          <!-- Row 3: 时间维度 / 区间 / 操作 -->
          <div class="search-bar-row">
             <el-select v-if="outputView === 'project'" v-model="outputGroupBy" style="width: 150px;flex:0 0 150px" @change="handleOutputQuery">
-               <el-option v-for="g in OUTPUT_GROUPS" :key="g.value" :label="g.label" :value="g.value" />
+               <el-option v-for="g in outputGroupOptions" :key="g.value" :label="g.label" :value="g.value" />
             </el-select>
             <el-date-picker v-model="outputRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" class="sum-range-picker" @change="handleOutputQuery" />
             <el-button type="primary" size="small" @click="handleOutputQuery">查询</el-button>
@@ -457,14 +485,14 @@
          <el-row v-loading="outputLoading" :gutter="14" class="sum-metric-row">
             <el-col :span="6">
                <div class="sum-metric">
-                  <div class="sum-metric-label">外部产值(元) · 按办结时间</div>
+                  <div class="sum-metric-label">外部产值(元) · {{ outputDateFieldText }}</div>
                   <div class="sum-metric-value" style="color:#409eff">{{ formatMoney(outputSummary.externalOutput) }}</div>
                   <div class="sum-metric-sub">已剔除指令性任务 <b class="text-mandate">{{ formatMoney(outputSummary.mandateExternalOutput) }}</b></div>
                </div>
             </el-col>
             <el-col :span="6">
                <div class="sum-metric">
-                  <div class="sum-metric-label">内部产值(元) · 按办结时间</div>
+                  <div class="sum-metric-label">内部产值(元) · {{ outputDateFieldText }}</div>
                   <div class="sum-metric-value">{{ formatMoney(outputSummary.internalOutput) }}</div>
                   <div class="sum-metric-sub">指令性任务同样计入</div>
                </div>
@@ -965,10 +993,10 @@ const FALLBACK_COLUMNS = [
   { key: 'projectName', label: '项目名称', type: 'text', group: 'business', prop: 'projectName', defaultVisible: false },
   { key: 'clientUnit', label: '委托单位', type: 'text', group: 'business', prop: 'clientUnit', defaultVisible: true },
   { key: 'projectLocation', label: '工程地点', type: 'text', group: 'business', prop: 'projectLocation', defaultVisible: true },
+  { key: 'categoryName', label: '项目类别', type: 'text', group: 'business', prop: 'categoryName', defaultVisible: true },
   // 付款笔级多值文本（如「2025-11、2026-03」），不是单个日期
   { key: 'planReportTime', label: '拟上报时间', type: 'text', group: 'business', prop: 'planReportTime', defaultVisible: true },
   { key: 'userName', label: '负责人', type: 'text', group: 'business', prop: 'userName', defaultVisible: false },
-  { key: 'categoryName', label: '项目类别', type: 'text', group: 'business', prop: 'categoryName', defaultVisible: true },
   { key: 'internalWorkload', label: '内部工作量', type: 'number', group: 'business', prop: 'internalWorkload', defaultVisible: true },
   { key: 'internalOutput', label: '内部产值', type: 'money', group: 'business', prop: 'internalOutput', defaultVisible: true },
   { key: 'externalWorkload', label: '外部工作量', type: 'number', group: 'business', prop: 'externalWorkload', defaultVisible: true },
@@ -1159,6 +1187,8 @@ const distinctLoading = ref(false)
 const closeDateRange = ref([])
 /** 拟上报时间区间（项目级字段，与办结日期同规格） */
 const planReportTimeRange = ref([])
+/** 到账时间区间（付款笔级 proj_payment.pay_time，只认预付款 / 尾款） */
+const payTimeRange = ref([])
 const contractOptions = ref([])
 const contractLoading = ref(false)
 const advancedVisible = ref(false)
@@ -1177,7 +1207,9 @@ const data = reactive({
     closeDateBegin: undefined,
     closeDateEnd: undefined,
     planReportTimeBegin: undefined,
-    planReportTimeEnd: undefined
+    planReportTimeEnd: undefined,
+    payTimeBegin: undefined,
+    payTimeEnd: undefined
   },
 })
 
@@ -1490,6 +1522,7 @@ function handleQuery() {
 function resetQuery() {
   closeDateRange.value = []
   planReportTimeRange.value = []
+  payTimeRange.value = []
   queryParams.value.keyword = undefined
   queryParams.value.projectCode = undefined
   queryParams.value.clientUnit = undefined
@@ -1503,6 +1536,8 @@ function resetQuery() {
   queryParams.value.closeDateEnd = undefined
   queryParams.value.planReportTimeBegin = undefined
   queryParams.value.planReportTimeEnd = undefined
+  queryParams.value.payTimeBegin = undefined
+  queryParams.value.payTimeEnd = undefined
   handleQuery()
 }
 
@@ -1540,6 +1575,18 @@ function fmtContractOption(c) {
   const name = (c.contractName || '').trim()
   if (no && name) return '【' + no + '】' + name
   return no || name || '-'
+}
+
+/** 到账时间变更（付款笔级：存在任一一笔预付款 / 尾款的到账日期落在区间内即命中） */
+function onPayTimeRangeChange(val) {
+  if (val && val.length === 2) {
+    queryParams.value.payTimeBegin = val[0]
+    queryParams.value.payTimeEnd = val[1]
+  } else {
+    queryParams.value.payTimeBegin = undefined
+    queryParams.value.payTimeEnd = undefined
+  }
+  handleQuery()
 }
 
 /** 办结日期变更 */
@@ -2113,6 +2160,18 @@ const OUTPUT_GROUPS = [
    { label: '按年', value: 'year' }
 ]
 // 三视图切换：项目视图（时间维度）/ 客户视图（按委托单位）/ 负责人视图（按负责人）
+// 统计口径：close=办结时间（项目级）/ pay=到账时间 / plan=拟上报时间（后两者为付款笔级「归期」）
+// ⚠️ pay / plan 的命中语义 = 「区间内存在任一一笔即计入」，不固定归期 ⇒ 无法按时间分组
+const OUTPUT_DATE_FIELDS = [
+   { label: '按办结时间', value: 'close' },
+   { label: '按到账时间', value: 'pay' },
+   { label: '按拟上报时间', value: 'plan' }
+]
+const OUTPUT_DATE_FIELD_HINT = {
+   close: '产值按项目办结日期归属',
+   pay: '期间内有到账的项目即计入（未到账项目不计入）；按项目计一次，不因多笔到账重复计算',
+   plan: '按付款笔的拟上报月份归属（计划值，会随填报变动）；按项目计一次，不因多笔重复计算'
+}
 const OUTPUT_VIEWS = [
    { label: '项目视图', value: 'project' },
    { label: '客户视图', value: 'client' },
@@ -2124,6 +2183,7 @@ const OUTPUT_VIEW_HINT = {
    leader: '按负责人汇总外部 / 内部产值'
 }
 const outputView = ref('project')
+const outputDateField = ref('close')
 const viewTab = ref('list')
 const outputQuick = ref('all')
 const outputRange = ref([])
@@ -2138,6 +2198,16 @@ const outputGroupByValue = computed(() => {
    if (outputView.value === 'client') return 'clientUnit'
    if (outputView.value === 'leader') return 'leader'
    return outputGroupBy.value
+})
+/** 当前统计口径文案（合计卡片标题用） */
+const outputDateFieldText = computed(() => {
+   const hit = OUTPUT_DATE_FIELDS.find(d => d.value === outputDateField.value)
+   return hit ? hit.label : '按办结时间'
+})
+/** 可选分组维度：到账 / 拟上报口径下时间分组无意义（命中即计入、无固定归期）⇒ 只留「不分组」 */
+const outputGroupOptions = computed(() => {
+   if (outputDateField.value === 'close') return OUTPUT_GROUPS
+   return OUTPUT_GROUPS.filter(g => g.value === 'none')
 })
 /** 分组表第一列表头（随视图变化） */
 const outputGroupLabelText = computed(() => {
@@ -2185,6 +2255,7 @@ function buildOutputParams(extra) {
    const r = outputRange.value && outputRange.value.length === 2 ? outputRange.value : []
    return {
       groupBy: outputGroupByValue.value,
+      dateField: outputDateField.value,
       begin: r[0],
       end: r[1],
       ...outputQuery.value,
@@ -2203,6 +2274,16 @@ function getOutputSummary() {
       outputSummary.value = {}
       outputGroups.value = []
    }).finally(() => { outputLoading.value = false })
+}
+
+/** 统计口径切换（办结 / 到账 / 拟上报）：时间分组在 pay / plan 下失效 ⇒ 自动回退「不分组」 */
+function setOutputDateField(v) {
+   if (outputDateField.value === v) return
+   outputDateField.value = v
+   if (v !== 'close' && ['month', 'quarter', 'year'].indexOf(outputGroupBy.value) >= 0) {
+      outputGroupBy.value = 'none'
+   }
+   getOutputSummary()
 }
 
 /** 视图切换（项目 / 客户 / 负责人） */
@@ -2231,6 +2312,7 @@ function resetOutputQuery() {
    outputRange.value = []
    outputView.value = 'project'
    outputGroupBy.value = 'none'
+   outputDateField.value = 'close'
    outputQuery.value = { keyword: undefined, clientUnit: undefined, leaderId: undefined, projectCategoryId: undefined }
    getOutputSummary()
 }
@@ -2895,6 +2977,20 @@ onActivated(() => {
 .sum-metric-sub { font-size: 12px; color: #909399; margin-top: 4px; }
 .sum-metric-mandate { border-left: 3px solid #e6a23c; }
 .output-view-hint { font-size: 12px; color: #909399; }
+.output-hint-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  align-self: center;
+  color: #c0c4cc;
+  cursor: help;
+  user-select: none;
+}
+.output-hint-icon:hover { color: #409eff; }
+.output-hint-pop { max-width: 340px; line-height: 1.6; font-size: 12px; }
 .output-compose {
   margin: 0 0 14px;
   padding: 12px 14px;

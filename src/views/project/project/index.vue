@@ -229,6 +229,9 @@
                </span>
                <!-- 动态字段：从 extra_data JSONB 取值 -->
                <span v-else-if="col.type === 'dynamic'"><span v-if="scope.row.extraData && scope.row.extraData[col.key] != null">{{ scope.row.extraData[col.key] }}</span></span>
+               <!-- 项目类别：优先显示类别表规范名 categoryName，为空回退文本列 engineering_project
+                    （文本列是「名称快照」，类别改名后不会自动变；规范名才是当前口径） -->
+               <span v-else-if="col.prop === 'engineeringProject'">{{ scope.row.categoryName || scope.row.engineeringProject }}</span>
                <!-- 其他：直接显示 -->
                <span v-else>{{ scope.row[col.prop] }}</span>
             </template>

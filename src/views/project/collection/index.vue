@@ -166,7 +166,7 @@
             <!-- 项目视图 -->
             <el-table v-if="viewMode === 'project'" v-loading="loading" :data="pendingList" stripe border v-hover-h-scroll>
                <el-table-column label="工程编号" align="center" prop="projectCode" min-width="120" :show-overflow-tooltip="true" />
-               <el-table-column label="项目名称" align="left" prop="projectName" min-width="160" :show-overflow-tooltip="true" />
+               <el-table-column label="项目类别" align="left" prop="categoryName" min-width="130" :show-overflow-tooltip="true" />
                <el-table-column label="客户全称" align="left" prop="clientUnit" min-width="160" :show-overflow-tooltip="true" />
                <el-table-column label="办结时间" align="center" prop="closeTime" min-width="100">
                   <template #default="scope">{{ fmtDate(scope.row.closeTime) }}</template>
@@ -217,7 +217,7 @@
                      <div class="expand-caption">仅显示命中当前筛选条件的项目（共 {{ scope.row.projectCount }} 个）</div>
                      <el-table :data="scope.row.projectRows || []" size="small" border style="margin: 4px 24px" v-loading="scope.row.expanding" empty-text="无符合条件的项目">
                         <el-table-column label="工程编号" align="center" prop="projectCode" min-width="110" />
-                        <el-table-column label="项目名称" align="left" prop="projectName" min-width="150" :show-overflow-tooltip="true" />
+                        <el-table-column label="项目类别" align="left" prop="categoryName" min-width="120" :show-overflow-tooltip="true" />
                         <el-table-column label="办结时间" align="center" min-width="95">
                            <template #default="s">{{ fmtDate(s.row.closeTime) }}</template>
                         </el-table-column>
@@ -417,9 +417,9 @@
 
             <el-table v-loading="unsettledLoading" :data="unsettledList" stripe border v-hover-h-scroll>
                <el-table-column label="工程编号" align="center" prop="projectCode" min-width="120" />
-               <el-table-column label="项目名称" align="left" prop="projectName" min-width="180" :show-overflow-tooltip="true" />
-               <el-table-column label="项目类别" align="left" prop="engineeringProject" min-width="140" :show-overflow-tooltip="true" />
-               <el-table-column label="客户全称" align="left" prop="clientUnit" min-width="180" :show-overflow-tooltip="true" />
+               <el-table-column label="项目名称" align="left" v-if="false" prop="projectName" min-width="180" :show-overflow-tooltip="true" />
+               <el-table-column label="项目类别" align="left" prop="engineeringProject" min-width="100" :show-overflow-tooltip="true" />
+               <el-table-column label="客户全称" align="left" prop="clientUnit" min-width="140" :show-overflow-tooltip="true" />
                <el-table-column label="办结时间" align="center" prop="closeTime" min-width="100">
                   <template #default="scope">{{ fmtDate(scope.row.closeTime) }}</template>
                </el-table-column>
@@ -1365,8 +1365,8 @@ function handleExport() {
 
 /** 单次导出条数上限（与后端 EXPORT_MAX_ROWS 一致，仅用于提示文案） */
 const EXPORT_MAX_ROWS = 50000
-/** 上次选择的字段（localStorage） */
-const EXPORT_STORE_KEY = 'collection:exportFields'
+/** 上次选择的字段（localStorage）。v2：默认列从 11 列扩为 14 列（+联系人/联系电话/工程地点），旧偏好一次性作废 */
+const EXPORT_STORE_KEY = 'collection:exportFields:v2'
 
 const exportOpen = ref(false)
 const exportLoading = ref(false)
