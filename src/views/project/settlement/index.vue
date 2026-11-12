@@ -872,11 +872,14 @@
                      @change="toggleExportAll"
                   >全部字段（{{ exportFieldOptions.length }}）</el-checkbox>
                </div>
-               <div class="export-pane-body">
-                  <div v-for="c in exportFieldOptions" :key="c.key" class="export-field" @click="toggleExportField(c)">
-                     <el-checkbox :model-value="!!exportFieldSet[c.key]" @click.stop @change="toggleExportField(c)" />
-                     <span class="export-field-label">{{ c.label }}</span>
-                  </div>
+               <div class="export-pane-body" v-loading="exportFieldLoading" element-loading-text="字段加载中...">
+                  <template v-for="g in exportFieldGroups" :key="g.group">
+                     <div class="export-group-title">{{ g.label }}</div>
+                     <div v-for="c in g.fields" :key="c.key" class="export-field" @click="toggleExportField(c)">
+                        <el-checkbox :model-value="!!exportFieldSet[c.key]" @click.stop @change="toggleExportField(c)" />
+                        <span class="export-field-label">{{ c.label }}</span>
+                     </div>
+                  </template>
                </div>
             </div>
 
@@ -937,6 +940,8 @@ import useSearchMemoryStore from "@/store/modules/searchMemory"
 import cache from '@/plugins/cache'
 import { useRoute } from "vue-router"
 import { useNotifyLanding } from "@/utils/useNotifyLanding"
+import { getExportFields } from "@/api/project/exportFields"
+import { fallbackExportFields, exportGroupLabel } from "@/utils/projectExportFields"
 
 const { proxy } = getCurrentInstance()
 
@@ -1982,23 +1987,32 @@ function exitSelectAllMode() {
   clearCrossSelection()
 }
 
-/** 可选字段清单：严格按后端列元数据顺序（接口不可用时用兜底清单顺序） */
-const exportColumnList = computed(() => {
-  const list = Object.values(columns.value || {})
-  return list.length ? list : FALLBACK_COLUMNS.map(c => ({ ...c }))
+/** 可选字段清单：与项目列表页共用同一份字段池（GET /project/export/fields），接口不可用时用兜底清单 */
+const exportPool = ref([])
+const exportFieldLoading = ref(false)
+const exportColumnList = computed(() =>
+  exportPool.value.length ? exportPool.value : fallbackExportFields('settlement'))
+
+/** 按分组渲染左栏（项目信息 / 合同 / 工作量与产值 / 结算付款） */
+const exportFieldGroups = computed(() => {
+  const groups = []
+  const idx = {}
+  exportColumnList.value.forEach(c => {
+    const g = c.group || 'project'
+    if (idx[g] === undefined) {
+      idx[g] = groups.length
+      groups.push({ group: g, label: exportGroupLabel(g), fields: [] })
+    }
+    groups[idx[g]].fields.push(c)
+  })
+  return groups
 })
 
-/**
- * 导出时不单独成列的字段：总工作量（内外单位不同，相加无意义）与内外单价（按需求不导单价）。
- * 弹窗里也从可选清单中摘掉，否则用户勾了却不出列，会以为功能坏了。
- */
-const EXPORT_AGG_KEYS = ['workload', 'internalPrice', 'externalPrice']
-const exportFieldOptions = computed(() =>
-  exportColumnList.value.filter(c => !EXPORT_AGG_KEYS.includes(c.key)))
+/** 弹窗左栏清单（字段池全量；不再剔除任何字段） */
+const exportFieldOptions = exportColumnList
 
-/** 导出总列数 = 已选字段（单价等会被后端剔除）；不再有后端强制补的列，所见即所得 */
-const exportTotalCols = computed(() =>
-  exportFields.value.filter(k => !EXPORT_AGG_KEYS.includes(k)).length)
+/** 导出总列数 = 已选字段（所见即所得，后端不再强制补列） */
+const exportTotalCols = computed(() => exportFields.value.length)
 const exportHasOwner = computed(() => exportFields.value.includes('userName'))
 
 const exportFieldSet = computed(() => {
@@ -2015,28 +2029,45 @@ function exportLabelOf(key) {
   return c ? c.label : key
 }
 
-/**
- * 导出默认字段 = 当前表格可见列（已排除被剔除的汇总列）
- * ⚠️ 「负责人」特殊处理：页面表格里它默认不显示（项目级行没有登记人），
- * 但导出是按登记人拆行的，没它就分不清每行是谁 —— 故导出默认必须勾上。
- */
-const EXPORT_FORCE_DEFAULT_KEYS = ['userName']
-/** 反过来：页面上默认显示、但导出默认不要的字段（用户仍可在弹窗里自己勾） */
+/** 表格列 key → 导出字段池 key（页面列「项目类别」= engineeringProject，导出池统一用 categoryName） */
+const PAGE_COLUMN_ALIAS = { engineeringProject: 'categoryName' }
+/** 页面上默认显示、但导出默认不要的字段（用户仍可在弹窗里自己勾） */
 const EXPORT_HIDDEN_DEFAULT_KEYS = ['relatedProjectCode']
+/**
+ * 导出默认字段 = 当前表格可见列（与页面所见一致，忽略不在字段池里的汇总列）
+ * ⚠️ 「登记人」必须默认勾上：导出按登记人拆行，没它就分不清每行是谁。
+ */
 function defaultExportFields() {
-  return exportFieldOptions.value
-    .filter(c => !EXPORT_HIDDEN_DEFAULT_KEYS.includes(c.key))
-    .filter(c => c.visible || EXPORT_FORCE_DEFAULT_KEYS.includes(c.key))
-    .map(c => c.key)
+  const poolKeys = new Set(exportColumnList.value.map(c => c.key))
+  const visible = Object.values(columns.value || {})
+    .filter(c => c.visible)
+    .map(c => PAGE_COLUMN_ALIAS[c.key] || c.key)
+    .filter(k => poolKeys.has(k) && !EXPORT_HIDDEN_DEFAULT_KEYS.includes(k))
+  const uniq = Array.from(new Set(visible))
+  if (!uniq.includes('userName')) uniq.push('userName')
+  return uniq.length > 1 ? uniq : exportColumnList.value.filter(c => c.defaultVisible).map(c => c.key)
+}
+
+/** 加载字段池（接口已剥一层响应体 ⇒ 见铁律 #8 的解包写法） */
+function loadExportFields() {
+  exportFieldLoading.value = true
+  return getExportFields('settlement').then(res => {
+    const list = Array.isArray(res) ? res : (res && res.data) || []
+    exportPool.value = Array.isArray(list) ? list : []
+  }).catch(() => { exportPool.value = [] }).finally(() => { exportFieldLoading.value = false })
 }
 
 /** 打开导出弹窗 */
 function openExportDialog() {
   exportScope.value = (ids.value.length && !selectAllMode.value) ? 'selected' : 'filter'
-  exportFields.value = defaultExportFields()
   exportDragIdx.value = -1
   exportOverIdx.value = -1
   exportOpen.value = true
+  if (exportPool.value.length) {
+    exportFields.value = defaultExportFields()
+  } else {
+    loadExportFields().then(() => { exportFields.value = defaultExportFields() })
+  }
 }
 
 /** 与列表完全一致的筛选参数（不含分页、不含勾选范围） */
@@ -3092,6 +3123,13 @@ onActivated(() => {
 .export-pane-body { height: 320px; overflow-y: auto; padding: 4px 0; }
 .export-field { display: flex; align-items: center; gap: 2px; padding: 2px 10px; cursor: pointer; }
 .export-field:hover { background: #f5f7fa; }
+/* 字段分组标题（项目信息 / 合同 / 工作量与产值 / 结算付款） */
+.export-group-title {
+   padding: 6px 10px 2px;
+   font-size: 12px;
+   color: #909399;
+   font-weight: 600;
+}
 .export-field-label { font-size: 13px; color: #606266; }
 .export-sel {
    display: flex;
